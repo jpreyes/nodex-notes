@@ -56,7 +56,7 @@ Botón ⚙ en la app, o el archivo:
 
 ```toml
 carpeta_notas = 'C:\Users\tu-usuario\Dropbox\Notas'  # por defecto: Dropbox/Notas
-proveedor = "opencode"     # opencode (opencode.ai/zen), anthropic, openai, gemini u ollama
+proveedor = "opencode"     # opencode (Zen), opencode-go (plan Go), anthropic, openai, gemini u ollama
 modelo = "deepseek-v4.1-flash"
 clave_api = ""             # o variable OPENCODE_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY
 ia_automatica = true
@@ -65,6 +65,8 @@ google_client_secret = ""
 ```
 
 Por defecto la IA usa **DeepSeek V4.1 Flash** a través de [OpenCode Zen](https://opencode.ai/zen): crea tu clave en opencode.ai y pégala en `clave_api`. Se puede usar cualquier otro modelo de Zen cambiando `modelo` (por ejemplo `deepseek-v4-pro`).
+
+Si tienes el plan **OpenCode Go** (suscripción mensual con límite de uso), usa `proveedor = "opencode-go"`: misma clave y mismo modelo, pero cobra contra tu suscripción (`https://opencode.ai/zen/go/v1/`) en vez de tu saldo de Zen (`https://opencode.ai/zen/v1/`).
 
 Sin clave API la app funciona igual; solo se desactiva la IA. Con `ollama` no hace falta clave.
 

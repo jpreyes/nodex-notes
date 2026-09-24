@@ -8,7 +8,7 @@ use std::path::PathBuf;
 #[serde(default)]
 pub struct Config {
     pub carpeta_notas: PathBuf,
-    /// opencode | anthropic | openai | gemini | ollama
+    /// opencode | opencode-go | anthropic | openai | gemini | ollama
     pub proveedor: String,
     pub modelo: String,
     pub clave_api: String,
@@ -109,7 +109,7 @@ fn write_default(path: &PathBuf, c: &Config) -> std::io::Result<()> {
          # Carpeta de notas (una subcarpeta por espacio de trabajo)\n\
          carpeta_notas = {}\n\
          \n\
-         # Proveedor de IA: opencode (opencode.ai/zen), anthropic, openai, gemini u ollama\n\
+         # Proveedor de IA: opencode (Zen, pago por uso), opencode-go (plan Go), anthropic, openai, gemini u ollama\n\
          proveedor = {}\n\
          modelo = {}\n\
          # Clave API (no hace falta para ollama)\n\

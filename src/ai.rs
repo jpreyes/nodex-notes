@@ -74,15 +74,19 @@ struct Provider {
 fn provider(proveedor: &str) -> Result<Provider, String> {
     let p = |kind, endpoint, env| Ok(Provider { kind, endpoint, env });
     match proveedor.trim().to_lowercase().as_str() {
-        // OpenCode Zen: API compatible con OpenAI (chat/completions).
+        // OpenCode Zen (pago por uso): API compatible con OpenAI (chat/completions).
         "opencode" | "opencode.ai" | "opencode-zen" | "zen" => {
             p(AdapterKind::OpenAI, Some("https://opencode.ai/zen/v1/"), Some("OPENCODE_API_KEY"))
         }
+        // OpenCode Go (suscripción mensual): misma API y clave, otra dirección.
+        "opencode-go" | "go" => p(AdapterKind::OpenAI, Some("https://opencode.ai/zen/go/v1/"), Some("OPENCODE_API_KEY")),
         "anthropic" | "claude" => p(AdapterKind::Anthropic, None, Some("ANTHROPIC_API_KEY")),
         "openai" | "gpt" => p(AdapterKind::OpenAI, None, Some("OPENAI_API_KEY")),
         "gemini" | "google" => p(AdapterKind::Gemini, None, Some("GEMINI_API_KEY")),
         "ollama" => p(AdapterKind::Ollama, None, None),
-        other => Err(format!("Proveedor desconocido «{other}» (usa opencode, anthropic, openai, gemini u ollama)")),
+        other => Err(format!(
+            "Proveedor desconocido «{other}» (usa opencode, opencode-go, anthropic, openai, gemini u ollama)"
+        )),
     }
 }
 
@@ -250,16 +254,18 @@ mod net_tests {
     #[test]
     #[ignore]
     fn opencode_endpoint_reachable() {
-        let prov = provider("opencode").unwrap();
-        let target = ServiceTarget {
-            endpoint: Endpoint::from_static(prov.endpoint.unwrap()),
-            auth: AuthData::from_single("clave-falsa"),
-            model: ModelIden::new(prov.kind, "deepseek-v4.1-flash"),
-        };
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        let req = ChatRequest::default().append_message(ChatMessage::user("hola"));
-        let err = rt.block_on(Client::default().exec_chat(target, req, None)).unwrap_err().to_string();
-        println!("respuesta: {}", friendly_error(&err));
-        assert_eq!(friendly_error(&err), "401 Unauthorized: Invalid API key.");
+        for name in ["opencode", "opencode-go"] {
+            let prov = provider(name).unwrap();
+            let target = ServiceTarget {
+                endpoint: Endpoint::from_static(prov.endpoint.unwrap()),
+                auth: AuthData::from_single("clave-falsa"),
+                model: ModelIden::new(prov.kind, "deepseek-v4.1-flash"),
+            };
+            let req = ChatRequest::default().append_message(ChatMessage::user("hola"));
+            let err = rt.block_on(Client::default().exec_chat(target, req, None)).unwrap_err().to_string();
+            println!("{name}: {}", friendly_error(&err));
+            assert_eq!(friendly_error(&err), "401 Unauthorized: Invalid API key.", "{name}: {err}");
+        }
     }
 }
