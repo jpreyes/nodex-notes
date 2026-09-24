@@ -106,6 +106,11 @@ fn check_update(ctx: egui::Context) -> Receiver<Result<Option<String>, String>> 
 
 // ---------- Widgets ----------
 
+/// Acorta un texto a `n` caracteres con "…" (para que un nombre largo no ensanche la ventana).
+fn short(s: &str, n: usize) -> String {
+    if s.chars().count() <= n { s.to_string() } else { format!("{}…", s.chars().take(n).collect::<String>()) }
+}
+
 /// Interruptor redondo (estilo iOS/macOS).
 fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
     let size = egui::vec2(38.0, 22.0);
@@ -159,11 +164,15 @@ fn chip(ui: &mut Ui, text: &str, ok: bool) {
     } else {
         (RED, Color32::from_rgb(252, 235, 235))
     };
+    // Los mensajes largos (errores con URL) pasan a varias líneas en vez de ensanchar la ventana.
     Frame::new()
         .fill(bg)
         .corner_radius(6)
         .inner_margin(Margin::symmetric(8, 3))
-        .show(ui, |ui| ui.label(RichText::new(text).size(12.5).color(fg)));
+        .show(ui, |ui| {
+            ui.set_max_width(ui.available_width());
+            ui.add(egui::Label::new(RichText::new(text).size(12.5).color(fg)).wrap())
+        });
 }
 
 fn secret_field(ui: &mut Ui, value: &mut String, show: &mut bool, hint: &str) -> Response {
@@ -202,8 +211,10 @@ impl NotesApp {
         let modal = egui::Modal::new(Id::new("settings"))
             .frame(Frame::new().fill(Color32::WHITE).corner_radius(12).stroke(Stroke::new(1.0, theme::BORDER)))
             .show(ctx, |ui| {
+                // Tamaño fijo: ningún contenido puede agrandar la ventana más allá de la pantalla.
                 ui.set_width(w);
                 ui.set_height(h);
+                ui.set_max_size(egui::vec2(w, h));
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     // Categorías
@@ -366,7 +377,7 @@ impl NotesApp {
 
         let current = ai::PROVIDERS.iter().find(|p| p.0 == self.cfg.proveedor);
         row(ui, "Proveedor", "", |ui| {
-            let label = current.map_or(self.cfg.proveedor.as_str(), |p| p.1);
+            let label = current.map_or_else(|| format!("Desconocido: {}", short(&self.cfg.proveedor, 22)), |p| p.1.to_string());
             egui::ComboBox::from_id_salt("proveedor").selected_text(label).width(250.0).show_ui(ui, |ui| {
                 for (id, name, _, _) in ai::PROVIDERS {
                     if ui.selectable_label(self.cfg.proveedor == *id, *name).clicked() && self.cfg.proveedor != *id {
@@ -392,7 +403,7 @@ impl NotesApp {
             if !models.is_empty() {
                 let text = if s.custom_model { "Otro…" } else { self.cfg.modelo.as_str() };
                 let width = if s.custom_model { 95.0 } else { 250.0 };
-                egui::ComboBox::from_id_salt("modelo").selected_text(text).width(width).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("modelo").selected_text(short(text, 28)).width(width).show_ui(ui, |ui| {
                     for m in models {
                         if ui.selectable_label(!s.custom_model && self.cfg.modelo == *m, *m).clicked() {
                             s.custom_model = false;
@@ -423,28 +434,29 @@ impl NotesApp {
             },
         );
 
-        ui.add_space(12.0);
-        ui.horizontal(|ui| {
-            match (&s.test, &s.test_result) {
-                (Some(_), _) => {
-                    ui.add(egui::Spinner::new().size(14.0));
-                    ui.label(RichText::new("  Probando…").size(12.5).color(MUTED));
-                }
-                (None, Some(Ok(ms))) => chip(ui, &format!("{} Conectado · respondió en {:.1} s", icon::CHECK_CIRCLE, *ms as f32 / 1000.0), true),
-                (None, Some(Err(e))) => chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false),
-                (None, None) => {
-                    if let Err(e) = &self.ai {
-                        chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false);
-                    }
+        row(ui, "Conexión", "Envía un mensaje corto para comprobar la clave y el modelo", |ui| {
+            let b = egui::Button::new(format!("{}  Probar conexión", icon::PLUGS_CONNECTED));
+            if ui.add_enabled(s.test.is_none(), b).clicked() {
+                changes.push(Change::TestConnection);
+            }
+            if s.test.is_some() {
+                ui.add(egui::Spinner::new().size(14.0));
+            }
+        });
+        // Resultado debajo, a todo el ancho (puede ocupar varias líneas).
+        ui.add_space(8.0);
+        match (&s.test, &s.test_result) {
+            (Some(_), _) => {
+                ui.label(RichText::new("Probando…").size(12.5).color(MUTED));
+            }
+            (None, Some(Ok(ms))) => chip(ui, &format!("{} Conectado · respondió en {:.1} s", icon::CHECK_CIRCLE, *ms as f32 / 1000.0), true),
+            (None, Some(Err(e))) => chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false),
+            (None, None) => {
+                if let Err(e) = &self.ai {
+                    chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false);
                 }
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let b = egui::Button::new(format!("{}  Probar conexión", icon::PLUGS_CONNECTED));
-                if ui.add_enabled(s.test.is_none(), b).clicked() {
-                    changes.push(Change::TestConnection);
-                }
-            });
-        });
+        }
         if let Some(url) = current.and_then(|p| p.3) {
             ui.add_space(10.0);
             ui.horizontal(|ui| {
@@ -490,7 +502,7 @@ impl NotesApp {
                                 changes.push(Change::Do(Action::GoogleSync));
                             }
                             let status = match (&g.last_error, g.last_sync) {
-                                (Some(e), _) => format!("error: {e}"),
+                                (Some(_), _) => "error (ver abajo)".to_string(),
                                 (None, Some(t)) => format!("sincronizado {}", t.format("%H:%M")),
                                 _ => "conectado".into(),
                             };
@@ -508,6 +520,10 @@ impl NotesApp {
                         .size(12.5)
                         .color(MUTED),
                 );
+                if let Some(e) = self.gcal.as_ref().and_then(|g| g.last_error.as_ref()) {
+                    ui.add_space(6.0);
+                    chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false);
+                }
                 ui.add_space(6.0);
                 row(ui, "ID de cliente", "", |ui| {
                     let r = ui.add(
