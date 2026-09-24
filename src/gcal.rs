@@ -521,7 +521,7 @@ impl Worker {
     }
 }
 
-fn open_browser(url: &str) {
+pub fn open_browser(url: &str) {
     let result = if cfg!(windows) {
         // "start" interpreta los '&'; rundll32 abre la URL tal cual en el navegador por defecto.
         std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", url]).spawn()

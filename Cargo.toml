@@ -1,6 +1,6 @@
 [package]
 name = "nodex-notes"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 description = "Notas rápidas estilo Notepad con espacios de trabajo, reuniones e IA que organiza sola"
 license = "MIT"
@@ -15,6 +15,7 @@ egui-phosphor = "0.14.0"
 genai = "0.6.5"
 getrandom = "0.3"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "form"] }
+rfd = "0.17.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11.0"

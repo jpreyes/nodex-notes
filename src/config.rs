@@ -1,10 +1,11 @@
-//! Lectura de config.toml (se crea con valores por defecto si no existe).
+//! config.toml (se edita desde la ventana de Configuración; se crea si no existe)
+//! y estado.toml (última nota abierta).
 
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub carpeta_notas: PathBuf,
@@ -54,7 +55,7 @@ pub fn load() -> (Config, Option<String>) {
         },
         Err(_) => {
             let c = Config::default();
-            let msg = match write_default(&path, &c) {
+            let msg = match save(&c) {
                 Ok(()) => format!("Configuración creada en {}", path.display()),
                 Err(e) => format!("No se pudo crear {}: {e}", path.display()),
             };
@@ -68,6 +69,45 @@ pub fn load() -> (Config, Option<String>) {
         }
     }
     (cfg, msg)
+}
+
+fn render(c: &Config) -> String {
+    let q = |s: &str| toml::Value::String(s.to_string()).to_string();
+    format!(
+        "# Configuración de Notas (se cambia desde la app: botón ⚙ o Ctrl+,)\n\
+         \n\
+         # Carpeta de notas (una subcarpeta por espacio de trabajo)\n\
+         carpeta_notas = {}\n\
+         \n\
+         # Proveedor de IA: opencode (Zen, pago por uso), opencode-go (plan Go), anthropic, openai, gemini u ollama\n\
+         proveedor = {}\n\
+         modelo = {}\n\
+         # Clave API (no hace falta para ollama). Este archivo queda solo en este equipo.\n\
+         clave_api = {}\n\
+         \n\
+         # Analizar solas las notas al terminar de escribirlas (espacio, etiquetas, tareas, agenda)\n\
+         ia_automatica = {}\n\
+         \n\
+         # Google Calendar: credenciales OAuth \"App de escritorio\" (pasos en el README)\n\
+         google_client_id = {}\n\
+         google_client_secret = {}\n",
+        q(&c.carpeta_notas.to_string_lossy()),
+        q(&c.proveedor),
+        q(&c.modelo),
+        q(&c.clave_api),
+        c.ia_automatica,
+        q(&c.google_client_id),
+        q(&c.google_client_secret),
+    )
+}
+
+/// Escribe config.toml completo, con comentarios, para que siga siendo legible a mano.
+pub fn save(c: &Config) -> std::io::Result<()> {
+    let path = config_path();
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    fs::write(path, render(c))
 }
 
 /// Lo último abierto, para volver ahí al iniciar.
@@ -98,32 +138,21 @@ pub fn save_estado(e: &Estado) {
     let _ = fs::write(path, format!("espacio = {}\nnota = {}\n", q(&e.espacio), q(&e.nota)));
 }
 
-fn write_default(path: &PathBuf, c: &Config) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_config_parses_back() {
+        let c = Config {
+            carpeta_notas: PathBuf::from(r#"C:\Users\x\Dropbox\Notas "raras""#),
+            proveedor: "opencode-go".into(),
+            clave_api: "sk-'abc'\"x".into(),
+            ia_automatica: false,
+            google_client_secret: "GOCSPX-1".into(),
+            ..Config::default()
+        };
+        let back: Config = toml::from_str(&render(&c)).unwrap();
+        assert_eq!(back, c);
     }
-    let q = |s: &str| toml::Value::String(s.to_string()).to_string();
-    let text = format!(
-        "# Configuración de Notas\n\
-         \n\
-         # Carpeta de notas (una subcarpeta por espacio de trabajo)\n\
-         carpeta_notas = {}\n\
-         \n\
-         # Proveedor de IA: opencode (Zen, pago por uso), opencode-go (plan Go), anthropic, openai, gemini u ollama\n\
-         proveedor = {}\n\
-         modelo = {}\n\
-         # Clave API (no hace falta para ollama)\n\
-         clave_api = \"\"\n\
-         \n\
-         # Analizar solas las notas al terminar de escribirlas (espacio, etiquetas, tareas, agenda)\n\
-         ia_automatica = true\n\
-         \n\
-         # Google Calendar: credenciales OAuth \"App de escritorio\" (pasos en el README)\n\
-         google_client_id = \"\"\n\
-         google_client_secret = \"\"\n",
-        q(&c.carpeta_notas.to_string_lossy()),
-        q(&c.proveedor),
-        q(&c.modelo),
-    );
-    fs::write(path, text)
 }

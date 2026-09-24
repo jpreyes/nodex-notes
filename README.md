@@ -33,6 +33,7 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 | Ctrl+D | Nota de hoy |
 | Ctrl+R | Nueva reunión |
 | Ctrl+F | Buscar en todas las notas |
+| Ctrl+, | Configuración |
 | Esc | Cerrar la reunión, la búsqueda o la vista |
 
 ## IA
@@ -48,7 +49,9 @@ Cada cambio se puede deshacer desde la barra inferior. El botón ✦ organiza la
 
 ## Configuración
 
-Botón ⚙ en la app, o el archivo:
+Todo se configura desde la ventana **Configuración** (botón ⚙ abajo a la izquierda, o **Ctrl+,**): carpeta de notas, proveedor y modelo de IA, clave API, prueba de conexión, Google Calendar y búsqueda de actualizaciones. Cada cambio se guarda y se aplica al instante.
+
+Por debajo se guarda en un archivo de texto que también se puede editar a mano:
 
 - Windows: `%APPDATA%\nodex-notes\config.toml`
 - macOS: `~/Library/Application Support/nodex-notes/config.toml`
@@ -80,14 +83,8 @@ Google exige que cada app tenga su propio ID de cliente OAuth. Se crea gratis, u
 2. Habilita la [Google Calendar API](https://console.cloud.google.com/apis/library/calendar-json.googleapis.com) en ese proyecto.
 3. En **Google Auth Platform → Branding**, pon el nombre de la app ("Notas") y tu correo. En **Público** elige *Externo*.
 4. En **Público**, presiona **Publicar app** (pasa a *En producción*). Si la dejas en *Prueba*, Google corta el permiso cada 7 días. Para uso personal no hace falta la verificación de Google.
-5. En **Clientes → Crear cliente**, elige el tipo **App de escritorio**. Copia el *ID de cliente* y el *secreto* en `config.toml`:
-
-   ```toml
-   google_client_id = "123456-abc.apps.googleusercontent.com"
-   google_client_secret = "GOCSPX-..."
-   ```
-
-6. Reinicia la app y, en **Agenda**, presiona **Conectar Google Calendar**. Se abrirá el navegador para que elijas tu cuenta y des permiso. Si Google avisa que la app no está verificada, entra en *Configuración avanzada → Ir a Notas*: es tu propia app.
+5. En **Clientes → Crear cliente**, elige el tipo **App de escritorio**. Copia el *ID de cliente* y el *secreto* en **Configuración → Calendar** (la misma ventana trae estos pasos con enlaces directos).
+6. Presiona **Conectar**. Se abrirá el navegador para que elijas tu cuenta y des permiso. Si Google avisa que la app no está verificada, entra en *Configuración avanzada → Ir a Notas*: es tu propia app.
 
 El permiso queda guardado solo en este equipo (`google_token.json`, junto a `config.toml`), nunca en la carpeta de Dropbox. En otro computador hay que conectar de nuevo. La correspondencia entre elementos y eventos de Google se guarda en `.nodex/google.json`, para que dos equipos no dupliquen eventos.
 
@@ -113,6 +110,7 @@ Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro eq
 |---|---|
 | `src/main.rs` | Punto de entrada: lee la configuración y abre la ventana. |
 | `src/app.rs` | Interfaz y comportamiento: barra de íconos, barra lateral, editor, reuniones, lo que hace la IA (y deshacer), vistas Tareas y Agenda. |
+| `src/app/settings.rs` | Ventana de Configuración (General, IA, Calendar, Atajos, Acerca de). |
 | `src/ai.rs` | Conexión con la IA (genai) en un hilo aparte y el prompt con las reglas. |
 | `src/gcal.rs` | Google Calendar: OAuth con PKCE, calendario "Notas" y sincronización de eventos. |
 | `src/agenda.rs` | `tareas.txt` (todo.txt), `agenda.txt` y `agenda.ics`. |

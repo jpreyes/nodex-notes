@@ -18,6 +18,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+mod settings;
+use settings::Section;
+
 /// Espera tras la última tecla antes de guardar.
 const AUTOSAVE: Duration = Duration::from_millis(800);
 /// Cada cuánto se revisa si algo cambió en disco (p. ej. por Dropbox).
@@ -107,9 +110,14 @@ enum Action {
     ToggleTask(String),
     AddTask(String),
     OpenExternal(PathBuf),
+    OpenSettings(Section),
 }
 
 pub struct NotesApp {
+    cfg: Config,
+    ctx: egui::Context,
+    /// Ventana de Configuración abierta.
+    settings: Option<settings::Settings>,
     vault: Vault,
     agenda: Agenda,
     ws: String,
@@ -149,6 +157,13 @@ pub struct NotesApp {
 fn long_ago() -> Instant {
     let now = Instant::now();
     now.checked_sub(GCAL_EVERY).unwrap_or(now)
+}
+
+/// Hashes de las notas que la IA ya analizó (.nodex/analizadas.txt).
+fn load_analyzed(root: &Path) -> HashSet<u64> {
+    vault::read_text(&root.join(".nodex").join("analizadas.txt"))
+        .map(|t| t.lines().filter_map(|l| u64::from_str_radix(l.trim(), 16).ok()).collect())
+        .unwrap_or_default()
 }
 
 fn today() -> String {
@@ -242,9 +257,9 @@ impl NotesApp {
             message = Some(format!("No se pudo crear {}: {e}", cfg.carpeta_notas.display()));
         }
         let ai = Ai::start(&cfg, ctx.clone());
-        let gcal = GCal::start(&cfg.google_client_id, &cfg.google_client_secret, cfg.carpeta_notas.clone(), ctx);
+        let gcal = GCal::start(&cfg.google_client_id, &cfg.google_client_secret, cfg.carpeta_notas.clone(), ctx.clone());
         let ai_auto = cfg.ia_automatica;
-        let vault = Vault::new(cfg.carpeta_notas);
+        let vault = Vault::new(cfg.carpeta_notas.clone());
         let agenda = Agenda::new(&vault.root);
         let estado = config::load_estado();
         let ws = if vault.workspaces.contains(&estado.espacio) {
@@ -255,10 +270,11 @@ impl NotesApp {
         let last = vault.root.join(&estado.nota);
         let path = if !estado.nota.is_empty() && last.is_file() { last } else { vault.note_path(&ws, &today()) };
         let ws = workspace_of(&path).unwrap_or(ws);
-        let analyzed = vault::read_text(&vault.root.join(".nodex").join("analizadas.txt"))
-            .map(|t| t.lines().filter_map(|l| u64::from_str_radix(l.trim(), 16).ok()).collect())
-            .unwrap_or_default();
+        let analyzed = load_analyzed(&vault.root);
         NotesApp {
+            cfg,
+            ctx,
+            settings: None,
             vault,
             agenda,
             ws,
@@ -291,6 +307,59 @@ impl NotesApp {
 
     fn msg(&mut self, text: impl Into<String>) {
         self.message = Some((text.into(), Instant::now()));
+    }
+
+    /// Esc para las vistas, salvo que la ventana de Configuración esté encima.
+    fn esc(&self, ui: &Ui) -> bool {
+        self.settings.is_none() && ui.input(|i| i.key_pressed(Key::Escape))
+    }
+
+    // ---------- Configuración aplicada en vivo ----------
+
+    fn save_config(&mut self) {
+        if let Err(e) = config::save(&self.cfg) {
+            self.msg(format!("No se pudo guardar la configuración: {e}"));
+        }
+    }
+
+    fn restart_ai(&mut self) {
+        self.ai = Ai::start(&self.cfg, self.ctx.clone());
+        self.ai_auto = self.cfg.ia_automatica;
+        self.in_flight = None;
+        self.backlog.clear();
+    }
+
+    fn restart_gcal(&mut self) {
+        let (id, secret) = (&self.cfg.google_client_id, &self.cfg.google_client_secret);
+        self.gcal = GCal::start(id, secret, self.vault.root.clone(), self.ctx.clone());
+        self.gcal_dirty = true;
+    }
+
+    /// Cambia la carpeta de notas sin reiniciar la app.
+    fn change_folder(&mut self, path: PathBuf) {
+        if path == self.vault.root {
+            return;
+        }
+        if let Err(e) = fs::create_dir_all(&path) {
+            self.msg(format!("No se pudo usar {}: {e}", path.display()));
+            return;
+        }
+        self.close_meeting(Local::now());
+        self.save();
+        self.cfg.carpeta_notas = path.clone();
+        self.save_config();
+        self.vault = Vault::new(path);
+        self.agenda = Agenda::new(&self.vault.root);
+        self.analyzed = load_analyzed(&self.vault.root);
+        self.touched.clear();
+        self.backlog.clear();
+        self.in_flight = None;
+        self.undo = None;
+        self.restart_gcal();
+        let ws = self.vault.workspaces.first().cloned().unwrap_or_else(|| vault::DEFAULT_WORKSPACE.into());
+        self.note.dirty = false;
+        self.select_workspace(ws);
+        self.msg(format!("Carpeta de notas: {}", self.vault.root.display()));
     }
 
     fn rel(&self, path: &Path) -> String {
@@ -519,6 +588,7 @@ impl NotesApp {
         if let Err(e) = &self.ai {
             let e = e.clone();
             self.msg(format!("IA no disponible: {e}"));
+            self.open_settings(Section::Ai);
             return;
         }
         self.save();
@@ -637,6 +707,9 @@ impl NotesApp {
 
     /// Aplica lo que devolvió la IA: etiquetas, resumen, título, espacio, tareas y eventos.
     fn apply_analysis(&mut self, path: PathBuf, hash: u64, a: Analysis) {
+        if !path.starts_with(&self.vault.root) {
+            return; // la carpeta de notas cambió mientras la IA trabajaba
+        }
         let is_open = path == self.note.path;
         if is_open && self.note.dirty {
             return; // se siguió escribiendo; se volverá a analizar
@@ -872,6 +945,7 @@ impl NotesApp {
                 }
             }
             Action::OpenExternal(p) => open_external(&p),
+            Action::OpenSettings(section) => self.open_settings(section),
         }
     }
 
@@ -891,13 +965,16 @@ impl NotesApp {
         if pressed(Key::R) {
             return Some(Action::StartMeeting);
         }
+        if pressed(Key::Comma) {
+            return Some(Action::OpenSettings(Section::General));
+        }
         if pressed(Key::S) {
             self.note.dirty = true;
             self.save();
         }
         // Esc cierra la reunión (si no hay una búsqueda o vista abierta que cerrar primero).
         let esc = ctx.input(|i| i.key_pressed(Key::Escape));
-        if esc && self.meeting.is_some() && self.search.is_empty() && self.view == View::Editor && self.new_ws.is_none() {
+        if esc && self.settings.is_none() && self.meeting.is_some() && self.search.is_empty() && self.view == View::Editor && self.new_ws.is_none() {
             return Some(Action::CloseMeeting);
         }
         None
@@ -941,8 +1018,8 @@ impl NotesApp {
                 action = Some(Action::Organize);
             }
             ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
-                if rail_button(ui, icon::GEAR, "Configuración (config.toml)", false, TEXT).clicked() {
-                    action = Some(Action::OpenExternal(config::config_path()));
+                if rail_button(ui, icon::GEAR, "Configuración (Ctrl+,)", self.settings.is_some(), TEXT).clicked() {
+                    action = Some(Action::OpenSettings(Section::General));
                 }
                 if rail_button(ui, icon::FOLDER_OPEN, "Abrir carpeta de notas", false, TEXT).clicked() {
                     action = Some(Action::OpenExternal(self.vault.root.clone()));
@@ -964,7 +1041,7 @@ impl NotesApp {
         if std::mem::take(&mut self.focus_search) {
             search.request_focus();
         }
-        if search.has_focus() && ui.input(|i| i.key_pressed(Key::Escape)) {
+        if search.has_focus() && self.esc(ui) {
             action = Some(Action::CloseResults);
         }
         ui.add_space(10.0);
@@ -1326,7 +1403,7 @@ impl NotesApp {
                 ui.add_space(14.0);
             }
         });
-        if ui.input(|i| i.key_pressed(Key::Escape)) {
+        if self.esc(ui) {
             action = Some(Action::CloseResults);
         }
         action
@@ -1380,7 +1457,7 @@ impl NotesApp {
                     });
             }
         });
-        if !typing && ui.input(|i| i.key_pressed(Key::Escape)) {
+        if !typing && self.esc(ui) {
             action = Some(Action::CloseResults);
         }
         action
@@ -1398,8 +1475,8 @@ impl NotesApp {
                             .size(12.5)
                             .color(MUTED),
                     );
-                    if ui.link(RichText::new("Abrir configuración").size(12.5)).clicked() {
-                        action = Some(Action::OpenExternal(config::config_path()));
+                    if ui.link(RichText::new("Configurar Calendar").size(12.5)).clicked() {
+                        action = Some(Action::OpenSettings(Section::Calendar));
                     }
                 }
                 Some(g) if g.connecting => {
@@ -1547,7 +1624,7 @@ impl NotesApp {
                 }
             });
         });
-        if ui.input(|i| i.key_pressed(Key::Escape)) {
+        if self.esc(ui) {
             action = Some(Action::CloseResults);
         }
         action
@@ -1610,6 +1687,7 @@ impl eframe::App for NotesApp {
         for a in actions {
             self.apply(a);
         }
+        self.settings_window(&ctx);
 
         if self.note.dirty && self.note.last_edit.elapsed() >= AUTOSAVE {
             self.save();

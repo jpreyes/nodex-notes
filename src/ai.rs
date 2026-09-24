@@ -90,27 +90,74 @@ fn provider(proveedor: &str) -> Result<Provider, String> {
     }
 }
 
+/// Proveedores para la ventana de Configuración: (id en config.toml, nombre, modelos sugeridos, dónde sacar la clave).
+/// Los modelos de OpenCode son los que su documentación lista para chat/completions.
+pub const PROVIDERS: &[(&str, &str, &[&str], Option<&str>)] = &[
+    ("opencode", "OpenCode Zen (pago por uso)", &["deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-pro"], Some("https://opencode.ai/zen")),
+    ("opencode-go", "OpenCode Go (suscripción)", &["deepseek-v4.1-flash", "kimi-k3", "glm-5.3-flash"], Some("https://opencode.ai/zen")),
+    ("anthropic", "Anthropic (Claude)", &["claude-haiku-4-5", "claude-sonnet-5"], None),
+    ("openai", "OpenAI", &[], None),
+    ("gemini", "Google Gemini", &[], None),
+    ("ollama", "Ollama (en este equipo)", &[], None),
+];
+
+/// Cliente y destino (URL, clave y modelo) según la configuración.
+fn connection(cfg: &Config) -> Result<(Client, ModelSpec), String> {
+    let prov = provider(&cfg.proveedor)?;
+    let key = Some(cfg.clave_api.trim().to_string())
+        .filter(|k| !k.is_empty())
+        .or_else(|| prov.env.and_then(|v| std::env::var(v).ok()).filter(|v| !v.is_empty()));
+    if key.is_none() && prov.kind != AdapterKind::Ollama {
+        return Err("Falta la clave API (Configuración → Inteligencia artificial)".into());
+    }
+    if cfg.modelo.trim().is_empty() {
+        return Err("Falta elegir el modelo".into());
+    }
+    let iden = ModelIden::new(prov.kind, cfg.modelo.trim().to_string());
+    // Con URL propia se usa un destino fijo (URL + clave + modelo); si no, genai resuelve el proveedor.
+    let model: ModelSpec = match (prov.endpoint, &key) {
+        (Some(url), Some(k)) => ServiceTarget {
+            endpoint: Endpoint::from_static(url),
+            auth: AuthData::from_single(k.clone()),
+            model: iden,
+        }
+        .into(),
+        _ => iden.into(),
+    };
+    let mut builder = Client::builder();
+    if let Some(k) = key {
+        builder = builder.with_auth_resolver(AuthResolver::from_resolver_fn(
+            move |_: ModelIden| -> Result<Option<AuthData>, genai::resolver::Error> {
+                Ok(Some(AuthData::from_single(k.clone())))
+            },
+        ));
+    }
+    Ok((builder.build(), model))
+}
+
+/// Prueba la conexión con un mensaje mínimo; devuelve los milisegundos que tardó o el motivo del error.
+pub fn test_connection(cfg: &Config, ctx: eframe::egui::Context) -> Receiver<Result<u128, String>> {
+    let (tx, rx) = mpsc::channel();
+    let conn = connection(cfg);
+    std::thread::spawn(move || {
+        let result = conn.and_then(|(client, model)| {
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
+            let start = std::time::Instant::now();
+            let req = ChatRequest::default().append_message(ChatMessage::user("Responde solo: ok"));
+            let options = ChatOptions::default().with_max_tokens(20);
+            rt.block_on(client.exec_chat(model, req, Some(&options))).map_err(|e| friendly_error(&e.to_string()))?;
+            Ok(start.elapsed().as_millis())
+        });
+        let _ = tx.send(result);
+        ctx.request_repaint();
+    });
+    rx
+}
+
 impl Ai {
     /// Inicia el hilo de IA. Devuelve un error legible si falta configuración.
     pub fn start(cfg: &Config, ctx: eframe::egui::Context) -> Result<Ai, String> {
-        let prov = provider(&cfg.proveedor)?;
-        let key = Some(cfg.clave_api.trim().to_string())
-            .filter(|k| !k.is_empty())
-            .or_else(|| prov.env.and_then(|v| std::env::var(v).ok()).filter(|v| !v.is_empty()));
-        if key.is_none() && prov.kind != AdapterKind::Ollama {
-            return Err("Falta la clave API: agrégala en config.toml (clave_api)".into());
-        }
-        let iden = ModelIden::new(prov.kind, cfg.modelo.trim().to_string());
-        // Con URL propia se usa un destino fijo (URL + clave + modelo); si no, genai resuelve el proveedor.
-        let model: ModelSpec = match (prov.endpoint, &key) {
-            (Some(url), Some(k)) => ServiceTarget {
-                endpoint: Endpoint::from_static(url),
-                auth: AuthData::from_single(k.clone()),
-                model: iden,
-            }
-            .into(),
-            _ => iden.into(),
-        };
+        let (client, model) = connection(cfg)?;
         let label = format!("{} · {}", cfg.proveedor, cfg.modelo);
         let (tx, job_rx) = mpsc::channel::<Job>();
         let (res_tx, rx) = mpsc::channel::<JobResult>();
@@ -121,15 +168,6 @@ impl Ai {
                 let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
                     return;
                 };
-                let mut builder = Client::builder();
-                if let Some(k) = key {
-                    builder = builder.with_auth_resolver(AuthResolver::from_resolver_fn(
-                        move |_: ModelIden| -> Result<Option<AuthData>, genai::resolver::Error> {
-                            Ok(Some(AuthData::from_single(k.clone())))
-                        },
-                    ));
-                }
-                let client = builder.build();
                 let options = ChatOptions::default().with_temperature(0.2).with_max_tokens(2000);
                 for job in job_rx {
                     let req = ChatRequest::default().with_system(job.system).append_message(ChatMessage::user(job.user));
