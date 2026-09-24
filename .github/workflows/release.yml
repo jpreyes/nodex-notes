@@ -77,13 +77,14 @@ jobs:
               fi
               "$WIXBIN/candle.exe" -nologo -arch x64 -dVersion="$VER" -dExePath="$BIN.exe" \
                 -dLicenseRtf=wix/License.rtf wix/main.wxs -out pkg/main.wixobj
-              "$WIXBIN/light.exe" -nologo -ext WixUIExtension -cultures:es-es \
+              "$WIXBIN/light.exe" -nologo -spdb -ext WixUIExtension -cultures:es-es \
                 pkg/main.wixobj -out dist/Notas-windows-x64.msi ;;
             Linux)
               tar -czf dist/Notas-linux-x64.tar.gz -C "$(dirname "$BIN")" nodex-notes
               # Paquete .deb
               cargo install cargo-deb --locked
-              cargo deb --no-build --target ${{ matrix.target }} --output dist/Notas-linux-x64.deb ;;
+              cargo deb --no-build --target ${{ matrix.target }} --output dist/Notas-linux-x64.deb
+              dpkg-deb --info dist/Notas-linux-x64.deb && dpkg-deb --contents dist/Notas-linux-x64.deb ;;
             macOS)
               APP=pkg/Notas.app
               mkdir -p "$APP/Contents/MacOS"

@@ -8,16 +8,19 @@ App de escritorio nativa en Rust ([egui](https://github.com/emilk/egui)). No usa
 
 | Sistema | Archivo |
 |---|---|
-| Windows 10/11 | [Notas-windows-x64.exe](https://github.com/jpreyes/nodex-notes/releases/latest/download/Notas-windows-x64.exe) |
+| Windows 10/11 (instalador) | [Notas-windows-x64.msi](https://github.com/jpreyes/nodex-notes/releases/latest/download/Notas-windows-x64.msi) |
+| Windows 10/11 (portable, sin instalar) | [Notas-windows-x64.exe](https://github.com/jpreyes/nodex-notes/releases/latest/download/Notas-windows-x64.exe) |
 | macOS (Apple Silicon: M1, M2, M3…) | [Notas-macos-apple-silicon.zip](https://github.com/jpreyes/nodex-notes/releases/latest/download/Notas-macos-apple-silicon.zip) |
 | macOS (Intel) | [Notas-macos-intel.zip](https://github.com/jpreyes/nodex-notes/releases/latest/download/Notas-macos-intel.zip) |
-| Linux x64 | [Notas-linux-x64.tar.gz](https://github.com/jpreyes/nodex-notes/releases/latest/download/Notas-linux-x64.tar.gz) |
+| Debian / Ubuntu | [Notas-linux-x64.deb](https://github.com/jpreyes/nodex-notes/releases/latest/download/Notas-linux-x64.deb) |
+| Linux x64 (otras distribuciones) | [Notas-linux-x64.tar.gz](https://github.com/jpreyes/nodex-notes/releases/latest/download/Notas-linux-x64.tar.gz) |
 
 Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/releases).
 
-- **Windows:** es un único `.exe`, no requiere instalación. Como no está firmado, Windows SmartScreen puede advertir: haz clic en *Más información → Ejecutar de todas formas*.
+- **Windows:** el `.msi` instala Notas en Archivos de programa y la agrega al menú Inicio (se desinstala desde *Aplicaciones instaladas*); el `.exe` funciona sin instalar. Como no está firmado, Windows SmartScreen puede advertir: haz clic en *Más información → Ejecutar de todas formas*.
 - **macOS:** descomprime y mueve `Notas.app` a Aplicaciones. Como no está firmada por Apple, la primera vez ábrela con clic derecho → *Abrir*. Si macOS dice que "está dañada", ejecuta `xattr -dr com.apple.quarantine /Applications/Notas.app`.
-- **Linux:** `tar -xzf Notas-linux-x64.tar.gz && ./nodex-notes`
+- **Debian / Ubuntu:** `sudo apt install ./Notas-linux-x64.deb` (queda en el menú de aplicaciones como "Notas").
+- **Otras distribuciones Linux:** `tar -xzf Notas-linux-x64.tar.gz && ./nodex-notes`
 
 ## Uso
 
