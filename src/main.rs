@@ -4,6 +4,7 @@ mod agenda;
 mod ai;
 mod app;
 mod config;
+mod gcal;
 mod tags;
 mod theme;
 mod vault;

@@ -3,6 +3,7 @@
 use crate::agenda::{self, Agenda};
 use crate::ai::{self, Ai, Analysis};
 use crate::config::{self, Config, Estado};
+use crate::gcal::{self, GCal};
 use crate::tags;
 use crate::theme::{self, ACCENT, ACCENT_BG, BG_EDITOR, BG_RAIL, BG_SIDE, HOVER, MUTED, SUCCESS, TEXT};
 use crate::vault::{self, Vault};
@@ -27,6 +28,8 @@ const MEETING_IDLE: Duration = Duration::from_secs(30 * 60);
 const AI_IDLE: Duration = Duration::from_secs(45);
 /// Tiempo durante el que se ofrece deshacer lo que hizo la IA.
 const UNDO_WINDOW: Duration = Duration::from_secs(120);
+/// Sincronización periódica con Google Calendar aunque no haya cambios.
+const GCAL_EVERY: Duration = Duration::from_secs(10 * 60);
 const EDITOR_SIZE: f32 = 15.5;
 const COLUMN_MAX: f32 = 780.0;
 const MESES: [&str; 12] = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
@@ -98,6 +101,9 @@ enum Action {
     CloseMeeting,
     Organize,
     Undo,
+    GoogleConnect,
+    GoogleSync,
+    GoogleDisconnect,
     ToggleTask(String),
     AddTask(String),
     OpenExternal(PathBuf),
@@ -133,6 +139,16 @@ pub struct NotesApp {
     backlog_total: usize,
     in_flight: Option<PathBuf>,
     undo: Option<Undo>,
+    gcal: Option<GCal>,
+    /// La agenda cambió y hay que sincronizar con Google.
+    gcal_dirty: bool,
+    gcal_last_try: Instant,
+}
+
+/// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
+fn long_ago() -> Instant {
+    let now = Instant::now();
+    now.checked_sub(GCAL_EVERY).unwrap_or(now)
 }
 
 fn today() -> String {
@@ -225,7 +241,8 @@ impl NotesApp {
         if let Err(e) = fs::create_dir_all(&cfg.carpeta_notas) {
             message = Some(format!("No se pudo crear {}: {e}", cfg.carpeta_notas.display()));
         }
-        let ai = Ai::start(&cfg, ctx);
+        let ai = Ai::start(&cfg, ctx.clone());
+        let gcal = GCal::start(&cfg.google_client_id, &cfg.google_client_secret, cfg.carpeta_notas.clone(), ctx);
         let ai_auto = cfg.ia_automatica;
         let vault = Vault::new(cfg.carpeta_notas);
         let agenda = Agenda::new(&vault.root);
@@ -266,6 +283,9 @@ impl NotesApp {
             backlog_total: 0,
             in_flight: None,
             undo: None,
+            gcal,
+            gcal_dirty: true,
+            gcal_last_try: long_ago(),
         }
     }
 
@@ -717,6 +737,7 @@ impl NotesApp {
         if let Err(e) = self.agenda.replace_for_note(&self.rel(&path), &note_rel, &tasks, &events) {
             self.msg(format!("IA: no se pudo escribir tareas/agenda: {e}"));
         }
+        self.gcal_dirty = true;
         if !tasks.is_empty() {
             done.push(plural(tasks.len(), "tarea"));
         }
@@ -773,6 +794,7 @@ impl NotesApp {
                 self.ws = ws;
             }
         }
+        self.gcal_dirty = true;
         self.msg("Se deshizo lo que hizo la IA");
     }
 
@@ -816,12 +838,30 @@ impl NotesApp {
             Action::CloseMeeting => self.close_meeting(Local::now()),
             Action::Organize => self.start_organize(),
             Action::Undo => self.undo_ai(),
+            Action::GoogleConnect => match &mut self.gcal {
+                Some(g) => {
+                    g.connect();
+                    self.msg("Se abrió el navegador: elige tu cuenta y permite el acceso al calendario");
+                }
+                None => self.msg("Falta google_client_id en config.toml (pasos en el README)"),
+            },
+            Action::GoogleSync => {
+                self.gcal_dirty = true;
+                self.gcal_last_try = long_ago();
+            }
+            Action::GoogleDisconnect => {
+                if let Some(g) = &mut self.gcal {
+                    g.disconnect();
+                }
+            }
             Action::ToggleTask(raw) => {
+                self.gcal_dirty = true;
                 if let Err(e) = self.agenda.toggle_task(&raw, &today()) {
                     self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
                 }
             }
             Action::AddTask(text) => {
+                self.gcal_dirty = true;
                 let (text, due) = match text.split_once("due:") {
                     Some((t, d)) if agenda::is_date(d.trim()) => (t.trim().to_string(), Some(d.trim().to_string())),
                     _ => (text.trim().to_string(), None),
@@ -1346,6 +1386,76 @@ impl NotesApp {
         action
     }
 
+    /// Estado y botones de la sincronización con Google Calendar (al pie de la Agenda).
+    fn google_panel(&self, ui: &mut Ui) -> Option<Action> {
+        let mut action = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(format!("{} Google Calendar", icon::GOOGLE_LOGO)).font(theme::bold(14.0)));
+            match &self.gcal {
+                None => {
+                    ui.label(
+                        RichText::new("Para sincronizar, agrega google_client_id y google_client_secret en config.toml (pasos en el README).")
+                            .size(12.5)
+                            .color(MUTED),
+                    );
+                    if ui.link(RichText::new("Abrir configuración").size(12.5)).clicked() {
+                        action = Some(Action::OpenExternal(config::config_path()));
+                    }
+                }
+                Some(g) if g.connecting => {
+                    ui.label(RichText::new("Esperando tu permiso en el navegador…").size(12.5).color(ACCENT));
+                }
+                Some(g) if !g.connected => {
+                    if ui.button(format!("{} Conectar Google Calendar", icon::LINK)).clicked() {
+                        action = Some(Action::GoogleConnect);
+                    }
+                    if let Some(e) = &g.last_error {
+                        ui.label(RichText::new(e).size(12.5).color(RED));
+                    }
+                }
+                Some(g) => {
+                    let status = if g.busy {
+                        "sincronizando…".to_string()
+                    } else if let Some(e) = &g.last_error {
+                        format!("error: {e}")
+                    } else if let Some(t) = g.last_sync {
+                        format!("sincronizado a las {}", t.format("%H:%M"))
+                    } else {
+                        "conectado".to_string()
+                    };
+                    let color = if g.last_error.is_some() { RED } else { SUCCESS };
+                    ui.label(RichText::new(format!("calendario «Notas» · {status}")).size(12.5).color(color));
+                    if ui.link(RichText::new("Sincronizar ahora").size(12.5)).clicked() {
+                        action = Some(Action::GoogleSync);
+                    }
+                    if ui.link(RichText::new("Desconectar").size(12.5)).clicked() {
+                        action = Some(Action::GoogleDisconnect);
+                    }
+                }
+            }
+        });
+        action
+    }
+
+    /// Respuestas del hilo de Google y sincronización cuando cambió la agenda (o cada 10 min).
+    fn handle_gcal(&mut self) {
+        let Some(g) = &mut self.gcal else { return };
+        let was_connected = g.connected;
+        let msgs = g.poll();
+        if g.connected && !was_connected {
+            self.gcal_dirty = true;
+        }
+        let since = self.gcal_last_try.elapsed();
+        if g.connected && !g.busy && since >= Duration::from_secs(3) && (self.gcal_dirty || since >= GCAL_EVERY) {
+            g.sync(gcal::desired_items(&self.agenda));
+            self.gcal_dirty = false;
+            self.gcal_last_try = Instant::now();
+        }
+        for m in msgs {
+            self.msg(m);
+        }
+    }
+
     fn agenda_view(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
         let today = today();
@@ -1419,10 +1529,16 @@ impl NotesApp {
                     }
                 }
             }
-            ui.add_space(20.0);
+            ui.add_space(24.0);
+            ui.separator();
+            ui.add_space(8.0);
+            if let Some(a) = self.google_panel(ui) {
+                action = Some(a);
+            }
+            ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.label(
-                    RichText::new(format!("Para verla en Google Calendar u Outlook, importa {}.", agenda::ICS_FILE))
+                    RichText::new(format!("Para Outlook u otro calendario, importa {}.", agenda::ICS_FILE))
                         .size(12.5)
                         .color(MUTED),
                 );
@@ -1456,6 +1572,7 @@ impl eframe::App for NotesApp {
             self.queue_ai();
         }
         self.handle_ai_results();
+        self.handle_gcal();
 
         egui::Panel::bottom("status")
             .exact_size(26.0)

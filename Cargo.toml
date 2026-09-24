@@ -1,19 +1,23 @@
 [package]
 name = "nodex-notes"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Notas rápidas estilo Notepad con espacios de trabajo, reuniones e IA que organiza sola"
 license = "MIT"
 repository = "https://github.com/jpreyes/nodex-notes"
 
 [dependencies]
+base64 = "0.22"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 dirs = "7.0.0"
 eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
 egui-phosphor = "0.14.0"
 genai = "0.6.5"
+getrandom = "0.3"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "form"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+sha2 = "0.11.0"
 tokio = { version = "1.53.1", features = ["rt"] }
 toml = "1.1.6"
 

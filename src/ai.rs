@@ -3,8 +3,8 @@
 use crate::config::Config;
 use genai::adapter::AdapterKind;
 use genai::chat::{ChatMessage, ChatOptions, ChatRequest};
-use genai::resolver::{AuthData, AuthResolver};
-use genai::{Client, ModelIden};
+use genai::resolver::{AuthData, AuthResolver, Endpoint};
+use genai::{Client, ModelIden, ModelSpec, ServiceTarget};
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -62,35 +62,51 @@ pub struct Ai {
     pub label: String,
 }
 
-fn adapter(proveedor: &str) -> Result<AdapterKind, String> {
-    match proveedor.trim().to_lowercase().as_str() {
-        "anthropic" | "claude" => Ok(AdapterKind::Anthropic),
-        "openai" | "gpt" => Ok(AdapterKind::OpenAI),
-        "gemini" | "google" => Ok(AdapterKind::Gemini),
-        "ollama" => Ok(AdapterKind::Ollama),
-        other => Err(format!("Proveedor desconocido «{other}» (usa anthropic, openai, gemini u ollama)")),
-    }
+/// Cómo hablar con cada proveedor.
+struct Provider {
+    kind: AdapterKind,
+    /// URL base propia (servicios compatibles con la API de OpenAI).
+    endpoint: Option<&'static str>,
+    /// Variable de entorno con la clave, si no está en config.toml.
+    env: Option<&'static str>,
 }
 
-fn env_key(kind: AdapterKind) -> Option<String> {
-    let var = match kind {
-        AdapterKind::Anthropic => "ANTHROPIC_API_KEY",
-        AdapterKind::OpenAI => "OPENAI_API_KEY",
-        AdapterKind::Gemini => "GEMINI_API_KEY",
-        _ => return None,
-    };
-    std::env::var(var).ok().filter(|v| !v.is_empty())
+fn provider(proveedor: &str) -> Result<Provider, String> {
+    let p = |kind, endpoint, env| Ok(Provider { kind, endpoint, env });
+    match proveedor.trim().to_lowercase().as_str() {
+        // OpenCode Zen: API compatible con OpenAI (chat/completions).
+        "opencode" | "opencode.ai" | "opencode-zen" | "zen" => {
+            p(AdapterKind::OpenAI, Some("https://opencode.ai/zen/v1/"), Some("OPENCODE_API_KEY"))
+        }
+        "anthropic" | "claude" => p(AdapterKind::Anthropic, None, Some("ANTHROPIC_API_KEY")),
+        "openai" | "gpt" => p(AdapterKind::OpenAI, None, Some("OPENAI_API_KEY")),
+        "gemini" | "google" => p(AdapterKind::Gemini, None, Some("GEMINI_API_KEY")),
+        "ollama" => p(AdapterKind::Ollama, None, None),
+        other => Err(format!("Proveedor desconocido «{other}» (usa opencode, anthropic, openai, gemini u ollama)")),
+    }
 }
 
 impl Ai {
     /// Inicia el hilo de IA. Devuelve un error legible si falta configuración.
     pub fn start(cfg: &Config, ctx: eframe::egui::Context) -> Result<Ai, String> {
-        let kind = adapter(&cfg.proveedor)?;
-        let key = Some(cfg.clave_api.trim().to_string()).filter(|k| !k.is_empty()).or_else(|| env_key(kind));
-        if key.is_none() && kind != AdapterKind::Ollama {
+        let prov = provider(&cfg.proveedor)?;
+        let key = Some(cfg.clave_api.trim().to_string())
+            .filter(|k| !k.is_empty())
+            .or_else(|| prov.env.and_then(|v| std::env::var(v).ok()).filter(|v| !v.is_empty()));
+        if key.is_none() && prov.kind != AdapterKind::Ollama {
             return Err("Falta la clave API: agrégala en config.toml (clave_api)".into());
         }
-        let model = ModelIden::new(kind, cfg.modelo.trim().to_string());
+        let iden = ModelIden::new(prov.kind, cfg.modelo.trim().to_string());
+        // Con URL propia se usa un destino fijo (URL + clave + modelo); si no, genai resuelve el proveedor.
+        let model: ModelSpec = match (prov.endpoint, &key) {
+            (Some(url), Some(k)) => ServiceTarget {
+                endpoint: Endpoint::from_static(url),
+                auth: AuthData::from_single(k.clone()),
+                model: iden,
+            }
+            .into(),
+            _ => iden.into(),
+        };
         let label = format!("{} · {}", cfg.proveedor, cfg.modelo);
         let (tx, job_rx) = mpsc::channel::<Job>();
         let (res_tx, rx) = mpsc::channel::<JobResult>();
@@ -115,7 +131,7 @@ impl Ai {
                     let req = ChatRequest::default().with_system(job.system).append_message(ChatMessage::user(job.user));
                     let result = rt
                         .block_on(client.exec_chat(model.clone(), req, Some(&options)))
-                        .map_err(|e| e.to_string())
+                        .map_err(|e| friendly_error(&e.to_string()))
                         .and_then(|r| r.into_first_text().ok_or_else(|| "Respuesta vacía".to_string()))
                         .and_then(|text| parse_analysis(&text));
                     let _ = res_tx.send(JobResult { path: job.path, hash: job.hash, result });
@@ -131,6 +147,19 @@ impl Ai {
         if self.tx.send(job).is_ok() {
             self.busy = true;
         }
+    }
+}
+
+/// Resume un error de genai: "401 Unauthorized: Invalid API key." en vez del texto técnico completo.
+pub fn friendly_error(e: &str) -> String {
+    let between = |start: &str, end: char| {
+        let i = e.find(start)? + start.len();
+        e[i..].find(end).map(|j| e[i..i + j].to_string())
+    };
+    match (between("status code '", '\x27'), between("\"message\":\"", '"')) {
+        (Some(status), Some(msg)) => format!("{status}: {msg}"),
+        (Some(status), None) => status,
+        _ => e.lines().next().unwrap_or(e).to_string(),
     }
 }
 
@@ -209,5 +238,28 @@ mod tests {
     fn fnv_is_stable() {
         assert_eq!(fnv(""), 0xcbf29ce484222325);
         assert_ne!(fnv("a"), fnv("b"));
+    }
+}
+
+#[cfg(test)]
+mod net_tests {
+    use super::*;
+
+    /// Llama al servidor real de OpenCode Zen con una clave falsa: debe responder
+    /// "clave inválida" (y no "ruta o modelo inexistente"). `cargo test -- --ignored opencode`
+    #[test]
+    #[ignore]
+    fn opencode_endpoint_reachable() {
+        let prov = provider("opencode").unwrap();
+        let target = ServiceTarget {
+            endpoint: Endpoint::from_static(prov.endpoint.unwrap()),
+            auth: AuthData::from_single("clave-falsa"),
+            model: ModelIden::new(prov.kind, "deepseek-v4.1-flash"),
+        };
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let req = ChatRequest::default().append_message(ChatMessage::user("hola"));
+        let err = rt.block_on(Client::default().exec_chat(target, req, None)).unwrap_err().to_string();
+        println!("respuesta: {}", friendly_error(&err));
+        assert_eq!(friendly_error(&err), "401 Unauthorized: Invalid API key.");
     }
 }

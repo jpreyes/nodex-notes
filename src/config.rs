@@ -8,12 +8,15 @@ use std::path::PathBuf;
 #[serde(default)]
 pub struct Config {
     pub carpeta_notas: PathBuf,
-    /// anthropic | openai | gemini | ollama
+    /// opencode | anthropic | openai | gemini | ollama
     pub proveedor: String,
     pub modelo: String,
     pub clave_api: String,
     /// Analizar solas las notas que se escriben (reunión, espacio, etiquetas, tareas, agenda).
     pub ia_automatica: bool,
+    /// Credenciales OAuth "App de escritorio" de Google Cloud (ver README).
+    pub google_client_id: String,
+    pub google_client_secret: String,
 }
 
 impl Default for Config {
@@ -21,10 +24,12 @@ impl Default for Config {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
         Config {
             carpeta_notas: home.join("Dropbox").join("Notas"),
-            proveedor: "anthropic".into(),
-            modelo: "claude-haiku-4-5".into(),
+            proveedor: "opencode".into(),
+            modelo: "deepseek-v4.1-flash".into(),
             clave_api: String::new(),
             ia_automatica: true,
+            google_client_id: String::new(),
+            google_client_secret: String::new(),
         }
     }
 }
@@ -101,17 +106,21 @@ fn write_default(path: &PathBuf, c: &Config) -> std::io::Result<()> {
     let text = format!(
         "# Configuración de Notas\n\
          \n\
-         # Carpeta donde viven notas.txt y tareas.txt\n\
+         # Carpeta de notas (una subcarpeta por espacio de trabajo)\n\
          carpeta_notas = {}\n\
          \n\
-         # Proveedor de IA: anthropic, openai, gemini u ollama\n\
+         # Proveedor de IA: opencode (opencode.ai/zen), anthropic, openai, gemini u ollama\n\
          proveedor = {}\n\
          modelo = {}\n\
          # Clave API (no hace falta para ollama)\n\
          clave_api = \"\"\n\
          \n\
          # Analizar solas las notas al terminar de escribirlas (espacio, etiquetas, tareas, agenda)\n\
-         ia_automatica = true\n",
+         ia_automatica = true\n\
+         \n\
+         # Google Calendar: credenciales OAuth \"App de escritorio\" (pasos en el README)\n\
+         google_client_id = \"\"\n\
+         google_client_secret = \"\"\n",
         q(&c.carpeta_notas.to_string_lossy()),
         q(&c.proveedor),
         q(&c.modelo),
