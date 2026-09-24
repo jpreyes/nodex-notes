@@ -101,6 +101,26 @@ pub const PROVIDERS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("ollama", "Ollama (en este equipo)", &[], None),
 ];
 
+/// Identificador de esta sesión de la app (uno por ejecución), para `x-opencode-session`.
+fn session_id() -> &'static str {
+    static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ID.get_or_init(|| {
+        let mut b = [0u8; 12];
+        let _ = getrandom::fill(&mut b);
+        format!("nodex-notes-{}", b.iter().map(|x| format!("{x:02x}")).collect::<String>())
+    })
+}
+
+/// Cabeceras que se envían en cada petición: la app se identifica con su nombre y versión
+/// y, con OpenCode, manda un ID de sesión estable (OpenCode Go lo exige para enrutar la petición).
+fn request_headers(cfg: &Config) -> Vec<(String, String)> {
+    let mut h = vec![("User-Agent".to_string(), format!("nodex-notes/{}", env!("CARGO_PKG_VERSION")))];
+    if cfg.proveedor.trim().to_lowercase().starts_with("opencode") || matches!(cfg.proveedor.trim(), "go" | "zen") {
+        h.push(("x-opencode-session".to_string(), session_id().to_string()));
+    }
+    h
+}
+
 /// Cliente y destino (URL, clave y modelo) según la configuración.
 fn connection(cfg: &Config) -> Result<(Client, ModelSpec), String> {
     let prov = provider(&cfg.proveedor)?;
@@ -139,12 +159,13 @@ fn connection(cfg: &Config) -> Result<(Client, ModelSpec), String> {
 pub fn test_connection(cfg: &Config, ctx: eframe::egui::Context) -> Receiver<Result<u128, String>> {
     let (tx, rx) = mpsc::channel();
     let conn = connection(cfg);
+    let headers = request_headers(cfg);
     std::thread::spawn(move || {
         let result = conn.and_then(|(client, model)| {
             let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
             let start = std::time::Instant::now();
             let req = ChatRequest::default().append_message(ChatMessage::user("Responde solo: ok"));
-            let options = ChatOptions::default().with_max_tokens(20);
+            let options = ChatOptions::default().with_max_tokens(20).with_extra_headers(headers);
             rt.block_on(client.exec_chat(model, req, Some(&options))).map_err(|e| friendly_error(&e.to_string()))?;
             Ok(start.elapsed().as_millis())
         });
@@ -159,6 +180,7 @@ impl Ai {
     pub fn start(cfg: &Config, ctx: eframe::egui::Context) -> Result<Ai, String> {
         let (client, model) = connection(cfg)?;
         let label = format!("{} · {}", cfg.proveedor, cfg.modelo);
+        let headers = request_headers(cfg);
         let (tx, job_rx) = mpsc::channel::<Job>();
         let (res_tx, rx) = mpsc::channel::<JobResult>();
 
@@ -168,7 +190,8 @@ impl Ai {
                 let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
                     return;
                 };
-                let options = ChatOptions::default().with_temperature(0.2).with_max_tokens(2000);
+                let options =
+                    ChatOptions::default().with_temperature(0.2).with_max_tokens(2000).with_extra_headers(headers);
                 for job in job_rx {
                     let req = ChatRequest::default().with_system(job.system).append_message(ChatMessage::user(job.user));
                     let result = rt
@@ -305,5 +328,42 @@ mod net_tests {
             println!("{name}: {}", friendly_error(&err));
             assert_eq!(friendly_error(&err), "401 Unauthorized: Invalid API key.", "{name}: {err}");
         }
+    }
+}
+
+#[cfg(test)]
+mod header_tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    /// Un servidor local captura la petición real: debe llevar User-Agent propio y x-opencode-session.
+    #[test]
+    fn opencode_requests_carry_session_and_user_agent() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let mut buf = vec![0u8; 16384];
+            let n = s.read(&mut buf).unwrap();
+            let body = r#"{"id":"x","object":"chat.completion","model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
+            let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes());
+            String::from_utf8_lossy(&buf[..n]).to_lowercase()
+        });
+
+        let cfg = Config { proveedor: "opencode-go".into(), ..Config::default() };
+        let target = ServiceTarget {
+            endpoint: Endpoint::from_owned(format!("http://127.0.0.1:{port}/")),
+            auth: AuthData::from_single("k"),
+            model: ModelIden::new(AdapterKind::OpenAI, "deepseek-v4.1-flash"),
+        };
+        let options = ChatOptions::default().with_extra_headers(request_headers(&cfg));
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let req = ChatRequest::default().append_message(ChatMessage::user("hola"));
+        let res = rt.block_on(Client::default().exec_chat(target, req, Some(&options))).unwrap();
+        assert_eq!(res.first_text(), Some("ok"));
+
+        let raw = server.join().unwrap();
+        assert!(raw.contains(&format!("x-opencode-session: {}", session_id())), "{raw}");
+        assert!(raw.contains(&format!("user-agent: nodex-notes/{}", env!("CARGO_PKG_VERSION"))), "{raw}");
     }
 }

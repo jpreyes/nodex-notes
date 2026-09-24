@@ -69,7 +69,7 @@ google_client_secret = ""
 
 Por defecto la IA usa **DeepSeek V4.1 Flash** a través de [OpenCode Zen](https://opencode.ai/zen): crea tu clave en opencode.ai y pégala en `clave_api`. Se puede usar cualquier otro modelo de Zen cambiando `modelo` (por ejemplo `deepseek-v4-pro`).
 
-Si tienes el plan **OpenCode Go** (suscripción mensual con límite de uso), usa `proveedor = "opencode-go"`: misma clave y mismo modelo, pero cobra contra tu suscripción (`https://opencode.ai/zen/go/v1/`) en vez de tu saldo de Zen (`https://opencode.ai/zen/v1/`).
+Si tienes el plan **OpenCode Go** (suscripción mensual con límite de uso), usa `proveedor = "opencode-go"`: misma clave y mismo modelo, pero cobra contra tu suscripción (`https://opencode.ai/zen/go/v1/`) en vez de tu saldo de Zen (`https://opencode.ai/zen/v1/`). La app se identifica como `nodex-notes/<versión>` y envía el ID de sesión `x-opencode-session` que Go exige. Ten en cuenta que OpenCode diseñó Go para agentes de programación y vigila el tipo de uso; para organizar notas, Zen no tiene esa restricción.
 
 Sin clave API la app funciona igual; solo se desactiva la IA. Con `ollama` no hace falta clave.
 
