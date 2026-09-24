@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Instalador .msi de Notas (WiX Toolset v3). Lo compila el workflow de GitHub:
+    candle -arch x64 -dVersion=X.Y.Z -dExePath=... -dLicenseRtf=wix/License.rtf wix/main.wxs
+    light -ext WixUIExtension -cultures:es-es main.wixobj -out Notas-windows-x64.msi
+  Instala en "Archivos de programa\Notas" y agrega el acceso en el menú Inicio.
+  UpgradeCode no debe cambiar nunca: así una versión nueva reemplaza a la anterior.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="Notas"
+           Language="1034"
+           Codepage="1252"
+           Version="$(var.Version)"
+           Manufacturer="JP Reyes"
+           UpgradeCode="{E9A91EB2-9998-480A-B6A9-56857179CCA0}">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Platform="x64"
+             Description="Notas"
+             Comments="Notas rápidas con espacios de trabajo, reuniones e IA que organiza sola" />
+
+    <MajorUpgrade DowngradeErrorMessage="Ya está instalada una versión más nueva de Notas." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Datos que muestra "Aplicaciones instaladas" -->
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/jpreyes/nodex-notes" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/jpreyes/nodex-notes#readme" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="Notas" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder" />
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="MainExe" Guid="*">
+        <File Id="NotasExe" Name="Notas.exe" Source="$(var.ExePath)" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="NotasShortcut"
+                  Name="Notas"
+                  Description="Notas rápidas con IA"
+                  Target="[#NotasExe]"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\nodex-notes" Name="acceso" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Main" Title="Notas" Level="1">
+      <ComponentRef Id="MainExe" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+    <!-- Asistente simple: licencia + "Instalar" -->
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+    <UIRef Id="WixUI_Minimal" />
+  </Product>
+</Wix>

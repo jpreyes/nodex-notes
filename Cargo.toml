@@ -28,3 +28,20 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
+
+# Paquete .deb para Debian/Ubuntu (cargo deb). Las librerías gráficas se cargan en tiempo
+# de ejecución, por eso se declaran a mano además de $auto.
+[package.metadata.deb]
+name = "nodex-notes"
+maintainer = "JP Reyes <jpreyes@users.noreply.github.com>"
+copyright = "2026, JP Reyes"
+license-file = ["LICENSE", "0"]
+extended-description = "Notas rápidas estilo Notepad con espacios de trabajo, reuniones e IA que organiza sola. Guarda todo en archivos Markdown."
+section = "editors"
+priority = "optional"
+depends = "$auto, libxkbcommon0, libgl1, libegl1"
+assets = [
+    ["target/release/nodex-notes", "usr/bin/", "755"],
+    ["packaging/linux/nodex-notes.desktop", "usr/share/applications/", "644"],
+    ["README.md", "usr/share/doc/nodex-notes/README.md", "644"],
+]

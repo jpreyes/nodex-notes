@@ -1,10 +1,12 @@
-# Al subir una etiqueta vX.Y.Z: crea el Release como borrador, le adjunta los ejecutables
-# de cada sistema y recién entonces lo publica (así "latest" nunca queda sin archivos).
+# Al subir una etiqueta vX.Y.Z: crea el Release como borrador, le adjunta los ejecutables e
+# instaladores de cada sistema y recién entonces lo publica (así "latest" nunca queda sin archivos).
+# Lanzado a mano (workflow_dispatch) solo compila y empaqueta, sin publicar nada: sirve de prueba.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,9 +14,11 @@ permissions:
 env:
   GH_TOKEN: ${{ github.token }}
   TAG: ${{ github.ref_name }}
+  PUBLISH: ${{ github.event_name == 'push' }}
 
 jobs:
   create:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Crear release (borrador)
@@ -23,22 +27,21 @@ jobs:
 
   build:
     needs: create
+    if: ${{ !failure() && !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            asset: Notas-windows-x64.exe
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            asset: Notas-linux-x64.tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
-            asset: Notas-macos-apple-silicon.zip
+            mac: apple-silicon
           - os: macos-latest
             target: x86_64-apple-darwin
-            asset: Notas-macos-intel.zip
+            mac: intel
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -61,14 +64,28 @@ jobs:
       - name: Empaquetar
         run: |
           BIN=target/${{ matrix.target }}/release/nodex-notes
-          mkdir -p dist
+          VER=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          mkdir -p dist pkg
           case "${{ runner.os }}" in
             Windows)
-              cp "$BIN.exe" "dist/${{ matrix.asset }}" ;;
+              cp "$BIN.exe" dist/Notas-windows-x64.exe
+              # Instalador .msi (WiX Toolset v3; si el runner no lo trae, se instala).
+              WIXBIN=$(ls -d "/c/Program Files (x86)/WiX Toolset v3"*/bin 2>/dev/null | head -1)
+              if [ -z "$WIXBIN" ]; then
+                choco install wixtoolset --no-progress -y
+                WIXBIN=$(ls -d "/c/Program Files (x86)/WiX Toolset v3"*/bin | head -1)
+              fi
+              "$WIXBIN/candle.exe" -nologo -arch x64 -dVersion="$VER" -dExePath="$BIN.exe" \
+                -dLicenseRtf=wix/License.rtf wix/main.wxs -out pkg/main.wixobj
+              "$WIXBIN/light.exe" -nologo -ext WixUIExtension -cultures:es-es \
+                pkg/main.wixobj -out dist/Notas-windows-x64.msi ;;
             Linux)
-              tar -czf "dist/${{ matrix.asset }}" -C "$(dirname "$BIN")" nodex-notes ;;
+              tar -czf dist/Notas-linux-x64.tar.gz -C "$(dirname "$BIN")" nodex-notes
+              # Paquete .deb
+              cargo install cargo-deb --locked
+              cargo deb --no-build --target ${{ matrix.target }} --output dist/Notas-linux-x64.deb ;;
             macOS)
-              APP=dist/Notas.app
+              APP=pkg/Notas.app
               mkdir -p "$APP/Contents/MacOS"
               cp "$BIN" "$APP/Contents/MacOS/nodex-notes"
               cat > "$APP/Contents/Info.plist" <<EOF
@@ -80,21 +97,24 @@ jobs:
             <key>CFBundleIdentifier</key><string>io.github.jpreyes.nodex-notes</string>
             <key>CFBundleExecutable</key><string>nodex-notes</string>
             <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleShortVersionString</key><string>${TAG#v}</string>
-            <key>CFBundleVersion</key><string>${TAG#v}</string>
+            <key>CFBundleShortVersionString</key><string>$VER</string>
+            <key>CFBundleVersion</key><string>$VER</string>
             <key>NSHighResolutionCapable</key><true/>
             <key>LSMinimumSystemVersion</key><string>11.0</string>
           </dict></plist>
           EOF
               codesign --force --deep --sign - "$APP"
-              (cd dist && ditto -c -k --keepParent Notas.app "${{ matrix.asset }}") ;;
+              (cd pkg && ditto -c -k --keepParent Notas.app "../dist/Notas-macos-${{ matrix.mac }}.zip") ;;
           esac
+          ls -la dist
 
       - name: Subir al release
-        run: gh release upload "$TAG" "dist/${{ matrix.asset }}" --repo "$GITHUB_REPOSITORY" --clobber
+        if: env.PUBLISH == 'true'
+        run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
 
   publish:
     needs: build
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Publicar release
