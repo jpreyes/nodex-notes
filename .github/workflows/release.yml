@@ -1,4 +1,5 @@
-# Al subir una etiqueta vX.Y.Z: crea el Release y le adjunta los ejecutables de cada sistema.
+# Al subir una etiqueta vX.Y.Z: crea el Release como borrador, le adjunta los ejecutables
+# de cada sistema y recién entonces lo publica (así "latest" nunca queda sin archivos).
 name: Release
 
 on:
@@ -16,9 +17,9 @@ jobs:
   create:
     runs-on: ubuntu-latest
     steps:
-      - name: Crear release
+      - name: Crear release (borrador)
         run: |
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "Notas $TAG" --notes "Descargas para Windows, macOS y Linux. Instrucciones en el README."
+          gh release create "$TAG" --draft --repo "$GITHUB_REPOSITORY" --title "Notas $TAG" --notes "Descargas para Windows, macOS y Linux. Instrucciones en el README."
 
   build:
     needs: create
@@ -91,3 +92,10 @@ jobs:
 
       - name: Subir al release
         run: gh release upload "$TAG" "dist/${{ matrix.asset }}" --repo "$GITHUB_REPOSITORY" --clobber
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publicar release
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
