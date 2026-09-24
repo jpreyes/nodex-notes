@@ -36,6 +36,10 @@ impl Default for Config {
 }
 
 pub fn config_path() -> PathBuf {
+    // Para pruebas: otra carpeta, así nunca se toca la configuración real.
+    if let Some(dir) = std::env::var_os("NODEX_CONFIG_DIR").filter(|d| !d.is_empty()) {
+        return PathBuf::from(dir).join("config.toml");
+    }
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("nodex-notes")

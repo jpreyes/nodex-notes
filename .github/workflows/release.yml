@@ -76,7 +76,7 @@ jobs:
                 WIXBIN=$(ls -d "/c/Program Files (x86)/WiX Toolset v3"*/bin | head -1)
               fi
               "$WIXBIN/candle.exe" -nologo -arch x64 -dVersion="$VER" -dExePath="$BIN.exe" \
-                -dLicenseRtf=wix/License.rtf wix/main.wxs -out pkg/main.wixobj
+                -dLicenseRtf=wix/License.rtf -dIconPath=assets/icon.ico wix/main.wxs -out pkg/main.wixobj
               "$WIXBIN/light.exe" -nologo -spdb -ext WixUIExtension -cultures:es-es \
                 pkg/main.wixobj -out dist/Notas-windows-x64.msi ;;
             Linux)
@@ -87,8 +87,15 @@ jobs:
               dpkg-deb --info dist/Notas-linux-x64.deb && dpkg-deb --contents dist/Notas-linux-x64.deb ;;
             macOS)
               APP=pkg/Notas.app
-              mkdir -p "$APP/Contents/MacOS"
+              mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
               cp "$BIN" "$APP/Contents/MacOS/nodex-notes"
+              # Ícono .icns a partir del PNG de 1024 px
+              ICONSET=pkg/AppIcon.iconset; mkdir -p "$ICONSET"
+              for s in 16 32 128 256 512; do
+                sips -z $s $s assets/icon-1024.png --out "$ICONSET/icon_${s}x${s}.png" > /dev/null
+                sips -z $((s*2)) $((s*2)) assets/icon-1024.png --out "$ICONSET/icon_${s}x${s}@2x.png" > /dev/null
+              done
+              iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
               cat > "$APP/Contents/Info.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -97,6 +104,7 @@ jobs:
             <key>CFBundleDisplayName</key><string>Notas</string>
             <key>CFBundleIdentifier</key><string>io.github.jpreyes.nodex-notes</string>
             <key>CFBundleExecutable</key><string>nodex-notes</string>
+            <key>CFBundleIconFile</key><string>AppIcon</string>
             <key>CFBundlePackageType</key><string>APPL</string>
             <key>CFBundleShortVersionString</key><string>$VER</string>
             <key>CFBundleVersion</key><string>$VER</string>

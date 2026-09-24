@@ -19,6 +19,8 @@ pub fn fnv(s: &str) -> u64 {
 pub struct AiTask {
     pub texto: String,
     pub fecha: String,
+    /// En una nota de captura: la unidad de donde sale ("L3", "B5").
+    pub unidad: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -27,19 +29,35 @@ pub struct AiEvent {
     pub titulo: String,
     pub fecha: String,
     pub hora: String,
+    pub unidad: String,
+}
+
+/// En una nota de captura: a qué nota (y espacio) va una unidad (línea o bloque "##").
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct AiUnit {
+    pub id: String,
+    pub espacio: String,
+    pub nota: String,
+    pub etiquetas: Vec<String>,
+    pub es_reunion: bool,
+    pub resumen: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Analysis {
+    // Nota con título: se analiza completa.
     pub es_reunion: bool,
     pub espacio: String,
     pub confianza: String,
     pub titulo: String,
     pub etiquetas: Vec<String>,
+    pub resumen: String,
+    // Nota de captura: cada unidad por separado.
+    pub unidades: Vec<AiUnit>,
     pub tareas: Vec<AiTask>,
     pub eventos: Vec<AiEvent>,
-    pub resumen: String,
 }
 
 pub struct Job {
@@ -165,7 +183,7 @@ pub fn test_connection(cfg: &Config, ctx: eframe::egui::Context) -> Receiver<Res
             let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
             let start = std::time::Instant::now();
             let req = ChatRequest::default().append_message(ChatMessage::user("Responde solo: ok"));
-            let options = ChatOptions::default().with_max_tokens(20).with_extra_headers(headers);
+            let options = ChatOptions::default().with_extra_headers(headers);
             rt.block_on(client.exec_chat(model, req, Some(&options))).map_err(|e| friendly_error(&e.to_string()))?;
             Ok(start.elapsed().as_millis())
         });
@@ -183,22 +201,37 @@ impl Ai {
         let headers = request_headers(cfg);
         let (tx, job_rx) = mpsc::channel::<Job>();
         let (res_tx, rx) = mpsc::channel::<JobResult>();
+        let log_label = label.clone();
 
         std::thread::Builder::new()
             .name("ia".into())
             .spawn(move || {
+                let label = log_label;
                 let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
                     return;
                 };
-                let options =
-                    ChatOptions::default().with_temperature(0.2).with_max_tokens(2000).with_extra_headers(headers);
+                // Sin límite de tokens propio: cada modelo usa los que necesite.
+                let options = ChatOptions::default()
+                    .with_temperature(0.2)
+                    .with_normalize_reasoning_content(true)
+                    .with_extra_headers(headers);
                 for job in job_rx {
-                    let req = ChatRequest::default().with_system(job.system).append_message(ChatMessage::user(job.user));
-                    let result = rt
-                        .block_on(client.exec_chat(model.clone(), req, Some(&options)))
-                        .map_err(|e| friendly_error(&e.to_string()))
-                        .and_then(|r| r.into_first_text().ok_or_else(|| "Respuesta vacía".to_string()))
-                        .and_then(|text| parse_analysis(&text));
+                    let req = ChatRequest::default().with_system(&job.system).append_message(ChatMessage::user(&job.user));
+                    let result = match rt.block_on(client.exec_chat(model.clone(), req, Some(&options))) {
+                        Ok(r) => {
+                            let text = r.first_text().unwrap_or("").trim().to_string();
+                            let reasoning = r.reasoning_content.clone().unwrap_or_default();
+                            let stop = r.stop_reason.as_ref().map(|s| format!("{s:?}")).unwrap_or_else(|| "?".into());
+                            let result = interpret(&text, &reasoning, &stop);
+                            log_exchange(&label, &job, &format!("{:?}", r.usage), &stop, &text, &reasoning, &result);
+                            result
+                        }
+                        Err(e) => {
+                            let e = friendly_error(&e.to_string());
+                            log_exchange(&label, &job, "", "error", "", "", &Err(e.clone()));
+                            Err(e)
+                        }
+                    };
                     let _ = res_tx.send(JobResult { path: job.path, hash: job.hash, result });
                     ctx.request_repaint();
                 }
@@ -228,6 +261,50 @@ pub fn friendly_error(e: &str) -> String {
     }
 }
 
+/// Saca el análisis de la respuesta; si el texto viene vacío, lo busca en el razonamiento del modelo.
+pub fn interpret(text: &str, reasoning: &str, stop: &str) -> Result<Analysis, String> {
+    if !text.is_empty() {
+        return parse_analysis(text).or_else(|e| parse_analysis(reasoning).map_err(|_| e));
+    }
+    if let Ok(a) = parse_analysis(reasoning) {
+        return Ok(a);
+    }
+    let why = if stop.contains("MaxTokens") {
+        "se cortó por el límite de tokens del modelo".to_string()
+    } else if !reasoning.is_empty() {
+        format!("solo razonó ({} caracteres) y no respondió", reasoning.chars().count())
+    } else {
+        format!("motivo: {stop}")
+    };
+    Err(format!("el modelo devolvió una respuesta vacía ({why}). Detalle en ia-ultima.txt"))
+}
+
+/// Guarda el último intercambio con la IA (junto a config.toml, solo en este equipo) para diagnosticar.
+fn log_exchange(
+    label: &str,
+    job: &Job,
+    usage: &str,
+    stop: &str,
+    text: &str,
+    reasoning: &str,
+    result: &Result<Analysis, String>,
+) {
+    let cut = |s: &str, n: usize| s.chars().take(n).collect::<String>();
+    let outcome = match result {
+        Ok(a) => format!("OK: {a:?}"),
+        Err(e) => format!("ERROR: {e}"),
+    };
+    let log = format!(
+        "Fecha: {}\nModelo: {label}\nNota: {}\nMotivo de término: {stop}\nUso: {usage}\n\n== Resultado ==\n{outcome}\n\n== Respuesta ==\n{}\n\n== Razonamiento ==\n{}\n\n== Nota enviada ==\n{}\n",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        job.path.display(),
+        cut(text, 20_000),
+        cut(reasoning, 20_000),
+        cut(&job.user, 20_000),
+    );
+    let _ = std::fs::write(crate::config::config_path().with_file_name("ia-ultima.txt"), log);
+}
+
 /// Extrae el objeto JSON aunque venga con texto o ``` alrededor.
 pub fn parse_analysis(text: &str) -> Result<Analysis, String> {
     let (Some(a), Some(b)) = (text.find('{'), text.rfind('}')) else {
@@ -244,6 +321,37 @@ pub struct WorkspaceInfo {
 
 const DIAS: [&str; 7] = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 
+
+/// Contexto común: espacios de trabajo, sus notas y etiquetas.
+fn context(workspaces: &[WorkspaceInfo], all_tags: &[String]) -> String {
+    let mut s = String::from("Espacios de trabajo disponibles:\n");
+    for w in workspaces {
+        s += &format!("- {}", w.name);
+        if !w.titles.is_empty() {
+            s += &format!(" (notas: {})", w.titles.join(", "));
+        }
+        if !w.tags.is_empty() {
+            s += &format!(" (etiquetas: {})", w.tags.join(", "));
+        }
+        s.push('\n');
+    }
+    if !all_tags.is_empty() {
+        s += &format!("\nEtiquetas existentes: {}\n", all_tags.join(", "));
+    }
+    s
+}
+
+fn today() -> String {
+    use chrono::Datelike;
+    let now = chrono::Local::now();
+    format!("{} {}", DIAS[now.weekday().num_days_from_monday() as usize], now.format("%Y-%m-%d"))
+}
+
+const RULES_TASKS: &str = r#"- Etiquetas en minúsculas, una palabra (guiones si hace falta), sin '#'. Prefiere etiquetas existentes y no repitas las que el texto ya tiene.
+- tareas: acciones pendientes concretas que la persona debe hacer ("debo…", "hay que…", "tengo que…"), redactadas con verbo en infinitivo. Ignora las marcadas como hechas ([x]). "fecha" (AAAA-MM-DD) si se indica o se deduce: "mañana" = el día siguiente a hoy; "el viernes" = la fecha de ese viernes; un plazo vago como "la próxima semana" = el viernes de la próxima semana. Si no hay plazo, "".
+- eventos: citas, visitas o reuniones futuras con fecha (AAAA-MM-DD) y hora (HH:MM) si se indica. Las entregas con plazo son tareas, no eventos. No incluyas una reunión que el propio texto está registrando."#;
+
+/// Nota con título propio: se analiza completa (sus líneas ya están en su nota).
 pub fn build_prompt(
     title: &str,
     workspace: &str,
@@ -251,44 +359,84 @@ pub fn build_prompt(
     workspaces: &[WorkspaceInfo],
     all_tags: &[String],
 ) -> (String, String) {
-    use chrono::Datelike;
-    let now = chrono::Local::now();
-    let today = format!("{} {}", DIAS[now.weekday().num_days_from_monday() as usize], now.format("%Y-%m-%d"));
     let system = format!(
         r#"Organizas las notas de una persona que escribe en español. Devuelve SOLO un objeto JSON válido, sin texto adicional, con esta forma exacta:
-{{"es_reunion": false, "espacio": "", "confianza": "baja", "titulo": "", "etiquetas": [], "tareas": [{{"texto": "", "fecha": ""}}], "eventos": [{{"titulo": "", "fecha": "", "hora": ""}}], "resumen": ""}}
+{{"es_reunion": false, "espacio": "", "confianza": "baja", "titulo": "", "etiquetas": [], "resumen": "", "tareas": [{{"texto": "", "fecha": ""}}], "eventos": [{{"titulo": "", "fecha": "", "hora": ""}}]}}
 
 Reglas:
 - es_reunion: true si la nota registra una reunión, llamada o conversación con otras personas.
-- espacio: el espacio de trabajo al que pertenece TODA la nota, escrito exactamente como en la lista. confianza "alta" solo si es evidente; si la nota mezcla temas de varios espacios o no está claro, deja el espacio actual con confianza "baja".
-- titulo: título breve (máximo 6 palabras) que describa la nota, sin fecha.
-- etiquetas: de 1 a 4, en minúsculas, una palabra cada una (usa guiones si hace falta), sin '#'. Prefiere etiquetas que ya existen. No repitas las que la nota ya tiene.
-- tareas: acciones pendientes concretas que la persona debe hacer, empezando con verbo en infinitivo. Ignora las marcadas como hechas ([x]). "fecha" (AAAA-MM-DD) solo si la nota la indica o se deduce (por ejemplo "el viernes" = la fecha real de ese viernes); si no, "".
-- eventos: citas, visitas, entregas o reuniones futuras con fecha concreta (AAAA-MM-DD) y hora (HH:MM) si se indica. No incluyas la reunión que la propia nota registra.
+- espacio: el espacio de trabajo al que pertenece la nota, exactamente como en la lista. confianza "alta" solo si es evidente; si no está claro, deja el espacio actual con confianza "baja".
+- titulo: título breve (máximo 6 palabras), sin fecha. etiquetas: 1 a 4.
 - resumen: si es una reunión, 2 o 3 frases con decisiones y acuerdos; si no, "".
-Hoy es {today}."#
+{RULES_TASKS}
+Hoy es {}."#,
+        today()
     );
-    let mut user = String::from("Espacios de trabajo disponibles:\n");
-    for w in workspaces {
-        user += &format!("- {}", w.name);
-        if !w.titles.is_empty() {
-            user += &format!(" (notas: {})", w.titles.join(", "));
-        }
-        if !w.tags.is_empty() {
-            user += &format!(" (etiquetas: {})", w.tags.join(", "));
-        }
-        user.push('\n');
-    }
-    if !all_tags.is_empty() {
-        user += &format!("\nEtiquetas existentes: {}\n", all_tags.join(", "));
-    }
-    user += &format!("\nEspacio actual: {workspace}\nTítulo actual: {title}\n\nNota:\n<<<\n{text}\n>>>");
+    let user = format!(
+        "{}\nEspacio actual: {workspace}\nTítulo actual: {title}\n\nNota:\n<<<\n{text}\n>>>",
+        context(workspaces, all_tags)
+    );
     (system, user)
 }
 
+/// Nota de captura: cada línea es una nota distinta, salvo los bloques "##" que van juntos.
+pub fn build_capture_prompt(
+    text: &str,
+    units: &[crate::capture::Unit],
+    workspaces: &[WorkspaceInfo],
+    all_tags: &[String],
+) -> (String, String) {
+    let system = format!(
+        r###"Organizas los apuntes rápidos de una persona que escribe en español. Cada línea es una nota independiente, salvo los bloques que empiezan con "##" (una reunión o un tema), que van juntos. Recibes esas unidades con su id ("L3" = línea 3; "B5" = bloque que empieza en la línea 5). Devuelve SOLO un objeto JSON válido, sin texto adicional, con esta forma exacta:
+{{"unidades": [{{"id": "L1", "espacio": "", "nota": "", "etiquetas": [], "es_reunion": false, "resumen": ""}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}]}}
+
+Reglas:
+- unidades: para cada unidad que claramente pertenece a un tema, di dónde guardarla. "espacio": un espacio de la lista, escrito exactamente igual. "nota": el título exacto de una nota existente de ese espacio si alguna corresponde; si no, un título nuevo y breve (máximo 5 palabras). Las unidades del mismo tema van a la misma nota. En un bloque "##", si no calza con una nota existente, usa como nota el título del bloque (sin fecha). etiquetas: 0 a 2.
+- Las unidades que no se pueden atribuir con seguridad NO se incluyen: se quedan donde están.
+- es_reunion y resumen solo para bloques que registran una reunión: 2 o 3 frases con decisiones y acuerdos.
+- En tareas y eventos, "unidad" es el id de la unidad de donde salen.
+{RULES_TASKS}
+Hoy es {}."###,
+        today()
+    );
+    let lines: Vec<&str> = text.lines().collect();
+    let mut listed = String::new();
+    for u in units {
+        if u.block {
+            listed += &format!("[{}] (bloque, líneas {} a {})\n", u.id, u.first + 1, u.last + 1);
+            for l in &lines[u.first..=u.last] {
+                listed += &format!("    {l}\n");
+            }
+        } else {
+            listed += &format!("[{}] {}\n", u.id, lines[u.first]);
+        }
+    }
+    let user = format!("{}\nUnidades:\n<<<\n{listed}>>>", context(workspaces, all_tags));
+    (system, user)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_answers_are_explained_or_rescued() {
+        // Texto vacío pero el JSON quedó en el razonamiento: se rescata.
+        let a = interpret("", "pensando… {\"unidades\": [{\"id\": \"L2\", \"espacio\": \"X\", \"nota\": \"Y\"}]}", "Completed").unwrap();
+        assert_eq!((a.unidades[0].id.as_str(), a.unidades[0].nota.as_str()), ("L2", "Y"));
+        // Sin nada: el error dice por qué.
+        let e = interpret("", "mucho razonamiento sin respuesta", "MaxTokens(\"length\")").unwrap_err();
+        assert!(e.contains("límite"), "{e}");
+        let e = interpret("", "solo pensé", "Completed(\"stop\")").unwrap_err();
+        assert!(e.contains("solo razonó"), "{e}");
+    }
+
+    #[test]
+    fn capture_prompt_lists_units() {
+        let text = "uno\n\n## Reunión X · hoy\n- 10:00 algo\n## fin · 10:30\ncuatro";
+        let (_, user) = build_capture_prompt(text, &crate::capture::units(text), &[], &[]);
+        assert!(user.contains("[L1] uno\n[B3] (bloque, líneas 3 a 5)\n    ## Reunión X · hoy\n"), "{user}");
+        assert!(user.contains("[L6] cuatro\n"), "{user}");
+    }
 
     #[test]
     fn parses_fenced_json() {

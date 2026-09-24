@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Instalador .msi de Notas (WiX Toolset v3). Lo compila el workflow de GitHub:
-    candle -arch x64 -dVersion=X.Y.Z -dExePath=... -dLicenseRtf=wix/License.rtf wix/main.wxs
+    candle -arch x64 -dVersion=X.Y.Z -dExePath=... -dLicenseRtf=wix/License.rtf -dIconPath=assets/icon.ico wix/main.wxs
     light -ext WixUIExtension -cultures:es-es main.wixobj -out Notas-windows-x64.msi
   Instala en "Archivos de programa\Notas" y agrega el acceso en el menú Inicio.
   UpgradeCode no debe cambiar nunca: así una versión nueva reemplaza a la anterior.
@@ -24,6 +24,10 @@
 
     <MajorUpgrade DowngradeErrorMessage="Ya está instalada una versión más nueva de Notas." />
     <MediaTemplate EmbedCab="yes" />
+
+    <!-- Ícono del instalador, del acceso directo y de "Aplicaciones instaladas" -->
+    <Icon Id="NotasIcon" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="NotasIcon" />
 
     <!-- Datos que muestra "Aplicaciones instaladas" -->
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/jpreyes/nodex-notes" />
@@ -48,6 +52,7 @@
                   Name="Notas"
                   Description="Notas rápidas con IA"
                   Target="[#NotasExe]"
+                  Icon="NotasIcon"
                   WorkingDirectory="INSTALLFOLDER" />
         <RegistryValue Root="HKCU" Key="Software\nodex-notes" Name="acceso" Type="integer" Value="1" KeyPath="yes" />
       </Component>

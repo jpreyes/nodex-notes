@@ -7,4 +7,5 @@ Exec=nodex-notes
 Terminal=false
 Categories=Office;Utility;TextEditor;
 Keywords=notas;notes;markdown;reuniones;agenda;
+Icon=nodex-notes
 StartupWMClass=nodex-notes

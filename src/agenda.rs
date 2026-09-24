@@ -199,6 +199,31 @@ impl Agenda {
         self.write_ics()
     }
 
+    /// Agrega tareas y eventos sin tocar los que ya existen (omite los repetidos).
+    pub fn add_lines(&self, tasks: &[String], events: &[String]) -> io::Result<()> {
+        if tasks.is_empty() && events.is_empty() {
+            return Ok(());
+        }
+        let key_t = |l: &str| parse_task(l).map(|t| (t.text.to_lowercase(), t.note));
+        let mut task_lines = self.read_lines(TASKS_FILE);
+        for t in tasks {
+            if !task_lines.iter().any(|l| key_t(l) == key_t(t)) {
+                task_lines.push(t.clone());
+            }
+        }
+        let key_e = |l: &str| parse_event(l).map(|e| (e.date, e.time, e.title.to_lowercase()));
+        let mut event_lines = self.read_lines(AGENDA_FILE);
+        for e in events {
+            if !event_lines.iter().any(|l| key_e(l) == key_e(e)) {
+                event_lines.push(e.clone());
+            }
+        }
+        event_lines.sort();
+        self.write_lines(TASKS_FILE, &task_lines)?;
+        self.write_lines(AGENDA_FILE, &event_lines)?;
+        self.write_ics()
+    }
+
     pub fn add_task(&self, line: String) -> io::Result<()> {
         let mut lines = self.read_lines(TASKS_FILE);
         lines.push(line);

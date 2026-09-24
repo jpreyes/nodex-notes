@@ -41,11 +41,21 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 
 ## IA
 
-Al dejar una nota (o tras 45 segundos sin tocarla), la IA:
+Al dejar una nota (o tras 45 segundos sin tocarla), la IA la organiza.
+
+**En la nota del día y en las "Sin título" (captura rápida), cada línea es una nota distinta**, salvo que la agrupes con `##`: un bloque que empieza con `## Título` va junto hasta `## fin`, el siguiente `##` o una línea en blanco. La IA decide dónde va cada línea o bloque:
+
+- a una nota existente del espacio que corresponde (por ejemplo, "Trincheras" en *Consorcio*), o a una nota nueva con un título breve;
+- los bloques de reunión se mueven completos, con un resumen y `#reunión`;
+- lo que no puede atribuir con seguridad se queda donde está.
+
+**En las notas con título propio**, la IA las analiza completas:
 
 - detecta si es una reunión, le pone `#reunión` y un resumen;
 - la mueve a su espacio de trabajo, solo cuando está segura;
 - agrega etiquetas (reutiliza las existentes) y pone nombre a las notas "Sin título";
+
+En ambos casos:
 - extrae tareas a `tareas.txt` (formato [todo.txt](https://github.com/todotxt/todo.txt)) y eventos a `agenda.txt`, los sincroniza con [Google Calendar](#google-calendar) y genera `agenda.ics` para Outlook u otros calendarios.
 
 Cada cambio se puede deshacer desde la barra inferior. El botón ✦ organiza las notas antiguas pendientes.
@@ -105,6 +115,8 @@ Notas/
   .papelera/             ← notas eliminadas
 ```
 
+Si la IA falla o responde vacío, el último intercambio queda en `ia-ultima.txt` (junto a `config.toml`) para ver qué pasó.
+
 Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro equipo), la app lo recarga. Si justo lo estabas editando, la otra versión se guarda como copia "(conflicto)".
 
 ## Código
@@ -115,6 +127,7 @@ Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro eq
 | `src/app.rs` | Interfaz y comportamiento: barra de íconos, barra lateral, editor, reuniones, lo que hace la IA (y deshacer), vistas Tareas y Agenda. |
 | `src/app/settings.rs` | Ventana de Configuración (General, IA, Calendar, Atajos, Acerca de). |
 | `src/ai.rs` | Conexión con la IA (genai) en un hilo aparte y el prompt con las reglas. |
+| `src/capture.rs` | Notas de captura: separa cada línea y cada bloque `##` en unidades para la IA. |
 | `src/gcal.rs` | Google Calendar: OAuth con PKCE, calendario "Notas" y sincronización de eventos. |
 | `src/agenda.rs` | `tareas.txt` (todo.txt), `agenda.txt` y `agenda.ics`. |
 | `src/vault.rs` | Carpeta de notas: espacios, notas `.md`, cambios en disco, papelera. |
