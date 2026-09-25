@@ -23,6 +23,8 @@ pub struct Task {
     pub due: Option<String>,
     /// Nota de origen, relativa a la carpeta de notas y sin ".md".
     pub note: Option<String>,
+    /// Une la tarea con su línea en la nota ("^k3f9a" allá, "id:k3f9a" aquí).
+    pub id: Option<String>,
     pub raw: String,
 }
 
@@ -59,21 +61,33 @@ pub fn decode_note(s: &str) -> String {
     s.replace("%20", " ").replace("%25", "%")
 }
 
-/// Separa las palabras especiales (+proyecto, due:, nota:) del texto.
-fn split_meta(words: &[&str]) -> (String, String, Option<String>, Option<String>) {
-    let (mut text, mut project, mut due, mut note) = (Vec::new(), String::new(), None, None);
+struct Meta {
+    text: String,
+    project: String,
+    due: Option<String>,
+    note: Option<String>,
+    id: Option<String>,
+}
+
+/// Separa las palabras especiales (+proyecto, due:, nota:, id:) del texto.
+fn split_meta(words: &[&str]) -> Meta {
+    let mut m = Meta { text: String::new(), project: String::new(), due: None, note: None, id: None };
+    let mut text = Vec::new();
     for w in words {
         if let Some(p) = w.strip_prefix('+').filter(|p| !p.is_empty()) {
-            project = p.replace('_', " ");
+            m.project = p.replace('_', " ");
         } else if let Some(d) = w.strip_prefix("due:") {
-            due = Some(d.to_string());
+            m.due = Some(d.to_string());
         } else if let Some(n) = w.strip_prefix("nota:") {
-            note = Some(decode_note(n));
+            m.note = Some(decode_note(n));
+        } else if let Some(i) = w.strip_prefix("id:").filter(|i| !i.is_empty()) {
+            m.id = Some(i.to_string());
         } else {
             text.push(*w);
         }
     }
-    (text.join(" "), project, due, note)
+    m.text = text.join(" ");
+    m
 }
 
 pub fn parse_task(line: &str) -> Option<Task> {
@@ -89,8 +103,8 @@ pub fn parse_task(line: &str) -> Option<Task> {
     while words.first().is_some_and(|w| is_date(w)) {
         words.remove(0);
     }
-    let (text, project, due, note) = split_meta(&words);
-    Some(Task { done, text, project, due, note, raw: line.to_string() })
+    let Meta { text, project, due, note, id } = split_meta(&words);
+    Some(Task { done, text, project, due, note, id, raw: line.to_string() })
 }
 
 pub fn parse_event(line: &str) -> Option<Event> {
@@ -100,16 +114,20 @@ pub fn parse_event(line: &str) -> Option<Event> {
         Some(t) if is_time(t) => (Some(t.to_string()), &words[2..]),
         _ => (None, &words[1..]),
     };
-    let (title, project, _, note) = split_meta(rest);
+    let Meta { text: title, project, note, .. } = split_meta(rest);
     Some(Event { date, time, title, project, note })
 }
 
-pub fn format_task(created: &str, text: &str, ws: &str, due: Option<&str>, note: &str) -> String {
+pub fn format_task(created: &str, text: &str, ws: &str, due: Option<&str>, note: &str, id: Option<&str>) -> String {
     let mut s = format!("{created} {} {}", text.trim(), project_token(ws));
     if let Some(d) = due {
         s += &format!(" due:{d}");
     }
-    s + &format!(" nota:{}", encode_note(note))
+    s += &format!(" nota:{}", encode_note(note));
+    if let Some(i) = id {
+        s += &format!(" id:{i}");
+    }
+    s
 }
 
 pub fn format_event(date: &str, time: Option<&str>, title: &str, ws: &str, note: &str) -> String {
@@ -254,6 +272,17 @@ impl Agenda {
         self.write_ics()
     }
 
+    /// Marca como hecha (o pendiente) la tarea con ese identificador. Devuelve si la encontró.
+    pub fn set_done_by_id(&self, id: &str, done: bool, today: &str) -> io::Result<bool> {
+        let Some(t) = self.tasks().into_iter().find(|t| t.id.as_deref() == Some(id)) else {
+            return Ok(false);
+        };
+        if t.done != done {
+            self.toggle_task(&t.raw, today)?;
+        }
+        Ok(true)
+    }
+
     /// agenda.ics: eventos y tareas pendientes con fecha, para importar en un calendario.
     pub fn write_ics(&self) -> io::Result<()> {
         let mut out = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//nodex-notes//ES\r\nCALSCALE:GREGORIAN\r\n");
@@ -291,14 +320,15 @@ mod tests {
 
     #[test]
     fn roundtrip_task() {
-        let l = format_task("2026-09-24", "Enviar planos", "Proyecto A", Some("2026-09-26"), "Proyecto A/Reunión 1");
-        assert_eq!(l, "2026-09-24 Enviar planos +Proyecto_A due:2026-09-26 nota:Proyecto%20A/Reunión%201");
+        let l = format_task("2026-09-24", "Enviar planos", "Proyecto A", Some("2026-09-26"), "Proyecto A/Reunión 1", Some("k3f9a"));
+        assert_eq!(l, "2026-09-24 Enviar planos +Proyecto_A due:2026-09-26 nota:Proyecto%20A/Reunión%201 id:k3f9a");
         let t = parse_task(&l).unwrap();
         assert!(!t.done);
         assert_eq!(t.text, "Enviar planos");
         assert_eq!(t.project, "Proyecto A");
         assert_eq!(t.due.as_deref(), Some("2026-09-26"));
         assert_eq!(t.note.as_deref(), Some("Proyecto A/Reunión 1"));
+        assert_eq!(t.id.as_deref(), Some("k3f9a"));
         let d = parse_task(&format!("x 2026-09-25 {l}")).unwrap();
         assert!(d.done && d.text == "Enviar planos");
     }

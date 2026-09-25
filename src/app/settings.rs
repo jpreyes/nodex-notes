@@ -585,13 +585,18 @@ fn section_shortcuts(ui: &mut Ui) {
     let keys = [
         ("Ctrl + N", "Nueva nota"),
         ("Ctrl + D", "Nota de hoy"),
+        ("Ctrl + H", "Hoy: atrasado, hoy y esta semana"),
         ("Ctrl + R", "Nueva reunión"),
         ("Esc", "Cerrar la reunión, la búsqueda o la vista"),
         ("Ctrl + F", "Buscar en todas las notas"),
         ("Ctrl + S", "Guardar ahora (se guarda solo igual)"),
         ("Ctrl + ,", "Configuración"),
-        ("#palabra", "Etiqueta"),
-        ("- [ ] / - [x]", "Tarea pendiente / hecha"),
+        ("Tab", "Una vez: parte de la nota de arriba · dos: ítem de lista"),
+        ("Shift + Tab", "Quitar un nivel de sangría"),
+        ("Enter", "En una lista, sigue la lista (en un ítem vacío, sale)"),
+        ("#palabra", "Etiqueta (se ve como píldora, sin el #)"),
+        ("- [ ] / - [x]", "Tarea pendiente / hecha (clic en la casilla)"),
+        ("due:2026-09-26", "Fecha de una tarea"),
     ];
     egui::Grid::new("atajos").num_columns(2).spacing([28.0, 10.0]).show(ui, |ui| {
         for (k, what) in keys {

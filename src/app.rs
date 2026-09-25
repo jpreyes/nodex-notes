@@ -5,6 +5,8 @@ use crate::capture;
 use crate::ai::{self, Ai, Analysis};
 use crate::config::{self, Config, Estado};
 use crate::gcal::{self, GCal};
+use crate::lines;
+use crate::organize::{self, MEETING_TAG};
 use crate::tags;
 use crate::theme::{self, ACCENT, ACCENT_BG, BG_EDITOR, BG_RAIL, BG_SIDE, HOVER, MUTED, SUCCESS, TEXT};
 use crate::vault::{self, Vault};
@@ -19,7 +21,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+mod editor;
 mod settings;
+mod today;
 use settings::Section;
 
 /// Espera tras la última tecla antes de guardar.
@@ -38,7 +42,6 @@ const EDITOR_SIZE: f32 = 15.5;
 const COLUMN_MAX: f32 = 780.0;
 const MESES: [&str; 12] = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 const DIAS: [&str; 7] = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
-const MEETING_TAG: &str = "reunión";
 const RED: Color32 = Color32::from_rgb(198, 40, 40);
 
 struct OpenNote {
@@ -86,6 +89,7 @@ struct Undo {
 #[derive(PartialEq, Clone)]
 enum View {
     Editor,
+    Today,
     Tag(String),
     Tasks,
     Agenda,
@@ -153,6 +157,10 @@ pub struct NotesApp {
     /// La agenda cambió y hay que sincronizar con Google.
     gcal_dirty: bool,
     gcal_last_try: Instant,
+    /// Rutas y webs encontradas en las líneas (para no buscarlas en disco en cada cuadro).
+    links: editor::LinkCache,
+    /// Día en que ya se mostró la vista "Hoy" al abrir.
+    today_shown: String,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -236,20 +244,11 @@ fn byte_index(text: &str, chars: usize) -> usize {
     text.char_indices().nth(chars).map_or(text.len(), |(b, _)| b)
 }
 
-/// Deja una etiqueta como "palabra-compuesta" (sin '#', minúsculas).
-fn clean_tag(t: &str) -> String {
-    let t = t.trim().trim_start_matches('#').to_lowercase().replace(' ', "-");
-    t.chars().filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect::<String>().trim_matches('-').to_string()
-}
-
-/// Agrega etiquetas al final: en la última línea si ya es solo de etiquetas, o en una línea nueva.
-fn append_tags(text: &str, tags: &[String]) -> String {
-    let body = text.trim_end();
-    let add = tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" ");
-    let last = body.rsplit('\n').next().unwrap_or("");
-    let only_tags = !last.trim().is_empty()
-        && last.split_whitespace().all(|w| tags::tag_spans(w).first() == Some(&(0, w.len())));
-    if only_tags { format!("{body} {add}\n") } else { format!("{body}\n\n{add}\n") }
+/// Identificador corto para unir una tarea con su línea en la nota ("k3f9a").
+fn new_task_id() -> String {
+    let mut b = [0u8; 5];
+    let _ = getrandom::fill(&mut b);
+    b.iter().map(|x| char::from(b"0123456789abcdefghijklmnopqrstuvwxyz"[(*x % 36) as usize])).collect()
 }
 
 impl NotesApp {
@@ -261,6 +260,7 @@ impl NotesApp {
         let ai = Ai::start(&cfg, ctx.clone());
         let gcal = GCal::start(&cfg.google_client_id, &cfg.google_client_secret, cfg.carpeta_notas.clone(), ctx.clone());
         let ai_auto = cfg.ia_automatica;
+        let cfg_root = cfg.carpeta_notas.clone();
         let vault = Vault::new(cfg.carpeta_notas.clone());
         let agenda = Agenda::new(&vault.root);
         let estado = config::load_estado();
@@ -273,7 +273,8 @@ impl NotesApp {
         let path = if !estado.nota.is_empty() && last.is_file() { last } else { vault.note_path(&ws, &today()) };
         let ws = workspace_of(&path).unwrap_or(ws);
         let analyzed = load_analyzed(&vault.root);
-        NotesApp {
+        let estado_hoy = estado.hoy.clone();
+        let mut app = NotesApp {
             cfg,
             ctx,
             settings: None,
@@ -304,7 +305,16 @@ impl NotesApp {
             gcal,
             gcal_dirty: true,
             gcal_last_try: long_ago(),
+            links: editor::LinkCache::new(&cfg_root),
+            today_shown: estado_hoy,
+        };
+        // La primera vez de cada día se abre en "Hoy", si hay algo atrasado, para hoy o mañana.
+        if app.today_shown != today() && app.has_something_today() {
+            app.view = View::Today;
+            app.today_shown = today();
+            app.save_estado();
         }
+        app
     }
 
     fn msg(&mut self, text: impl Into<String>) {
@@ -352,6 +362,7 @@ impl NotesApp {
         self.save_config();
         self.vault = Vault::new(path);
         self.agenda = Agenda::new(&self.vault.root);
+        self.links = editor::LinkCache::new(&self.vault.root);
         self.analyzed = load_analyzed(&self.vault.root);
         self.touched.clear();
         self.backlog.clear();
@@ -401,7 +412,11 @@ impl NotesApp {
 
     fn save_estado(&self) {
         let nota = self.note.path.strip_prefix(&self.vault.root).unwrap_or(&self.note.path);
-        config::save_estado(&Estado { espacio: self.ws.clone(), nota: nota.to_string_lossy().into_owned() });
+        config::save_estado(&Estado {
+            espacio: self.ws.clone(),
+            nota: nota.to_string_lossy().into_owned(),
+            hoy: self.today_shown.clone(),
+        });
     }
 
     fn save_analyzed(&self) {
@@ -680,11 +695,9 @@ impl NotesApp {
         all_tags.dedup();
         let text: String = note.text.chars().take(12_000).collect();
         // Nota de captura (la del día, "Sin título"): cada línea es una nota; los bloques "##" van juntos.
-        let (system, user) = if capture::is_capture(&note.title) {
-            ai::build_capture_prompt(&text, &capture::units(&text), &infos, &all_tags)
-        } else {
-            ai::build_prompt(&note.title, &note.workspace, &text, &infos, &all_tags)
-        };
+        let capture = capture::is_capture(&note.title);
+        let (system, user) =
+            ai::build_prompt(&note.title, &note.workspace, &text, &lines::units(&text), capture, &infos, &all_tags);
         if let Ok(ai) = &mut self.ai {
             ai.send(ai::Job { path: path.clone(), hash, system, user });
             self.in_flight = Some(path);
@@ -712,7 +725,9 @@ impl NotesApp {
         }
     }
 
-    /// Aplica lo que devolvió la IA: etiquetas, resumen, título, espacio, tareas y eventos.
+    /// Aplica lo que devolvió la IA: etiquetas en cada línea, tareas con casilla, detalles unidos
+    /// a su nota y, según el tipo de nota, a dónde va cada una (captura) o el título y el espacio
+    /// de la nota completa (nota con título). También escribe tareas y eventos.
     fn apply_analysis(&mut self, path: PathBuf, hash: u64, a: Analysis) {
         if !path.starts_with(&self.vault.root) {
             return; // la carpeta de notas cambió mientras la IA trabajaba
@@ -726,314 +741,158 @@ impl NotesApp {
             return;
         }
         let snapshot = self.agenda.snapshot();
-        // Nota de captura: cada unidad (línea o bloque "##") va a su nota.
-        if capture::is_capture(&vault::stem(&path)) {
-            self.apply_units(path, text, is_open, snapshot, a);
-            return;
-        }
         let old_ws = workspace_of(&path).unwrap_or_else(|| self.ws.clone());
         let old_title = vault::stem(&path);
-        let mut new_text = text.clone();
+        let is_capture = capture::is_capture(&old_title);
+
+        // A dónde va cada unidad (solo en notas de captura): nota existente del espacio o una nueva.
+        let mut chosen: Vec<(String, String, PathBuf)> = Vec::new(); // (espacio, título, ruta)
+        let vault_ref = &self.vault;
+        let dest = |au: &ai::AiUnit| -> Option<(PathBuf, String)> {
+            if !is_capture || au.nota.trim().is_empty() {
+                return None;
+            }
+            let ws = vault_ref.workspaces.iter().find(|w| w.eq_ignore_ascii_case(au.espacio.trim()))?.clone();
+            let title = vault::sanitize(au.nota.trim_start_matches('#').trim());
+            if let Some((_, _, p)) = chosen.iter().find(|(w, t, _)| *w == ws && t.eq_ignore_ascii_case(&title)) {
+                return Some((p.clone(), ws));
+            }
+            let existing = vault_ref.notes_in(&ws).iter().find(|n| n.title.eq_ignore_ascii_case(&title)).map(|n| n.path.clone());
+            let target = existing.unwrap_or_else(|| {
+                // Ruta libre que no choque con otra nota nueva de esta misma respuesta.
+                let mut p = vault_ref.unique_path(&ws, &title);
+                let mut i = 2;
+                while chosen.iter().any(|(_, _, c)| *c == p) {
+                    p = vault_ref.note_path(&ws, &format!("{title} {i}"));
+                    i += 1;
+                }
+                p
+            });
+            if target == path {
+                return None;
+            }
+            chosen.push((ws.clone(), title, target.clone()));
+            Some((target, ws))
+        };
+        let plan = organize::plan(&text, &a, dest, new_task_id);
         let mut done: Vec<String> = Vec::new();
 
-        // Resumen de reunión (ya cerrada).
-        if a.es_reunion && !a.resumen.trim().is_empty() && text.contains("## fin") && !text.contains("### Resumen") {
-            new_text = format!("{}\n\n### Resumen\n{}\n", new_text.trim_end(), a.resumen.trim());
-            done.push("resumen".into());
+        // Notas destino: se agrega al final.
+        let mut files: Vec<(PathBuf, Option<String>)> = vec![(path.clone(), Some(text.clone()))];
+        let mut written: Vec<(PathBuf, String, String)> = Vec::new(); // (ruta, espacio, texto nuevo)
+        for ((target, ws), chunk) in &plan.moves {
+            let before = vault::read_text(target).ok();
+            let new_t = match before.as_deref().map(str::trim_end).filter(|b| !b.is_empty()) {
+                Some(b) if chunk.starts_with("##") => format!("{b}\n\n{chunk}\n"),
+                Some(b) => format!("{b}\n{chunk}\n"),
+                None => format!("{chunk}\n"),
+            };
+            if let Some(dir) = target.parent() {
+                let _ = fs::create_dir_all(dir);
+            }
+            if let Err(e) = fs::write(target, &new_t) {
+                self.msg(format!("IA: no se pudo escribir {}: {e}", target.display()));
+                continue;
+            }
+            files.push((target.clone(), before));
+            written.push((target.clone(), ws.clone(), new_t));
         }
-        // Etiquetas nuevas (y #reunión si corresponde).
-        let existing: HashSet<String> = text.lines().flat_map(tags::line_tags).collect();
-        let mut add: Vec<String> = Vec::new();
-        if a.es_reunion {
-            add.push(MEETING_TAG.into());
+        // Lo que no se pudo escribir se queda en la nota original.
+        let failed: Vec<usize> =
+            (0..plan.moves.len()).filter(|&i| !written.iter().any(|(p, _, _)| *p == plan.moves[i].0 .0)).collect();
+        let mut new_text = plan.source.clone();
+        for &i in &failed {
+            new_text = format!("{}\n{}\n", new_text.trim_end(), plan.moves[i].1).trim_start().to_string();
         }
-        add.extend(a.etiquetas.iter().map(|t| clean_tag(t)));
-        let mut seen = HashSet::new();
-        add.retain(|t| !t.is_empty() && !existing.contains(t) && seen.insert(t.clone()));
-        add.truncate(5);
-        if !add.is_empty() {
-            new_text = append_tags(&new_text, &add);
-            done.push(add.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" "));
+        if plan.tags_added > 0 {
+            done.push(plural(plan.tags_added, "etiqueta"));
         }
-        // Título para notas sin nombre.
-        let auto_named = old_title.starts_with("Sin título") || old_title.starts_with("Reunión 20");
-        let title = if auto_named && !a.titulo.trim().is_empty() {
-            let t = vault::sanitize(&a.titulo);
-            done.push(format!("«{t}»"));
-            t
-        } else {
-            old_title.clone()
-        };
-        if let Some((_, when)) = meeting_header(&new_text).filter(|_| title != old_title) {
-            if let Some(end) = new_text.find('\n') {
-                new_text.replace_range(..end, &format!("## {title} · {when}"));
+        if plan.grouped > 0 {
+            done.push(format!("{} con su nota", plural(plan.grouped, "detalle")));
+        }
+
+        // Nota con título: título (si no tenía) y espacio de la nota completa.
+        let mut title = old_title.clone();
+        let mut ws = old_ws.clone();
+        if !is_capture {
+            let auto_named = old_title.starts_with("Reunión 20");
+            if auto_named && !a.titulo.trim().is_empty() {
+                title = vault::sanitize(&a.titulo);
+                done.push(format!("«{title}»"));
+                if let Some((_, when)) = meeting_header(&new_text) {
+                    if let Some(end) = new_text.find('\n') {
+                        new_text.replace_range(..end, &format!("## {title} · {when}"));
+                    }
+                }
+            }
+            let espacio = a.espacio.trim();
+            if a.confianza.trim().eq_ignore_ascii_case("alta")
+                && espacio != old_ws
+                && self.vault.workspaces.iter().any(|w| w == espacio)
+            {
+                done.push(format!("→ {espacio}"));
+                ws = espacio.to_string();
             }
         }
-        // Espacio de trabajo.
-        let espacio = a.espacio.trim();
-        let ws = if a.confianza.trim().eq_ignore_ascii_case("alta")
-            && espacio != old_ws
-            && self.vault.workspaces.iter().any(|w| w == espacio)
-        {
-            done.push(format!("→ {espacio}"));
-            espacio.to_string()
-        } else {
-            old_ws.clone()
-        };
 
-        // Escribir la nota y moverla si cambió de nombre o espacio.
-        if new_text != text {
+        // Escribir la nota original (a la papelera si quedó vacía) y moverla si cambió de nombre o espacio.
+        let emptied = new_text.trim().is_empty();
+        if emptied {
+            let _ = self.vault.trash(&path);
+        } else if new_text != text {
             if let Err(e) = fs::write(&path, &new_text) {
                 self.msg(format!("IA: no se pudo guardar la nota: {e}"));
                 return;
             }
         }
         let mut new_path = path.clone();
-        if ws != old_ws || title != old_title {
+        if !emptied && (ws != old_ws || title != old_title) {
             let target = self.vault.unique_path(&ws, &title);
             match fs::rename(&path, &target) {
                 Ok(()) => new_path = target,
-                Err(e) => self.msg(format!("IA: no se pudo mover la nota: {e}")),
-            }
-        }
-
-        // Tareas y eventos.
-        let note_rel = self.rel(&new_path);
-        let created = today();
-        let final_ws = workspace_of(&new_path).unwrap_or(ws);
-        let tasks: Vec<String> = a
-            .tareas
-            .iter()
-            .filter(|t| !t.texto.trim().is_empty())
-            .map(|t| {
-                let due = Some(t.fecha.trim()).filter(|d| agenda::is_date(d));
-                agenda::format_task(&created, &t.texto, &final_ws, due, &note_rel)
-            })
-            .collect();
-        let events: Vec<String> = a
-            .eventos
-            .iter()
-            .filter(|e| agenda::is_date(e.fecha.trim()) && !e.titulo.trim().is_empty())
-            .map(|e| {
-                let time = Some(e.hora.trim()).filter(|h| agenda::is_time(h));
-                agenda::format_event(e.fecha.trim(), time, &e.titulo, &final_ws, &note_rel)
-            })
-            .collect();
-        if let Err(e) = self.agenda.replace_for_note(&self.rel(&path), &note_rel, &tasks, &events) {
-            self.msg(format!("IA: no se pudo escribir tareas/agenda: {e}"));
-        }
-        self.gcal_dirty = true;
-        if !tasks.is_empty() {
-            done.push(plural(tasks.len(), "tarea"));
-        }
-        if !events.is_empty() {
-            done.push(format!("{} en agenda", plural(events.len(), "evento")));
-        }
-
-        // Estado de la app.
-        self.analyzed.insert(ai::fnv(&new_text));
-        self.save_analyzed();
-        self.touched.remove(&path);
-        if let Some(m) = vault::modified(&new_path) {
-            self.vault.upsert(new_path.clone(), new_text.clone(), m);
-        }
-        self.vault.scan();
-        if is_open {
-            self.note.text = new_text;
-            self.note.path = new_path.clone();
-            self.note.title = vault::stem(&new_path);
-            self.note.disk_mtime = vault::modified(&new_path);
-            self.ws = final_ws;
-            self.save_estado();
-        }
-        if done.is_empty() {
-            return;
-        }
-        self.undo = Some(Undo {
-            files: vec![(path.clone(), Some(text))],
-            renamed: (new_path != path).then(|| (path, new_path.clone())),
-            agenda: snapshot,
-            at: Instant::now(),
-        });
-        self.msg(format!("IA · {}: {}", vault::stem(&new_path), done.join(" · ")));
-    }
-
-    /// Nota de captura: cada línea es una nota distinta y cada bloque "##" va junto.
-    /// Mueve cada unidad atribuida a su nota (existente o nueva, en su espacio) y deja
-    /// en la nota original las que no se pudieron atribuir.
-    fn apply_units(&mut self, path: PathBuf, text: String, is_open: bool, snapshot: (String, String), a: Analysis) {
-        struct Group {
-            path: PathBuf,
-            ws: String,
-            units: Vec<usize>, // índices en `units`
-        }
-        let lines: Vec<&str> = text.lines().collect();
-        let units = capture::units(&text);
-        let mut groups: Vec<Group> = Vec::new();
-        let mut target_of: HashMap<String, usize> = HashMap::new(); // id de unidad -> grupo
-        let mut extra_of: HashMap<usize, &ai::AiUnit> = HashMap::new(); // unidad -> lo que dijo la IA
-        for au in &a.unidades {
-            let id = au.id.trim().to_uppercase();
-            let Some(ui) = units.iter().position(|u| u.id == id) else { continue };
-            if target_of.contains_key(&id) || au.nota.trim().is_empty() {
-                continue;
-            }
-            let Some(ws) = self.vault.workspaces.iter().find(|w| w.eq_ignore_ascii_case(au.espacio.trim())).cloned() else {
-                continue;
-            };
-            let title = vault::sanitize(au.nota.trim_start_matches('#').trim());
-            let existing = self.vault.notes_in(&ws).iter().find(|n| n.title.eq_ignore_ascii_case(&title)).map(|n| n.path.clone());
-            let pending = groups
-                .iter()
-                .find(|g| g.ws == ws && vault::stem(&g.path).eq_ignore_ascii_case(&title))
-                .map(|g| g.path.clone());
-            let target = existing.or(pending).unwrap_or_else(|| self.vault.unique_path(&ws, &title));
-            if target == path {
-                continue;
-            }
-            let gi = match groups.iter().position(|g| g.path == target) {
-                Some(gi) => gi,
-                None => {
-                    groups.push(Group { path: target, ws: ws.clone(), units: Vec::new() });
-                    groups.len() - 1
+                Err(e) => {
+                    ws = old_ws.clone();
+                    self.msg(format!("IA: no se pudo mover la nota: {e}"));
                 }
-            };
-            groups[gi].units.push(ui);
-            target_of.insert(id, gi);
-            extra_of.insert(ui, au);
-        }
-
-        // Texto que se lleva cada unidad (con sus etiquetas y, en reuniones cerradas, el resumen).
-        let chunk = |ui: usize| -> String {
-            let u = &units[ui];
-            let au = extra_of[&ui];
-            let mut add: Vec<String> = Vec::new();
-            if u.block && au.es_reunion {
-                add.push(MEETING_TAG.into());
-            }
-            add.extend(au.etiquetas.iter().map(|t| clean_tag(t)).filter(|t| !t.is_empty()).take(2));
-            let body: Vec<&str> = lines[u.first..=u.last].to_vec();
-            let have: HashSet<String> = body.iter().flat_map(|l| tags::line_tags(l)).collect();
-            let mut seen = HashSet::new();
-            add.retain(|t| !have.contains(t) && seen.insert(t.clone()));
-            let hashes = add.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" ");
-            if !u.block {
-                let line = body[0].trim_end();
-                return if hashes.is_empty() { line.to_string() } else { format!("{line} {hashes}") };
-            }
-            let mut s = body.join("\n").trim_end().to_string();
-            let closed = body.iter().any(|l| l.trim_start().to_lowercase().starts_with("## fin"));
-            if au.es_reunion && closed && !au.resumen.trim().is_empty() && !s.contains("### Resumen") {
-                s += &format!("\n### Resumen\n{}", au.resumen.trim());
-            }
-            if !hashes.is_empty() {
-                s += &format!("\n{hashes}");
-            }
-            format!("\n{s}\n") // los bloques van separados por líneas en blanco
-        };
-
-        // Escribir en las notas destino (se agrega al final).
-        let mut files: Vec<(PathBuf, Option<String>)> = vec![(path.clone(), Some(text.clone()))];
-        let mut new_texts: Vec<(PathBuf, String)> = Vec::new();
-        for g in &groups {
-            let before = vault::read_text(&g.path).ok();
-            let moved: String = g.units.iter().map(|&ui| chunk(ui)).collect::<Vec<_>>().join("\n");
-            let new_t = match before.as_deref().map(str::trim_end).filter(|b| !b.is_empty()) {
-                Some(b) => format!("{b}\n{}", moved.trim_end()),
-                None => moved.trim().to_string(),
-            };
-            let new_t = new_t.replace("\n\n\n", "\n\n") + "\n";
-            if let Some(dir) = g.path.parent() {
-                let _ = fs::create_dir_all(dir);
-            }
-            if let Err(e) = fs::write(&g.path, &new_t) {
-                self.msg(format!("IA: no se pudo escribir {}: {e}", g.path.display()));
-                continue;
-            }
-            files.push((g.path.clone(), before));
-            new_texts.push((g.path.clone(), new_t));
-        }
-        let written: HashSet<&PathBuf> = new_texts.iter().map(|(p, _)| p).collect();
-
-        // La nota original se queda con lo no atribuido (o se va a la papelera si queda vacía).
-        let mut gone = vec![false; lines.len()];
-        for g in groups.iter().filter(|g| written.contains(&g.path)) {
-            for &ui in &g.units {
-                gone[units[ui].first..=units[ui].last].iter_mut().for_each(|x| *x = true);
             }
         }
-        let mut remaining: Vec<&str> = Vec::new();
-        for (i, l) in lines.iter().enumerate() {
-            let double_blank = l.trim().is_empty() && remaining.last().is_some_and(|p| p.trim().is_empty());
-            if !gone[i] && !double_blank {
-                remaining.push(l);
-            }
-        }
-        let src = remaining.join("\n").trim().to_string();
-        let src = if src.is_empty() { src } else { src + "\n" };
-        if src.is_empty() {
-            let _ = self.vault.trash(&path);
-        } else if src != text {
-            if let Err(e) = fs::write(&path, &src) {
-                self.msg(format!("IA: no se pudo guardar la nota: {e}"));
-            }
+        if !written.is_empty() {
+            let dests: Vec<String> = written.iter().map(|(p, w, _)| format!("{w}/{}", vault::stem(p))).collect();
+            let moved = plan.placed.values().filter(|i| !failed.contains(i)).count();
+            done.push(format!("{} → {}", plural(moved, "nota"), dests.join(", ")));
         }
 
         // Tareas y eventos: cada uno queda asociado a la nota donde terminó su unidad.
-        let source_rel = self.rel(&path);
-        let source_ws = workspace_of(&path).unwrap_or_else(|| self.ws.clone());
-        let place = |unidad: &str| -> (String, String, bool) {
-            match target_of.get(&unidad.trim().to_uppercase()).map(|&gi| &groups[gi]) {
-                Some(g) if written.contains(&g.path) => (self.rel(&g.path), g.ws.clone(), true),
-                _ => (source_rel.clone(), source_ws.clone(), false),
-            }
+        let source_old = self.rel(&path);
+        let source_rel = self.rel(&new_path);
+        let place = |unidad: &str| -> Option<(String, String)> {
+            let i = *plan.placed.get(&unidad.trim().to_uppercase())?;
+            let (p, w, _) = written.iter().find(|(p, _, _)| *p == plan.moves[i].0 .0)?;
+            Some((self.rel(p), w.clone()))
         };
         let created = today();
         let (mut src_tasks, mut src_events, mut other_tasks, mut other_events) = (vec![], vec![], vec![], vec![]);
-        for t in a.tareas.iter().filter(|t| !t.texto.trim().is_empty()) {
-            let (rel, ws, moved) = place(&t.unidad);
+        for (ti, t) in a.tareas.iter().enumerate().filter(|(_, t)| !t.texto.trim().is_empty()) {
             let due = Some(t.fecha.trim()).filter(|d| agenda::is_date(d));
-            let line = agenda::format_task(&created, &t.texto, &ws, due, &rel);
-            if moved { other_tasks.push(line) } else { src_tasks.push(line) }
+            let id = plan.task_ids.get(ti).cloned().flatten();
+            match place(&t.unidad) {
+                Some((rel, w)) => other_tasks.push(agenda::format_task(&created, &t.texto, &w, due, &rel, id.as_deref())),
+                None => src_tasks.push(agenda::format_task(&created, &t.texto, &ws, due, &source_rel, id.as_deref())),
+            }
         }
         for e in a.eventos.iter().filter(|e| agenda::is_date(e.fecha.trim()) && !e.titulo.trim().is_empty()) {
-            let (rel, ws, moved) = place(&e.unidad);
             let time = Some(e.hora.trim()).filter(|h| agenda::is_time(h));
-            let line = agenda::format_event(e.fecha.trim(), time, &e.titulo, &ws, &rel);
-            if moved { other_events.push(line) } else { src_events.push(line) }
+            match place(&e.unidad) {
+                Some((rel, w)) => other_events.push(agenda::format_event(e.fecha.trim(), time, &e.titulo, &w, &rel)),
+                None => src_events.push(agenda::format_event(e.fecha.trim(), time, &e.titulo, &ws, &source_rel)),
+            }
         }
-        let r1 = self.agenda.replace_for_note(&source_rel, &source_rel, &src_tasks, &src_events);
+        let r1 = self.agenda.replace_for_note(&source_old, &source_rel, &src_tasks, &src_events);
         let r2 = self.agenda.add_lines(&other_tasks, &other_events);
         if let Err(e) = r1.and(r2) {
             self.msg(format!("IA: no se pudo escribir tareas/agenda: {e}"));
         }
         self.gcal_dirty = true;
-
-        // Estado de la app.
-        self.analyzed.insert(ai::fnv(&text));
-        if !src.is_empty() {
-            self.analyzed.insert(ai::fnv(&src));
-        }
-        for (_, t) in &new_texts {
-            self.analyzed.insert(ai::fnv(t));
-        }
-        self.save_analyzed();
-        self.touched.remove(&path);
-        self.vault.scan();
-        if is_open {
-            // Si la nota quedó vacía, sigue abierta como nota nueva para seguir anotando.
-            self.note = OpenNote::load(path.clone());
-        } else if written.contains(&self.note.path) {
-            self.note = OpenNote::load(self.note.path.clone());
-        }
-
-        let moved_units: Vec<&Group> = groups.iter().filter(|g| written.contains(&g.path)).collect();
-        let moved_count: usize = moved_units.iter().map(|g| g.units.len()).sum();
-        let mut done = Vec::new();
-        if moved_count > 0 {
-            let dests: Vec<String> = moved_units.iter().map(|g| format!("{}/{}", g.ws, vault::stem(&g.path))).collect();
-            done.push(format!("{} → {}", plural(moved_count, "nota"), dests.join(", ")));
-        }
         let n_tasks = src_tasks.len() + other_tasks.len();
         let n_events = src_events.len() + other_events.len();
         if n_tasks > 0 {
@@ -1042,11 +901,65 @@ impl NotesApp {
         if n_events > 0 {
             done.push(format!("{} en agenda", plural(n_events, "evento")));
         }
+
+        // Estado de la app: nada de esto se vuelve a analizar.
+        self.analyzed.insert(ai::fnv(&text));
+        self.analyzed.insert(ai::fnv(&new_text));
+        for (_, _, t) in &written {
+            self.analyzed.insert(ai::fnv(t));
+        }
+        self.save_analyzed();
+        self.touched.remove(&path);
+        self.vault.scan();
+        if is_open {
+            // Si la nota quedó vacía, sigue abierta como nota nueva para seguir anotando.
+            self.note = OpenNote::load(new_path.clone());
+            self.ws = workspace_of(&new_path).unwrap_or(ws);
+            self.save_estado();
+        } else if written.iter().any(|(p, _, _)| *p == self.note.path) && !self.note.dirty {
+            self.note = OpenNote::load(self.note.path.clone());
+        }
         if done.is_empty() {
             return;
         }
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now() });
-        self.msg(format!("IA · {}", done.join(" · ")));
+        self.undo = Some(Undo {
+            files,
+            renamed: (new_path != path).then(|| (path.clone(), new_path.clone())),
+            agenda: snapshot,
+            at: Instant::now(),
+        });
+        let name = if emptied { String::new() } else { format!(" {}:", vault::stem(&new_path)) };
+        self.msg(format!("IA ·{name} {}", done.join(" · ")));
+    }
+
+    /// Deja la casilla de la línea "^id" de una nota como hecha o pendiente.
+    fn sync_task_line(&mut self, note_rel: &str, id: &str, done: bool) {
+        let path = self.vault.root.join(format!("{note_rel}.md"));
+        let fix = |text: &str| -> Option<String> {
+            let (idx, line) = text.split('\n').enumerate().find(|(_, l)| lines::id_of(l).as_deref() == Some(id))?;
+            let line = line.trim_end_matches('\r');
+            lines::parse(line)
+                .check
+                .is_some_and(|d| d != done)
+                .then(|| editor::replace_line(text, idx, &lines::toggle_check(line)))
+        };
+        let open = path == self.note.path;
+        let old = if open { self.note.text.clone() } else { vault::read_text(&path).unwrap_or_default() };
+        let Some(new) = fix(&old) else { return };
+        // Marcar una casilla no cambia el contenido: no hace falta volver a analizarla.
+        if self.analyzed.contains(&ai::fnv(&old)) {
+            self.analyzed.insert(ai::fnv(&new));
+            self.save_analyzed();
+        }
+        if open {
+            self.note.text = new;
+            self.note.dirty = true;
+            self.save();
+        } else if fs::write(&path, &new).is_ok() {
+            if let Some(m) = vault::modified(&path) {
+                self.vault.upsert(path, new, m);
+            }
+        }
     }
 
     fn undo_ai(&mut self) {
@@ -1152,6 +1065,12 @@ impl NotesApp {
                 if let Err(e) = self.agenda.toggle_task(&raw, &today()) {
                     self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
                 }
+                // La casilla de su línea en la nota también.
+                if let Some(t) = agenda::parse_task(&raw) {
+                    if let (Some(id), Some(note)) = (t.id, t.note) {
+                        self.sync_task_line(&note, &id, !t.done);
+                    }
+                }
             }
             Action::AddTask(text) => {
                 self.gcal_dirty = true;
@@ -1159,7 +1078,7 @@ impl NotesApp {
                     Some((t, d)) if agenda::is_date(d.trim()) => (t.trim().to_string(), Some(d.trim().to_string())),
                     _ => (text.trim().to_string(), None),
                 };
-                let line = agenda::format_task(&today(), &text, &self.ws, due.as_deref(), &self.rel(&self.note.path));
+                let line = agenda::format_task(&today(), &text, &self.ws, due.as_deref(), &self.rel(&self.note.path), None);
                 if let Err(e) = self.agenda.add_task(line) {
                     self.msg(format!("No se pudo escribir tareas.txt: {e}"));
                 }
@@ -1181,6 +1100,9 @@ impl NotesApp {
         }
         if pressed(Key::F) {
             return Some(Action::FocusSearch);
+        }
+        if pressed(Key::H) {
+            return Some(Action::Show(View::Today));
         }
         if pressed(Key::R) {
             return Some(Action::StartMeeting);
@@ -1223,6 +1145,9 @@ impl NotesApp {
             };
             if rail_button(ui, icon::USERS, &tip, self.meeting.is_some(), color).clicked() {
                 action = Some(if self.meeting.is_some() { Action::CloseMeeting } else { Action::StartMeeting });
+            }
+            if rail_button(ui, icon::HOUSE_LINE, "Hoy: atrasado, hoy y esta semana (Ctrl+H)", self.view == View::Today, TEXT).clicked() {
+                action = Some(Action::Show(View::Today));
             }
             if rail_button(ui, icon::CHECK_SQUARE, "Tareas", self.view == View::Tasks, TEXT).clicked() {
                 action = Some(Action::Show(View::Tasks));
@@ -1336,12 +1261,10 @@ impl NotesApp {
                 ui.label(RichText::new("Escribe #palabra en una nota.").color(MUTED).size(12.5));
             }
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+                ui.spacing_mut().item_spacing = egui::vec2(5.0, 6.0);
                 for (tag, count) in tags {
                     let selected = self.view == View::Tag(tag.clone());
-                    let text = RichText::new(format!("#{tag}  {count}")).size(12.5);
-                    let chip = egui::Button::selectable(selected, text).corner_radius(10);
-                    if ui.add(chip).clicked() {
+                    if tag_pill(ui, &tag, count, selected).on_hover_text(format!("Ver las líneas con #{tag}")).clicked() {
                         action = Some(Action::ShowTag(tag));
                     }
                 }
@@ -1430,126 +1353,6 @@ impl NotesApp {
             .inner
     }
 
-    fn editor(&mut self, ui: &mut Ui) {
-        let viewport_h = ui.available_height();
-        let ctx = ui.ctx().clone();
-        Self::column(ui, "editor", |ui, col_w| {
-            // Título = nombre del archivo
-            let title = ui.add(
-                egui::TextEdit::singleline(&mut self.note.title)
-                    .id(Id::new("title"))
-                    .font(theme::bold(26.0))
-                    .frame(Frame::NONE)
-                    .hint_text("Sin título")
-                    .desired_width(f32::INFINITY),
-            );
-            if std::mem::take(&mut self.focus_title) {
-                title.request_focus();
-                if let Some(mut st) = egui::text_edit::TextEditState::load(&ctx, title.id) {
-                    let n = self.note.title.chars().count();
-                    st.cursor.set_char_range(Some(egui::text::CCursorRange::two(
-                        egui::text::CCursor::new(0),
-                        egui::text::CCursor::new(n),
-                    )));
-                    st.store(&ctx, title.id);
-                }
-            }
-            if title.lost_focus() {
-                self.commit_title();
-                if ui.input(|i| i.key_pressed(Key::Enter)) {
-                    self.focus_editor = true;
-                }
-            }
-
-            let in_meeting = self.meeting.as_ref().is_some_and(|m| m.path == self.note.path);
-            let when = match self.note.disk_mtime {
-                Some(m) => {
-                    let d: DateTime<Local> = m.into();
-                    format!("editada {} {} {}", d.day(), MESES[d.month0() as usize], d.format("%H:%M"))
-                }
-                None => "sin guardar".into(),
-            };
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("{} {}   ·   {when}", icon::FOLDER_SIMPLE, self.ws)).size(12.5).color(MUTED));
-                if in_meeting {
-                    ui.label(
-                        RichText::new(format!("  {} Reunión en curso", icon::RECORD)).size(12.5).color(SUCCESS),
-                    );
-                }
-            });
-            ui.add_space(14.0);
-
-            // Texto
-            let id = Id::new(("editor", &self.note.path));
-            if let Some(c) = self.pending_cursor.take() {
-                let n = self.note.text.chars().count();
-                let mut st = egui::text_edit::TextEditState::load(&ctx, id).unwrap_or_default();
-                st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(c.min(n)))));
-                st.store(&ctx, id);
-            }
-            let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
-                let mut job = highlight(buf.as_str());
-                job.wrap.max_width = wrap;
-                ui.fonts_mut(|f| f.layout_job(job))
-            };
-            let hint = if in_meeting {
-                "Escribe lo que se va diciendo; cada Enter agrega la hora…"
-            } else {
-                "Empieza a escribir…  #etiqueta para clasificar"
-            };
-            let out = egui::TextEdit::multiline(&mut self.note.text)
-                .id(id)
-                .frame(Frame::NONE)
-                .hint_text(hint)
-                .desired_width(f32::INFINITY)
-                .min_size(egui::vec2(col_w, (viewport_h - 120.0).max(120.0)))
-                .lock_focus(true)
-                .layouter(&mut layouter)
-                .show(ui);
-            if out.response.changed() {
-                self.note.dirty = true;
-                self.note.last_edit = Instant::now();
-                if in_meeting {
-                    if let Some(m) = &mut self.meeting {
-                        m.last_activity = Instant::now();
-                        m.last_time = Local::now();
-                    }
-                    if ui.input(|i| i.key_pressed(Key::Enter)) {
-                        if let Some(cr) = out.cursor_range {
-                            self.stamp_new_line(&ctx, id, out.state.clone(), cr.primary.index.0);
-                        }
-                    }
-                }
-            }
-            if std::mem::take(&mut self.focus_editor) {
-                out.response.request_focus();
-            }
-        });
-    }
-
-    /// En una reunión, cada línea nueva empieza con la hora ("- 15:03 ").
-    /// Un Enter sobre una línea que solo tiene la hora la deja en blanco.
-    fn stamp_new_line(&mut self, ctx: &egui::Context, id: Id, mut st: egui::text_edit::TextEditState, ci: usize) {
-        let text = &mut self.note.text;
-        let bi = byte_index(text, ci);
-        if bi == 0 || !text[..bi].ends_with('\n') {
-            return;
-        }
-        let prev_end = bi - 1;
-        let prev_start = text[..prev_end].rfind('\n').map_or(0, |p| p + 1);
-        let new_ci = if is_empty_stamp(&text[prev_start..prev_end]) {
-            let removed = text[prev_start..prev_end].chars().count();
-            text.replace_range(prev_start..prev_end, "");
-            ci - removed
-        } else {
-            let stamp = format!("- {} ", Local::now().format("%H:%M"));
-            text.insert_str(bi, &stamp);
-            ci + stamp.chars().count()
-        };
-        st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(new_ci))));
-        st.store(ctx, id);
-    }
-
     /// Lista de líneas que tienen una etiqueta o coinciden con la búsqueda.
     fn results(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
@@ -1592,7 +1395,7 @@ impl NotesApp {
         }
 
         let heading = match &tag {
-            Some(t) => format!("#{t}"),
+            Some(t) => t.clone(),
             None => format!("Buscar «{}»", self.search.trim()),
         };
         let total: usize = hits.iter().map(|h| h.lines.len()).sum();
@@ -1616,7 +1419,7 @@ impl NotesApp {
                     ui.label(RichText::new(&h.ws).size(12.0).color(MUTED));
                 }
                 for (offset, line) in &h.lines {
-                    if clickable_line(ui, highlight_line(line, EDITOR_SIZE - 1.0)).clicked() {
+                    if clickable_line(ui, highlight_line(&display_line(line), EDITOR_SIZE - 1.0)).clicked() {
                         action = Some(Action::Open(h.path.clone(), Some(*offset)));
                     }
                 }
@@ -1897,6 +1700,7 @@ impl eframe::App for NotesApp {
             } else {
                 match self.view.clone() {
                     View::Editor => self.editor(ui),
+                    View::Today => actions.extend(self.today_view(ui)),
                     View::Tag(_) => actions.extend(self.results(ui)),
                     View::Tasks => actions.extend(self.tasks_view(ui)),
                     View::Agenda => actions.extend(self.agenda_view(ui)),
@@ -2017,6 +1821,26 @@ fn task_row(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path) -> Option<A
     action
 }
 
+/// Etiqueta como píldora de color (sin '#'), con su cantidad.
+fn tag_pill(ui: &mut Ui, tag: &str, count: usize, selected: bool) -> Response {
+    let c = theme::tag_colors(tag);
+    let name = ui.painter().layout_no_wrap(tag.to_string(), FontId::proportional(12.5), c.text);
+    let num = ui.painter().layout_no_wrap(count.to_string(), FontId::proportional(11.0), c.text.gamma_multiply(0.65));
+    let w = 17.0 + name.size().x + 6.0 + num.size().x + 9.0;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 22.0), Sense::click());
+    let p = ui.painter();
+    let fill = if selected { c.border } else { c.bg };
+    p.rect_filled(rect, 11.0, fill);
+    let stroke = if selected || resp.hovered() { Stroke::new(1.5, c.dot) } else { Stroke::new(1.0, c.border) };
+    p.rect_stroke(rect, 11.0, stroke, egui::StrokeKind::Inside);
+    let cy = rect.center().y;
+    p.circle_filled(egui::pos2(rect.left() + 9.5, cy), 2.8, c.dot);
+    let x = rect.left() + 17.0;
+    p.galley(egui::pos2(x, cy - name.size().y / 2.0), name.clone(), c.text);
+    p.galley(egui::pos2(x + name.size().x + 6.0, cy - num.size().y / 2.0), num, c.text);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 /// Fila de lista a todo el ancho: ícono + texto recortado a la izquierda, dato a la derecha.
 fn list_row(ui: &mut Ui, glyph: &str, text: &str, right: &str, selected: bool) -> Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 27.0), Sense::click());
@@ -2071,34 +1895,47 @@ fn append_line(job: &mut LayoutJob, line: &str, size: f32) {
     if done {
         body.strikethrough = Stroke::new(1.0, MUTED);
     }
-    let mut tag = fmt(FontId::proportional(size), ACCENT);
-    tag.background = ACCENT_BG;
     let mut pos = 0;
     // "- 15:03 " de las reuniones, en gris.
     if content.len() >= 8 && content.starts_with("- ") && agenda::is_time(&content[2..7]) {
         job.append(&line[..8.min(line.len())], 0.0, fmt(FontId::proportional(size), MUTED));
         pos = 8.min(line.len());
     }
+    // Etiquetas: con su color y sin el '#'.
     for (a, b) in tags::tag_spans(content) {
         if a < pos {
             continue;
         }
+        let c = theme::tag_colors(&content[a + 1..b]);
+        let mut tag = fmt(FontId::proportional(size - 1.0), c.text);
+        tag.background = c.bg;
+        tag.expand_bg = 3.0;
         job.append(&line[pos..a], 0.0, body.clone());
-        job.append(&line[a..b], 0.0, tag.clone());
+        job.append(&line[a + 1..b], 4.0, tag);
         pos = b;
     }
     job.append(&line[pos..], 0.0, body);
 }
 
-fn highlight(text: &str) -> LayoutJob {
-    let mut job = LayoutJob::default();
-    for line in text.split_inclusive('\n') {
-        append_line(&mut job, line, EDITOR_SIZE);
-    }
-    if text.is_empty() || text.ends_with('\n') {
-        job.append("", 0.0, fmt(FontId::proportional(EDITOR_SIZE), TEXT));
-    }
-    job
+/// Una línea para mostrar fuera del editor: sin "^id", con la fecha legible y la casilla como ícono.
+fn display_line(line: &str) -> String {
+    let info = lines::parse(line);
+    let mut out = match info.check {
+        Some(true) => format!("{} ", icon::CHECK_SQUARE),
+        Some(false) => format!("{} ", icon::SQUARE),
+        None => String::new(),
+    };
+    let start = if info.check.is_some() { info.prefix } else { 0 };
+    let words: Vec<String> = line[start..]
+        .split(' ')
+        .filter(|w| !(w.starts_with('^') && lines::id_of(w).is_some()))
+        .map(|w| match w.strip_prefix("due:").filter(|d| agenda::is_date(d)) {
+            Some(d) => format!("{} {}", icon::CALENDAR_BLANK, long_date(d)),
+            None => w.to_string(),
+        })
+        .collect();
+    out += &words.join(" ");
+    out
 }
 
 fn highlight_line(line: &str, size: f32) -> LayoutJob {
@@ -2122,7 +1959,8 @@ mod tests {
         assert!(is_meeting("Llamada con Juan\n#reunión"));
     }
 
-    /// Nota del día: cada línea (y el bloque "##") va a su nota; lo no atribuido se queda; Deshacer lo revierte.
+    /// Nota del día: cada nota (con sus detalles) va a su nota, con sus etiquetas y su casilla;
+    /// lo no atribuido se queda; las casillas se sincronizan con tareas.txt; Deshacer lo revierte.
     #[test]
     fn capture_units_move_to_their_notes_and_undo() {
         let dir = std::env::temp_dir().join(format!("nodex-captura-{}", std::process::id()));
@@ -2150,8 +1988,9 @@ mod tests {
         let a: Analysis = serde_json::from_str(
             r#"{"unidades": [
                 {"id": "L1", "espacio": "Consorcio", "nota": "Trincheras", "etiquetas": ["informe"]},
-                {"id": "L2", "espacio": "Consorcio", "nota": "trincheras"},
+                {"id": "L2", "de": "L1", "etiquetas": ["trincheras"]},
                 {"id": "L3", "espacio": "Docencia", "nota": "Informe UTalca", "etiquetas": ["utalca"]},
+                {"id": "L4", "etiquetas": ["lavet"]},
                 {"id": "B6", "espacio": "Consorcio", "nota": "Reunión Estructuras", "es_reunion": true, "resumen": "Se revisaron las vigas del eje 3."}],
               "tareas": [
                 {"texto": "Entregar el informe a la UTalca", "fecha": "2026-09-25", "unidad": "L3"},
@@ -2160,21 +1999,40 @@ mod tests {
         .unwrap();
         app.apply_analysis(daily.clone(), ai::fnv(original), a);
 
-        // Las líneas 1 y 2 van a la nota existente "Trincheras" (sin importar mayúsculas).
+        // La línea 1 va a la nota existente "Trincheras" y la 2 se va con ella, como detalle.
         let t = fs::read_to_string(&trincheras).unwrap();
-        assert!(t.starts_with("# Trincheras\n\nRevisión de taludes #trincheras\nDebo entregar el informe de revisión de las trincheras #informe\nLas trincheras"), "{t}");
-        // La línea 3 crea una nota nueva en Docencia.
+        assert_eq!(
+            t,
+            "# Trincheras\n\nRevisión de taludes #trincheras\n\
+             Debo entregar el informe de revisión de las trincheras #informe\n\
+             \x20 Las trincheras enstán en la carpeta dropbox /workspace/proeyctos/activos/consorcio/04 Trincheras #trincheras\n"
+        );
+        // La línea 3 crea una nota nueva en Docencia, como tarea con fecha e identificador.
         let u = fs::read_to_string(dir.join("Docencia").join("Informe UTalca.md")).unwrap();
-        assert_eq!(u, "Debo entregar mañana el informe a la UTalca #utalca\n");
+        assert!(u.starts_with("- [ ] Debo entregar mañana el informe a la UTalca #utalca due:2026-09-25 ^"), "{u}");
+        let utalca_id = lines::id_of(u.trim_end()).unwrap();
         // El bloque de reunión se mueve entero, con resumen y #reunión.
         let r = fs::read_to_string(dir.join("Consorcio").join("Reunión Estructuras.md")).unwrap();
-        assert!(r.starts_with("## Reunión Estructuras · 2026-09-24 15:00\n- 15:03 revisar vigas eje 3\n## fin · 15:42\n### Resumen\nSe revisaron las vigas del eje 3.\n#reunión"), "{r}");
-        // La línea 4 no se atribuyó: se queda en la nota del día.
-        assert_eq!(fs::read_to_string(&daily).unwrap(), "Debo entregar la proxima semana el LaVet\n");
-        // Tareas: la de UTalca apunta a su nota nueva; la del LaVet, a la nota del día.
+        assert_eq!(r, "## Reunión Estructuras · 2026-09-24 15:00\n- 15:03 revisar vigas eje 3\n## fin · 15:42\n### Resumen\nSe revisaron las vigas del eje 3.\n#reunión\n");
+        // La línea 4 no se atribuyó: se queda en la nota del día, con su etiqueta y su casilla.
+        let d = fs::read_to_string(&daily).unwrap();
+        assert!(d.starts_with("- [ ] Debo entregar la proxima semana el LaVet #lavet due:2026-10-02 ^"), "{d}");
+        assert_eq!(d.lines().count(), 1);
+        let lavet_id = lines::id_of(d.trim_end()).unwrap();
+        // Tareas: cada una apunta a su nota y a su línea.
         let tasks = fs::read_to_string(dir.join("tareas.txt")).unwrap();
-        assert!(tasks.contains("Entregar el informe a la UTalca +Docencia due:2026-09-25 nota:Docencia/Informe%20UTalca"), "{tasks}");
-        assert!(tasks.contains("Entregar el LaVet +General due:2026-10-02 nota:General/2026-09-24"), "{tasks}");
+        assert!(tasks.contains(&format!("Entregar el informe a la UTalca +Docencia due:2026-09-25 nota:Docencia/Informe%20UTalca id:{utalca_id}")), "{tasks}");
+        assert!(tasks.contains(&format!("Entregar el LaVet +General due:2026-10-02 nota:General/2026-09-24 id:{lavet_id}")), "{tasks}");
+
+        // Marcar la casilla en la nota marca la tarea; desmarcarla en Tareas desmarca la línea.
+        app.open(daily.clone(), None);
+        app.toggle_line_check(0);
+        assert!(fs::read_to_string(&daily).unwrap().starts_with("- [x] Debo entregar"));
+        let raw = app.agenda.tasks().into_iter().find(|t| t.id.as_deref() == Some(lavet_id.as_str())).unwrap();
+        assert!(raw.done, "{}", raw.raw);
+        app.apply(Action::ToggleTask(raw.raw));
+        assert!(fs::read_to_string(&daily).unwrap().starts_with("- [ ] Debo entregar"));
+        assert!(app.agenda.tasks().iter().all(|t| !t.done));
 
         // Deshacer deja todo como antes.
         app.undo_ai();
@@ -2184,12 +2042,5 @@ mod tests {
         assert!(!dir.join("Consorcio").join("Reunión Estructuras.md").exists());
         assert_eq!(fs::read_to_string(dir.join("tareas.txt")).unwrap_or_default(), "");
         let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn tags_are_appended() {
-        assert_eq!(append_tags("texto\n", &["a".into(), "b".into()]), "texto\n\n#a #b\n");
-        assert_eq!(append_tags("texto\n\n#a\n", &["b".into()]), "texto\n\n#a #b\n");
-        assert_eq!(clean_tag("#Muro Contención"), "muro-contención");
     }
 }

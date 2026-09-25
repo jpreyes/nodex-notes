@@ -32,14 +32,17 @@ pub struct AiEvent {
     pub unidad: String,
 }
 
-/// En una nota de captura: a qué nota (y espacio) va una unidad (línea o bloque "##").
+/// Una nota dentro del archivo (línea con sus sangrías, o bloque "##"): sus etiquetas,
+/// de qué otra es detalle y, en una nota de captura, a qué nota (y espacio) va.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct AiUnit {
     pub id: String,
+    pub etiquetas: Vec<String>,
+    /// Id de la unidad que esta completa ("L1"); vacío si es independiente.
+    pub de: String,
     pub espacio: String,
     pub nota: String,
-    pub etiquetas: Vec<String>,
     pub es_reunion: bool,
     pub resumen: String,
 }
@@ -347,58 +350,16 @@ fn today() -> String {
     format!("{} {}", DIAS[now.weekday().num_days_from_monday() as usize], now.format("%Y-%m-%d"))
 }
 
-const RULES_TASKS: &str = r#"- Etiquetas en minúsculas, una palabra (guiones si hace falta), sin '#'. Prefiere etiquetas existentes y no repitas las que el texto ya tiene.
-- tareas: acciones pendientes concretas que la persona debe hacer ("debo…", "hay que…", "tengo que…"), redactadas con verbo en infinitivo. Ignora las marcadas como hechas ([x]). "fecha" (AAAA-MM-DD) si se indica o se deduce: "mañana" = el día siguiente a hoy; "el viernes" = la fecha de ese viernes; un plazo vago como "la próxima semana" = el viernes de la próxima semana. Si no hay plazo, "".
-- eventos: citas, visitas o reuniones futuras con fecha (AAAA-MM-DD) y hora (HH:MM) si se indica. Las entregas con plazo son tareas, no eventos. No incluyas una reunión que el propio texto está registrando."#;
+const RULES_TASKS: &str = r#"- tareas: acciones pendientes concretas que la persona debe hacer ("debo…", "hay que…", "tengo que…"), redactadas con verbo en infinitivo, cada una con el id de la unidad de donde sale. Las líneas "- [ ] …" ya son tareas pendientes: inclúyelas igual (con su unidad). Ignora las hechas ("- [x] …"). "fecha" (AAAA-MM-DD) si se indica o se deduce: "mañana" = el día siguiente a hoy; "el viernes" = la fecha de ese viernes; un plazo vago como "la próxima semana" = el viernes de la próxima semana; "due:AAAA-MM-DD" en la línea es su fecha. Si no hay plazo, "".
+- eventos: citas, visitas o reuniones futuras con fecha (AAAA-MM-DD) y hora (HH:MM) si se indica, con el id de su unidad. Las entregas con plazo son tareas, no eventos. No incluyas una reunión que el propio texto está registrando.
+- Ignora los "^abc12" del final de algunas líneas: son identificadores internos."#;
 
-/// Nota con título propio: se analiza completa (sus líneas ya están en su nota).
-pub fn build_prompt(
-    title: &str,
-    workspace: &str,
-    text: &str,
-    workspaces: &[WorkspaceInfo],
-    all_tags: &[String],
-) -> (String, String) {
-    let system = format!(
-        r#"Organizas las notas de una persona que escribe en español. Devuelve SOLO un objeto JSON válido, sin texto adicional, con esta forma exacta:
-{{"es_reunion": false, "espacio": "", "confianza": "baja", "titulo": "", "etiquetas": [], "resumen": "", "tareas": [{{"texto": "", "fecha": ""}}], "eventos": [{{"titulo": "", "fecha": "", "hora": ""}}]}}
+const RULES_UNITS: &str = r#"- etiquetas: de 1 a 3 por unidad, sobre el tema de ESA unidad (no de toda la nota). En minúsculas, una palabra (guiones si hace falta), sin '#'. Prefiere etiquetas existentes y no repitas las que la unidad ya tiene.
+- de: si una unidad es un detalle de otra anterior (habla de lo mismo y la completa: dónde está, un dato más, una aclaración), el id de esa otra unidad; si es independiente, "". Úsalo solo cuando sea evidente."#;
 
-Reglas:
-- es_reunion: true si la nota registra una reunión, llamada o conversación con otras personas.
-- espacio: el espacio de trabajo al que pertenece la nota, exactamente como en la lista. confianza "alta" solo si es evidente; si no está claro, deja el espacio actual con confianza "baja".
-- titulo: título breve (máximo 6 palabras), sin fecha. etiquetas: 1 a 4.
-- resumen: si es una reunión, 2 o 3 frases con decisiones y acuerdos; si no, "".
-{RULES_TASKS}
-Hoy es {}."#,
-        today()
-    );
-    let user = format!(
-        "{}\nEspacio actual: {workspace}\nTítulo actual: {title}\n\nNota:\n<<<\n{text}\n>>>",
-        context(workspaces, all_tags)
-    );
-    (system, user)
-}
-
-/// Nota de captura: cada línea es una nota distinta, salvo los bloques "##" que van juntos.
-pub fn build_capture_prompt(
-    text: &str,
-    units: &[crate::capture::Unit],
-    workspaces: &[WorkspaceInfo],
-    all_tags: &[String],
-) -> (String, String) {
-    let system = format!(
-        r###"Organizas los apuntes rápidos de una persona que escribe en español. Cada línea es una nota independiente, salvo los bloques que empiezan con "##" (una reunión o un tema), que van juntos. Recibes esas unidades con su id ("L3" = línea 3; "B5" = bloque que empieza en la línea 5). Devuelve SOLO un objeto JSON válido, sin texto adicional, con esta forma exacta:
-{{"unidades": [{{"id": "L1", "espacio": "", "nota": "", "etiquetas": [], "es_reunion": false, "resumen": ""}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}]}}
-
-Reglas:
-- unidades: para cada unidad que claramente pertenece a un tema, di dónde guardarla. "espacio": un espacio de la lista, escrito exactamente igual. "nota": el título exacto de una nota existente de ese espacio si alguna corresponde; si no, un título nuevo y breve (máximo 5 palabras). Las unidades del mismo tema van a la misma nota. En un bloque "##", si no calza con una nota existente, usa como nota el título del bloque (sin fecha). etiquetas: 0 a 2.
-- Las unidades que no se pueden atribuir con seguridad NO se incluyen: se quedan donde están.
-- es_reunion y resumen solo para bloques que registran una reunión: 2 o 3 frases con decisiones y acuerdos.
-- En tareas y eventos, "unidad" es el id de la unidad de donde salen.
-{RULES_TASKS}
-Hoy es {}."###,
-        today()
-    );
+/// Una nota se envía dividida en unidades: cada línea sin sangría (con sus líneas con sangría)
+/// y cada bloque "##".
+fn list_units(text: &str, units: &[crate::lines::Unit]) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let mut listed = String::new();
     for u in units {
@@ -409,9 +370,61 @@ Hoy es {}."###,
             }
         } else {
             listed += &format!("[{}] {}\n", u.id, lines[u.first]);
+            for l in &lines[u.first + 1..=u.last] {
+                listed += &format!("    {l}\n");
+            }
         }
     }
-    let user = format!("{}\nUnidades:\n<<<\n{listed}>>>", context(workspaces, all_tags));
+    listed
+}
+
+/// El prompt para una nota. En una nota de captura (la del día, "Sin título") cada unidad
+/// puede irse a otra nota; en una con título propio, la nota se analiza completa y sus
+/// unidades se quedan donde están.
+pub fn build_prompt(
+    title: &str,
+    workspace: &str,
+    text: &str,
+    units: &[crate::lines::Unit],
+    capture: bool,
+    workspaces: &[WorkspaceInfo],
+    all_tags: &[String],
+) -> (String, String) {
+    let intro = r###"Organizas las notas de una persona que escribe en español. Cada línea sin sangría es una nota distinta; las líneas con sangría (y sus ítems "- ") son parte de la nota de arriba; un bloque que empieza con "##" (una reunión o un tema) va junto. Recibes la nota dividida en esas unidades, cada una con su id ("L3" = la que empieza en la línea 3; "B5" = bloque que empieza en la línea 5). Devuelve SOLO un objeto JSON válido, sin texto adicional, con esta forma exacta:"###;
+    let system = if capture {
+        format!(
+            r###"{intro}
+{{"unidades": [{{"id": "L1", "etiquetas": [], "de": "", "espacio": "", "nota": "", "es_reunion": false, "resumen": ""}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}]}}
+
+Son apuntes rápidos: cada unidad puede guardarse en la nota que le corresponde.
+Reglas:
+- unidades: incluye cada unidad a la que le pongas etiquetas o le des un lugar.
+{RULES_UNITS}
+- espacio y nota: dónde guardarla, si claramente pertenece a un tema. "espacio": un espacio de la lista, escrito exactamente igual. "nota": el título exacto de una nota existente de ese espacio si alguna corresponde; si no, un título nuevo y breve (máximo 5 palabras). Las unidades del mismo tema van a la misma nota. En un bloque "##" que no calza con una nota existente, usa como nota el título del bloque (sin fecha). Si no se puede atribuir con seguridad, deja espacio y nota vacíos: se queda donde está. Una unidad con "de" se va junto con la otra.
+- es_reunion y resumen solo para bloques que registran una reunión: 2 o 3 frases con decisiones y acuerdos.
+{RULES_TASKS}
+Hoy es {}."###,
+            today()
+        )
+    } else {
+        format!(
+            r###"{intro}
+{{"es_reunion": false, "espacio": "", "confianza": "baja", "titulo": "", "resumen": "", "unidades": [{{"id": "L1", "etiquetas": [], "de": ""}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}]}}
+
+Reglas:
+- es_reunion: true si la nota completa registra una reunión, llamada o conversación con otras personas.
+- espacio: el espacio de trabajo al que pertenece la nota completa, exactamente como en la lista. confianza "alta" solo si es evidente; si no está claro, deja el espacio actual con confianza "baja".
+- titulo: título breve para la nota (máximo 6 palabras), sin fecha.
+- resumen: si es una reunión, 2 o 3 frases con decisiones y acuerdos; si no, "".
+- unidades: incluye cada unidad a la que le pongas etiquetas.
+{RULES_UNITS}
+{RULES_TASKS}
+Hoy es {}."###,
+            today()
+        )
+    };
+    let place = if capture { String::new() } else { format!("Espacio actual: {workspace}\nTítulo actual: {title}\n") };
+    let user = format!("{}\n{place}\nUnidades:\n<<<\n{}>>>", context(workspaces, all_tags), list_units(text, units));
     (system, user)
 }
 #[cfg(test)]
@@ -433,9 +446,14 @@ mod tests {
     #[test]
     fn capture_prompt_lists_units() {
         let text = "uno\n\n## Reunión X · hoy\n- 10:00 algo\n## fin · 10:30\ncuatro";
-        let (_, user) = build_capture_prompt(text, &crate::capture::units(text), &[], &[]);
+        let (_, user) = build_prompt("", "", text, &crate::lines::units(text), true, &[], &[]);
         assert!(user.contains("[L1] uno\n[B3] (bloque, líneas 3 a 5)\n    ## Reunión X · hoy\n"), "{user}");
         assert!(user.contains("[L6] cuatro\n"), "{user}");
+        // Nota con título: sus líneas con sangría van con su nota; no se pregunta a dónde moverlas.
+        let text = "Comprar pan\n  integral\n";
+        let (system, user) = build_prompt("Compras", "General", text, &crate::lines::units(text), false, &[], &[]);
+        assert!(user.contains("Título actual: Compras\n") && user.contains("[L1] Comprar pan\n      integral\n"), "{user}");
+        assert!(system.contains("\"confianza\"") && !system.contains("\"nota\""), "{system}");
     }
 
     #[test]

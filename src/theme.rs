@@ -107,3 +107,33 @@ fn setup_fonts(ctx: &egui::Context) {
     fonts.families.insert(FontFamily::Name("bold".into()), bold_family);
     ctx.set_fonts(fonts);
 }
+
+/// Colores de una etiqueta: fondo, contorno, texto y punto.
+#[derive(Clone, Copy)]
+pub struct TagColors {
+    pub bg: Color32,
+    pub border: Color32,
+    pub text: Color32,
+    pub dot: Color32,
+}
+
+const TAG_PALETTE: [[u32; 4]; 7] = [
+    [0xEEEDFE, 0xAFA9EC, 0x3C3489, 0x7F77DD], // morado
+    [0xE1F5EE, 0x5DCAA5, 0x085041, 0x1D9E75], // verde azulado
+    [0xFAECE7, 0xF0997B, 0x712B13, 0xD85A30], // coral
+    [0xFBEAF0, 0xED93B1, 0x72243E, 0xD4537E], // rosado
+    [0xE6F1FB, 0x85B7EB, 0x0C447C, 0x378ADD], // azul
+    [0xEAF3DE, 0x97C459, 0x27500A, 0x639922], // verde
+    [0xFAEEDA, 0xEF9F27, 0x633806, 0xBA7517], // ámbar
+];
+
+fn hex(c: u32) -> Color32 {
+    Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8)
+}
+
+/// Cada etiqueta tiene siempre el mismo color (según su nombre).
+pub fn tag_colors(tag: &str) -> TagColors {
+    let i = (crate::ai::fnv(&tag.to_lowercase()) % TAG_PALETTE.len() as u64) as usize;
+    let [bg, border, text, dot] = TAG_PALETTE[i];
+    TagColors { bg: hex(bg), border: hex(border), text: hex(text), dot: hex(dot) }
+}

@@ -25,7 +25,11 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 ## Uso
 
 - **Escribir:** se escribe directo en el editor y se guarda solo.
-- **Etiquetas:** `#palabra` es una etiqueta; haz clic en ella en la barra lateral para ver todas sus líneas.
+- **Cada línea es una nota** y lleva su número a la izquierda. Con **Tab** la línea pasa a ser parte de la nota de arriba; con **Tab Tab**, un ítem de lista de esa nota (Tab Tab Tab, un subítem). **Shift+Tab** quita un nivel y **Enter** sigue la lista (en un ítem vacío, sale de ella). En el archivo queda como Markdown normal: `  texto`, `  - ítem`, `    - subítem`.
+- **Etiquetas:** `#palabra` es una etiqueta. Se ve como una píldora de color, sin el `#`, y cada etiqueta tiene siempre el mismo color. Haz clic en ella en la barra lateral para ver todas sus líneas. En la línea donde está el cursor se ve el texto tal cual, para poder editarlo.
+- **Tareas en la nota:** `- [ ] tarea` se ve con una casilla. Un clic la marca como hecha, también en Tareas y en Google Calendar. `due:2026-09-26` se ve como una fecha ("mañana", "vie 26") y en rojo si venció.
+- **Rutas y webs:** las direcciones web y las rutas de carpetas se abren con un clic. Una ruta escrita a mano, como `/workspace/proyectos/consorcio/04 Trincheras`, se busca dentro de Dropbox aunque tenga mayúsculas distintas o un error de tipeo.
+- **Hoy (Ctrl+H):** lo atrasado, lo de hoy, lo de mañana y lo que viene en la semana. Aparece solo la primera vez que abres la app cada día, si hay algo pendiente.
 - **Espacios de trabajo:** cada espacio es una carpeta; cada nota es un archivo `.md`.
 - **Reuniones:** con **Ctrl+R**, cada línea lleva su hora y **Esc** agrega `## fin · hora`. También se cierra sola tras 30 minutos sin escribir, al abrir otra reunión o al cerrar la app.
 - **Tareas y Agenda:** las tareas se marcan como hechas con doble clic. La agenda muestra eventos y tareas con fecha.
@@ -34,29 +38,35 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 |---|---|
 | Ctrl+N | Nueva nota |
 | Ctrl+D | Nota de hoy |
+| Ctrl+H | Hoy: atrasado, hoy y esta semana |
 | Ctrl+R | Nueva reunión |
 | Ctrl+F | Buscar en todas las notas |
 | Ctrl+, | Configuración |
 | Esc | Cerrar la reunión, la búsqueda o la vista |
+| Tab / Shift+Tab | Unir la línea a la nota de arriba o hacerla ítem de lista / quitar un nivel |
 
 ## IA
 
 Al dejar una nota (o tras 45 segundos sin tocarla), la IA la organiza.
 
-**En la nota del día y en las "Sin título" (captura rápida), cada línea es una nota distinta**, salvo que la agrupes con `##`: un bloque que empieza con `## Título` va junto hasta `## fin`, el siguiente `##` o una línea en blanco. La IA decide dónde va cada línea o bloque:
+**Cada línea es una nota distinta**, con sus líneas con sangría. Un bloque que empieza con `## Título` va junto hasta `## fin`, el siguiente `##` o una línea en blanco. En todas las notas, la IA trabaja nota por nota:
 
-- a una nota existente del espacio que corresponde (por ejemplo, "Trincheras" en *Consorcio*), o a una nota nueva con un título breve;
+- **Etiquetas por nota:** cada línea recibe sus propias etiquetas, en esa misma línea (reutiliza las que ya existen).
+- **Tareas en su línea:** la línea de donde sale una tarea pasa a tener casilla y fecha: `- [ ] Debo entregar el informe a la UTalca #utalca due:2026-09-26 ^k3f9a`. El `^k3f9a` (que no se ve) une la línea con su tarea en `tareas.txt`, para que marcarla en un lado la marque en el otro.
+- **Detalles juntos:** si una línea es detalle de otra (por ejemplo, dónde está la carpeta de un informe), la une a ella con sangría.
+
+**En la nota del día y en las "Sin título" (captura rápida)**, además, cada nota se va a donde corresponde:
+
+- a una nota existente del espacio que corresponde (por ejemplo, "Trincheras" en *Consorcio*), o a una nota nueva con un título breve, junto con sus detalles;
 - los bloques de reunión se mueven completos, con un resumen y `#reunión`;
 - lo que no puede atribuir con seguridad se queda donde está.
 
-**En las notas con título propio**, la IA las analiza completas:
+**En las notas con título propio**, las líneas se quedan donde están, y la IA también:
 
 - detecta si es una reunión, le pone `#reunión` y un resumen;
-- la mueve a su espacio de trabajo, solo cuando está segura;
-- agrega etiquetas (reutiliza las existentes) y pone nombre a las notas "Sin título";
+- la mueve a su espacio de trabajo, solo cuando está segura.
 
-En ambos casos:
-- extrae tareas a `tareas.txt` (formato [todo.txt](https://github.com/todotxt/todo.txt)) y eventos a `agenda.txt`, los sincroniza con [Google Calendar](#google-calendar) y genera `agenda.ics` para Outlook u otros calendarios.
+En ambos casos, extrae tareas a `tareas.txt` (formato [todo.txt](https://github.com/todotxt/todo.txt)) y eventos a `agenda.txt`, los sincroniza con [Google Calendar](#google-calendar) y genera `agenda.ics` para Outlook u otros calendarios.
 
 Cada cambio se puede deshacer desde la barra inferior. El botón ✦ organiza las notas antiguas pendientes.
 
@@ -124,10 +134,15 @@ Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro eq
 | Archivo | Qué hace |
 |---|---|
 | `src/main.rs` | Punto de entrada: lee la configuración y abre la ventana. |
-| `src/app.rs` | Interfaz y comportamiento: barra de íconos, barra lateral, editor, reuniones, lo que hace la IA (y deshacer), vistas Tareas y Agenda. |
+| `src/app.rs` | Interfaz y comportamiento: barra de íconos, barra lateral, reuniones, lo que hace la IA (y deshacer), vistas Tareas y Agenda. |
+| `src/app/editor.rs` | El editor: números, píldoras de etiquetas, sangrías y listas, casillas, fechas, enlaces; Tab, Enter y Retroceso. |
+| `src/app/today.rs` | Vista Hoy (atrasado, hoy, mañana y la semana). |
 | `src/app/settings.rs` | Ventana de Configuración (General, IA, Calendar, Atajos, Acerca de). |
 | `src/ai.rs` | Conexión con la IA (genai) en un hilo aparte y el prompt con las reglas. |
-| `src/capture.rs` | Notas de captura: separa cada línea y cada bloque `##` en unidades para la IA. |
+| `src/lines.rs` | Estructura de una nota: niveles de sangría, casillas, `due:`/`^id` y qué líneas forman cada nota. |
+| `src/organize.rs` | Aplica al texto lo que respondió la IA: etiquetas por línea, tareas con casilla, detalles unidos y a dónde va cada nota. |
+| `src/capture.rs` | Qué notas son de captura (la del día y las "Sin título"). |
+| `src/links.rs` | Encuentra rutas (tolerando errores de tipeo) y direcciones web en las líneas. |
 | `src/gcal.rs` | Google Calendar: OAuth con PKCE, calendario "Notas" y sincronización de eventos. |
 | `src/agenda.rs` | `tareas.txt` (todo.txt), `agenda.txt` y `agenda.ics`. |
 | `src/vault.rs` | Carpeta de notas: espacios, notas `.md`, cambios en disco, papelera. |

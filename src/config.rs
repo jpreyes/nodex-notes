@@ -120,6 +120,8 @@ pub fn save(c: &Config) -> std::io::Result<()> {
 pub struct Estado {
     pub espacio: String,
     pub nota: String,
+    /// Último día en que se mostró la vista "Hoy" al abrir.
+    pub hoy: String,
 }
 
 fn estado_path() -> PathBuf {
