@@ -29,6 +29,9 @@ fn day(offset: i64) -> String {
 impl NotesApp {
     /// ¿Hay algo atrasado, para hoy o para mañana?
     pub(super) fn has_something_today(&self) -> bool {
+        if !self.doubts.pending.is_empty() {
+            return true;
+        }
         let tomorrow = day(1);
         self.agenda.tasks().iter().any(|t| !t.done && t.due.as_deref().is_some_and(|d| agenda::is_date(d) && *d <= *tomorrow))
             || self.agenda.events().iter().any(|e| e.date >= today() && e.date <= tomorrow)
@@ -60,7 +63,9 @@ impl NotesApp {
         let ev_tomorrow = ev(&|d| d == tomorrow);
         let ev_week = ev(&|d| d > tomorrow.as_str() && d <= week.as_str());
         let root = self.vault.root.clone();
-        let nothing = overdue.is_empty() && for_today.is_empty() && for_tomorrow.is_empty() && this_week.is_empty()
+        let asks = self.live_doubts();
+        let mut reply = None;
+        let nothing = asks.is_empty() && overdue.is_empty() && for_today.is_empty() && for_tomorrow.is_empty() && this_week.is_empty()
             && ev_today.is_empty() && ev_tomorrow.is_empty() && ev_week.is_empty();
 
         Self::column(ui, "today", |ui, _| {
@@ -73,6 +78,17 @@ impl NotesApp {
             };
             if view_header(ui, "Hoy", &subtitle) {
                 action = Some(Action::CloseResults);
+            }
+            if !asks.is_empty() {
+                ui.label(RichText::new(format!("{} La IA pregunta", icon::SPARKLE)).font(theme::bold(15.0)).color(ACCENT));
+                ui.add_space(6.0);
+                for (d, n) in &asks {
+                    let label = d.note.replace('/', " / ");
+                    if let Some(r) = self.doubt_card(ui, d, *n, Some(label)) {
+                        reply = Some(r);
+                    }
+                }
+                ui.add_space(10.0);
             }
             let mut section_ui = |ui: &mut Ui, title: &str, color: Color32, tasks: &[agenda::Task], events: &[agenda::Event]| {
                 if tasks.is_empty() && events.is_empty() {
@@ -109,6 +125,9 @@ impl NotesApp {
                 }
             });
         });
+        if let Some(r) = reply {
+            self.handle_reply(r);
+        }
         if self.esc(ui) {
             action = Some(Action::CloseResults);
         }

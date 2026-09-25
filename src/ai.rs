@@ -61,6 +61,18 @@ pub struct Analysis {
     pub unidades: Vec<AiUnit>,
     pub tareas: Vec<AiTask>,
     pub eventos: Vec<AiEvent>,
+    /// Lo que la IA no sabe con seguridad: una pregunta con opciones.
+    pub dudas: Vec<AiDoubt>,
+}
+
+/// Una pregunta de la IA sobre una unidad. Las opciones pueden venir como texto o como objeto
+/// ({"texto", "espacio", "nota", "de", "fecha", "etiquetas", "dato"}); ver `doubts::from_ai`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct AiDoubt {
+    pub unidad: String,
+    pub pregunta: String,
+    pub opciones: Vec<serde_json::Value>,
 }
 
 pub struct Job {
@@ -353,8 +365,8 @@ pub struct WorkspaceInfo {
 const DIAS: [&str; 7] = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 
 
-/// Contexto común: espacios de trabajo, sus notas y etiquetas.
-fn context(workspaces: &[WorkspaceInfo], all_tags: &[String]) -> String {
+/// Contexto común: espacios de trabajo, sus notas y etiquetas, y lo que la persona ya aclaró.
+fn context(workspaces: &[WorkspaceInfo], all_tags: &[String], learned: &[String]) -> String {
     let mut s = String::from("Espacios de trabajo disponibles:\n");
     for w in workspaces {
         s += &format!("- {}", w.name);
@@ -368,6 +380,12 @@ fn context(workspaces: &[WorkspaceInfo], all_tags: &[String]) -> String {
     }
     if !all_tags.is_empty() {
         s += &format!("\nEtiquetas existentes: {}\n", all_tags.join(", "));
+    }
+    if !learned.is_empty() {
+        s += "\nLo que la persona ya aclaró (úsalo y no vuelvas a preguntarlo):\n";
+        for f in learned {
+            s += &format!("- {f}\n");
+        }
     }
     s
 }
@@ -384,6 +402,10 @@ const RULES_TASKS: &str = r#"- tareas: acciones pendientes concretas que la pers
 
 const RULES_UNITS: &str = r#"- etiquetas: de 1 a 3 por unidad, sobre el tema de ESA unidad (no de toda la nota). En minúsculas, una palabra (guiones si hace falta), sin '#'. Prefiere etiquetas existentes y no repitas las que la unidad ya tiene.
 - de: si una unidad es un detalle de otra anterior (habla de lo mismo y la completa: dónde está, un dato más, una aclaración), el id de esa otra unidad; si es independiente, "". Úsalo solo cuando sea evidente."#;
+
+const RULES_DOUBTS: &str = r#"- dudas: si NO estás seguro de algo que importa, no adivines: no lo apliques y pregunta. Por ejemplo, a qué espacio o nota pertenece una unidad cuando hay dos posibles, si una unidad es detalle de otra, o a qué fecha se refiere un plazo ambiguo. Como máximo 2 preguntas por nota, breves y concretas, cada una con el id de su unidad y de 2 a 4 opciones. Cada opción tiene "texto" (lo que se ve en el botón, corto) y lo que hace al elegirla: "espacio" y "nota" (dónde guardar la unidad), "de" (id de la unidad que completa), "fecha" (AAAA-MM-DD de su tarea), "etiquetas", y "dato": una frase corta con lo que conviene recordar para las próximas notas (por ejemplo "LaVet es un proyecto del espacio Docencia"). No preguntes lo evidente ni lo que la persona ya aclaró. Si no hay dudas, "dudas": []."#;
+
+const DOUBTS_SHAPE: &str = r#""dudas": [{"unidad": "L1", "pregunta": "", "opciones": [{"texto": "", "espacio": "", "nota": "", "de": "", "fecha": "", "etiquetas": [], "dato": ""}]}]"#;
 
 /// Una nota se envía dividida en unidades: cada línea sin sangría (con sus líneas con sangría)
 /// y cada bloque "##".
@@ -417,12 +439,13 @@ pub fn build_prompt(
     capture: bool,
     workspaces: &[WorkspaceInfo],
     all_tags: &[String],
+    learned: &[String],
 ) -> (String, String) {
     let intro = r###"Organizas las notas de una persona que escribe en español. Cada línea sin sangría es una nota distinta; las líneas con sangría (y sus ítems "- ") son parte de la nota de arriba; un bloque que empieza con "##" (una reunión o un tema) va junto. Recibes la nota dividida en esas unidades, cada una con su id ("L3" = la que empieza en la línea 3; "B5" = bloque que empieza en la línea 5). Devuelve SOLO un objeto JSON válido, sin texto adicional, con esta forma exacta:"###;
     let system = if capture {
         format!(
             r###"{intro}
-{{"unidades": [{{"id": "L1", "etiquetas": [], "de": "", "espacio": "", "nota": "", "es_reunion": false, "resumen": ""}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}]}}
+{{"unidades": [{{"id": "L1", "etiquetas": [], "de": "", "espacio": "", "nota": "", "es_reunion": false, "resumen": ""}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}], {DOUBTS_SHAPE}}}
 
 Son apuntes rápidos: cada unidad puede guardarse en la nota que le corresponde.
 Reglas:
@@ -431,13 +454,14 @@ Reglas:
 - espacio y nota: dónde guardarla, si claramente pertenece a un tema. "espacio": un espacio de la lista, escrito exactamente igual. "nota": el título exacto de una nota existente de ese espacio si alguna corresponde; si no, un título nuevo y breve (máximo 5 palabras). Las unidades del mismo tema van a la misma nota. En un bloque "##" que no calza con una nota existente, usa como nota el título del bloque (sin fecha). Si no se puede atribuir con seguridad, deja espacio y nota vacíos: se queda donde está. Una unidad con "de" se va junto con la otra.
 - es_reunion y resumen solo para bloques que registran una reunión: 2 o 3 frases con decisiones y acuerdos.
 {RULES_TASKS}
+{RULES_DOUBTS}
 Hoy es {}."###,
             today()
         )
     } else {
         format!(
             r###"{intro}
-{{"es_reunion": false, "espacio": "", "confianza": "baja", "titulo": "", "resumen": "", "unidades": [{{"id": "L1", "etiquetas": [], "de": ""}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}]}}
+{{"es_reunion": false, "espacio": "", "confianza": "baja", "titulo": "", "resumen": "", "unidades": [{{"id": "L1", "etiquetas": [], "de": ""}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}], {DOUBTS_SHAPE}}}
 
 Reglas:
 - es_reunion: true si la nota completa registra una reunión, llamada o conversación con otras personas.
@@ -447,12 +471,13 @@ Reglas:
 - unidades: incluye cada unidad a la que le pongas etiquetas.
 {RULES_UNITS}
 {RULES_TASKS}
+{RULES_DOUBTS} En esta nota las unidades no se mueven: en una opción, "espacio" (sin "nota") mueve la nota completa a ese espacio.
 Hoy es {}."###,
             today()
         )
     };
     let place = if capture { String::new() } else { format!("Espacio actual: {workspace}\nTítulo actual: {title}\n") };
-    let user = format!("{}\n{place}\nUnidades:\n<<<\n{}>>>", context(workspaces, all_tags), list_units(text, units));
+    let user = format!("{}\n{place}\nUnidades:\n<<<\n{}>>>", context(workspaces, all_tags, learned), list_units(text, units));
     (system, user)
 }
 #[cfg(test)]
@@ -474,14 +499,15 @@ mod tests {
     #[test]
     fn capture_prompt_lists_units() {
         let text = "uno\n\n## Reunión X · hoy\n- 10:00 algo\n## fin · 10:30\ncuatro";
-        let (_, user) = build_prompt("", "", text, &crate::lines::units(text), true, &[], &[]);
+        let (_, user) = build_prompt("", "", text, &crate::lines::units(text), true, &[], &[], &[]);
         assert!(user.contains("[L1] uno\n[B3] (bloque, líneas 3 a 5)\n    ## Reunión X · hoy\n"), "{user}");
         assert!(user.contains("[L6] cuatro\n"), "{user}");
         // Nota con título: sus líneas con sangría van con su nota; no se pregunta a dónde moverlas.
         let text = "Comprar pan\n  integral\n";
-        let (system, user) = build_prompt("Compras", "General", text, &crate::lines::units(text), false, &[], &[]);
+        let (system, user) = build_prompt("Compras", "General", text, &crate::lines::units(text), false, &[], &[], &["LaVet es de Docencia".to_string()]);
         assert!(user.contains("Título actual: Compras\n") && user.contains("[L1] Comprar pan\n      integral\n"), "{user}");
-        assert!(system.contains("\"confianza\"") && !system.contains("\"nota\""), "{system}");
+        assert!(system.contains("\"confianza\"") && system.contains("\"dudas\""), "{system}");
+        assert!(user.contains("ya aclaró (úsalo y no vuelvas a preguntarlo):\n- LaVet es de Docencia\n"), "{user}");
     }
 
     #[test]

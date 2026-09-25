@@ -1,6 +1,6 @@
 [package]
 name = "nodex-notes"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 description = "Notas rápidas estilo Notepad con espacios de trabajo, reuniones e IA que organiza sola"
 license = "MIT"

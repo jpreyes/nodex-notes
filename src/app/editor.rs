@@ -309,6 +309,7 @@ impl NotesApp {
     pub(super) fn editor(&mut self, ui: &mut Ui) {
         let viewport_h = ui.available_height();
         let ctx = ui.ctx().clone();
+        let mut reply = None;
         Self::column(ui, "editor", |ui, col_w| {
             // Título = nombre del archivo
             let title = ui.add(
@@ -351,6 +352,19 @@ impl NotesApp {
                 }
             });
             ui.add_space(14.0);
+
+            // Preguntas de la IA sobre esta nota.
+            let rel = self.rel(&self.note.path);
+            let mine: Vec<(crate::doubts::Doubt, usize)> = self
+                .doubts
+                .for_note(&rel)
+                .filter_map(|d| Some((d.clone(), Self::doubt_unit_number(&self.note.text, d)?)))
+                .collect();
+            for (d, n) in mine {
+                if let Some(r) = self.doubt_card(ui, &d, n, None) {
+                    reply = Some(r);
+                }
+            }
 
             // Texto
             let id = Id::new(("editor", &self.note.path));
@@ -422,6 +436,9 @@ impl NotesApp {
                 ctx.request_repaint();
             }
         });
+        if let Some(r) = reply {
+            self.handle_reply(r);
+        }
     }
 
     /// Números, barras, píldoras, casillas, fechas y enlaces; y sus clics.

@@ -283,6 +283,67 @@ impl Agenda {
         Ok(true)
     }
 
+    /// Cambia (o pone) la fecha de la tarea con ese identificador. Devuelve si la encontró.
+    pub fn set_due_by_id(&self, id: &str, date: &str) -> io::Result<bool> {
+        let mut found = false;
+        let lines: Vec<String> = self
+            .read_lines(TASKS_FILE)
+            .into_iter()
+            .map(|l| {
+                if parse_task(&l).and_then(|t| t.id).as_deref() != Some(id) {
+                    return l;
+                }
+                found = true;
+                let mut words: Vec<String> = l.split_whitespace().filter(|w| !w.starts_with("due:")).map(str::to_string).collect();
+                words.push(format!("due:{date}"));
+                words.join(" ")
+            })
+            .collect();
+        if found {
+            self.write_lines(TASKS_FILE, &lines)?;
+            self.write_ics()?;
+        }
+        Ok(found)
+    }
+
+    /// Las tareas y eventos que venían de `from` (o las tareas con esos identificadores)
+    /// pasan a la nota `note` del espacio `ws`.
+    pub fn retarget(&self, from: Option<&str>, ids: &[String], note: &str, ws: &str) -> io::Result<()> {
+        let fix = |l: &str| -> String {
+            l.split_whitespace()
+                .map(|w| {
+                    if w.starts_with("nota:") {
+                        format!("nota:{}", encode_note(note))
+                    } else if w.starts_with('+') && w.len() > 1 {
+                        project_token(ws)
+                    } else {
+                        w.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let tasks: Vec<String> = self
+            .read_lines(TASKS_FILE)
+            .into_iter()
+            .map(|l| match parse_task(&l) {
+                Some(t) if t.id.as_ref().is_some_and(|i| ids.contains(i)) || (from.is_some() && t.note.as_deref() == from) => fix(&l),
+                _ => l,
+            })
+            .collect();
+        let events: Vec<String> = self
+            .read_lines(AGENDA_FILE)
+            .into_iter()
+            .map(|l| match parse_event(&l) {
+                Some(e) if from.is_some() && e.note.as_deref() == from => fix(&l),
+                _ => l,
+            })
+            .collect();
+        self.write_lines(TASKS_FILE, &tasks)?;
+        self.write_lines(AGENDA_FILE, &events)?;
+        self.write_ics()
+    }
+
     /// agenda.ics: eventos y tareas pendientes con fecha, para importar en un calendario.
     pub fn write_ics(&self) -> io::Result<()> {
         let mut out = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//nodex-notes//ES\r\nCALSCALE:GREGORIAN\r\n");

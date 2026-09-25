@@ -30,6 +30,7 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 - **Tareas en la nota:** `- [ ] tarea` se ve con una casilla. Un clic la marca como hecha, también en Tareas y en Google Calendar. `due:2026-09-26` se ve como una fecha ("mañana", "vie 26") y en rojo si venció.
 - **Rutas y webs:** las direcciones web y las rutas de carpetas se abren con un clic. Una ruta escrita a mano, como `/workspace/proyectos/consorcio/04 Trincheras`, se busca dentro de Dropbox aunque tenga mayúsculas distintas o un error de tipeo.
 - **Preguntar (Ctrl+K):** pregúntale a la IA sobre todas tus notas, por ejemplo "¿cómo eran las notas de la reunión de la semana pasada con el CIC?", "resumen de las notas del proyecto LaVet" o "¿cuáles son todas las tareas que me faltan?". Responde citando cada dato con el número de su nota (un clic la abre en esa línea), las tareas de la respuesta se pueden marcar ahí mismo, y puedes seguir preguntando sobre lo mismo. La respuesta se puede guardar como nota o copiar.
+- **La IA pregunta cuando duda:** si no está segura de algo (a qué proyecto va una línea, si una línea es detalle de otra, qué fecha es "la próxima semana"), no adivina: deja una pregunta con opciones arriba de la nota y en la vista Hoy (el ícono ✦ muestra cuántas hay). Tu respuesta se aplica al tiro (mover, unir, fecha, etiquetas) y se puede deshacer. También puedes escribir tu propia respuesta, o ignorar la pregunta. Lo que conviene recordar queda en `aprendido.txt` (en tu carpeta de notas; puedes editarlo), y la IA lo usa en cada análisis para no volver a preguntar lo mismo.
 - **Hoy (Ctrl+H):** lo atrasado, lo de hoy, lo de mañana y lo que viene en la semana. Aparece solo la primera vez que abres la app cada día, si hay algo pendiente.
 - **Espacios de trabajo:** cada espacio es una carpeta; cada nota es un archivo `.md`.
 - **Reuniones:** con **Ctrl+R**, cada línea lleva su hora y **Esc** agrega `## fin · hora`. También se cierra sola tras 30 minutos sin escribir, al abrir otra reunión o al cerrar la app.
@@ -125,6 +126,7 @@ Notas/
   tareas.txt             ← 2026-09-24 Enviar planos +Proyecto_Edificio_A due:2026-09-25
   agenda.txt             ← 2026-09-28 10:00 Visita del inspector +Proyecto_Edificio_A
   agenda.ics
+  aprendido.txt          ← lo que la IA aprendió de tus respuestas (editable)
   .nodex/                ← qué notas ya analizó la IA
   .papelera/             ← notas eliminadas
 ```
@@ -147,6 +149,8 @@ Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro eq
 | `src/ai.rs` | Conexión con la IA (genai) en un hilo aparte y el prompt con las reglas. |
 | `src/lines.rs` | Estructura de una nota: niveles de sangría, casillas, `due:`/`^id` y qué líneas forman cada nota. |
 | `src/organize.rs` | Aplica al texto lo que respondió la IA: etiquetas por línea, tareas con casilla, detalles unidos y a dónde va cada nota. |
+| `src/doubts.rs` | Preguntas de la IA cuando duda (`.nodex/dudas.json`) y lo aprendido (`aprendido.txt`). |
+| `src/app/doubts_ui.rs` | La tarjeta de cada pregunta y lo que pasa al responder. |
 | `src/capture.rs` | Qué notas son de captura (la del día y las "Sin título"). |
 | `src/links.rs` | Encuentra rutas (tolerando errores de tipeo) y direcciones web en las líneas. |
 | `src/gcal.rs` | Google Calendar: OAuth con PKCE, calendario "Notas" y sincronización de eventos. |

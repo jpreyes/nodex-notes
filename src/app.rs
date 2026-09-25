@@ -4,6 +4,7 @@ use crate::agenda::{self, Agenda};
 use crate::capture;
 use crate::ai::{self, Ai, Analysis};
 use crate::config::{self, Config, Estado};
+use crate::doubts;
 use crate::gcal::{self, GCal};
 use crate::lines;
 use crate::organize::{self, MEETING_TAG};
@@ -22,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 mod ask_view;
+mod doubts_ui;
 mod editor;
 mod settings;
 mod today;
@@ -165,6 +167,10 @@ pub struct NotesApp {
     today_shown: String,
     /// Conversación de Preguntar.
     ask: ask_view::AskState,
+    /// Preguntas de la IA pendientes (.nodex/dudas.json).
+    doubts: doubts::Store,
+    /// Respuesta escrita que se está redactando: (id de la pregunta, texto).
+    doubt_reply: Option<(String, String)>,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -312,7 +318,10 @@ impl NotesApp {
             links: editor::LinkCache::new(&cfg_root),
             today_shown: estado_hoy,
             ask: ask_view::AskState::default(),
+            doubts: doubts::Store::load(&cfg_root),
+            doubt_reply: None,
         };
+        app.prune_doubts();
         // La primera vez de cada día se abre en "Hoy", si hay algo atrasado, para hoy o mañana.
         if app.today_shown != today() && app.has_something_today() {
             app.view = View::Today;
@@ -374,6 +383,7 @@ impl NotesApp {
         self.vault = Vault::new(path);
         self.agenda = Agenda::new(&self.vault.root);
         self.links = editor::LinkCache::new(&self.vault.root);
+        self.doubts = doubts::Store::load(&self.vault.root);
         self.analyzed = load_analyzed(&self.vault.root);
         self.touched.clear();
         self.backlog.clear();
@@ -708,7 +718,16 @@ impl NotesApp {
         // Nota de captura (la del día, "Sin título"): cada línea es una nota; los bloques "##" van juntos.
         let capture = capture::is_capture(&note.title);
         let (system, user) =
-            ai::build_prompt(&note.title, &note.workspace, &text, &lines::units(&text), capture, &infos, &all_tags);
+            ai::build_prompt(
+            &note.title,
+            &note.workspace,
+            &text,
+            &lines::units(&text),
+            capture,
+            &infos,
+            &all_tags,
+            &doubts::learned(&self.vault.root),
+        );
         if let Ok(ai) = &mut self.ai {
             ai.send(ai::Job { path: path.clone(), hash, system, user });
             self.in_flight = Some(path);
@@ -911,6 +930,13 @@ impl NotesApp {
         }
         if n_events > 0 {
             done.push(format!("{} en agenda", plural(n_events, "evento")));
+        }
+
+        // Preguntas de la IA sobre lo que no supo con seguridad.
+        let found = if emptied { Vec::new() } else { doubts::from_ai(&text, &source_rel, &a, &today(), new_task_id) };
+        let asked = self.add_doubts(&source_old, &source_rel, &new_text, found);
+        if asked > 0 {
+            done.push(plural(asked, "pregunta"));
         }
 
         // Estado de la app: nada de esto se vuelve a analizar.
@@ -1178,8 +1204,17 @@ impl NotesApp {
                 Ok(ai) => (format!("Organizar con IA las notas pendientes ({})", ai.label), TEXT),
                 Err(e) => (format!("IA no disponible: {e}"), MUTED),
             };
-            if rail_button(ui, icon::SPARKLE, &tip, !self.backlog.is_empty(), color).clicked() {
+            let r = rail_button(ui, icon::SPARKLE, &tip, !self.backlog.is_empty(), color);
+            if r.clicked() {
                 action = Some(Action::Organize);
+            }
+            // Cuántas preguntas de la IA esperan respuesta (se responden en Hoy o en su nota).
+            let asks = self.doubts.pending.len();
+            if asks > 0 {
+                let c = r.rect.right_top() + egui::vec2(-7.0, 7.0);
+                ui.painter().circle_filled(c, 7.5, ACCENT);
+                ui.painter().text(c, Align2::CENTER_CENTER, asks.min(9).to_string(), FontId::proportional(10.5), Color32::WHITE);
+                r.on_hover_text(format!("La IA tiene {} (en Hoy)", plural(asks, "pregunta")));
             }
             ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
                 if rail_button(ui, icon::GEAR, "Configuración (Ctrl+,)", self.settings.is_some(), TEXT).clicked() {
