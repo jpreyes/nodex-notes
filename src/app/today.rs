@@ -65,6 +65,7 @@ impl NotesApp {
         let root = self.vault.root.clone();
         let asks = self.live_doubts();
         let mut reply = None;
+        let mut find_dups = false;
         let nothing = asks.is_empty() && overdue.is_empty() && for_today.is_empty() && for_tomorrow.is_empty() && this_week.is_empty()
             && ev_today.is_empty() && ev_tomorrow.is_empty() && ev_week.is_empty();
 
@@ -120,6 +121,9 @@ impl NotesApp {
                 if ui.button(format!("{} Escribir en la nota de hoy", icon::NOTE_PENCIL)).clicked() {
                     action = Some(Action::Today);
                 }
+                if ui.link(RichText::new(format!("{} Buscar duplicados", icon::COPY)).size(12.5)).on_hover_text("Revisa todas las notas y pregunta por las que parecen repetidas").clicked() {
+                    find_dups = true;
+                }
                 if undated > 0 && ui.link(RichText::new(format!("{} sin fecha", plural(undated, "tarea"))).size(12.5)).clicked() {
                     action = Some(Action::Show(View::Tasks));
                 }
@@ -127,6 +131,9 @@ impl NotesApp {
         });
         if let Some(r) = reply {
             self.handle_reply(r);
+        }
+        if find_dups {
+            self.scan_duplicates();
         }
         if self.esc(ui) {
             action = Some(Action::CloseResults);

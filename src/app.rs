@@ -948,6 +948,15 @@ impl NotesApp {
         self.save_analyzed();
         self.touched.remove(&path);
         self.vault.scan();
+        // Duplicados de lo recién escrito, en todas las notas.
+        let mut fresh: Vec<(String, String)> = written.iter().map(|(p, _, t)| (self.rel(p), t.clone())).collect();
+        if !emptied {
+            fresh.push((source_rel.clone(), new_text.clone()));
+        }
+        let dups = self.detect_duplicates(fresh);
+        if dups > 0 {
+            done.push(format!("{} posible{} duplicado{}", dups, if dups == 1 { "" } else { "s" }, if dups == 1 { "" } else { "s" }));
+        }
         if is_open {
             // Si la nota quedó vacía, sigue abierta como nota nueva para seguir anotando.
             self.note = OpenNote::load(new_path.clone());

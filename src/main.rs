@@ -7,6 +7,7 @@ mod ask;
 mod capture;
 mod config;
 mod doubts;
+mod dups;
 mod gcal;
 mod lines;
 mod links;

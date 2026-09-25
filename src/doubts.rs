@@ -30,6 +30,13 @@ pub struct Choice {
     pub etiquetas: Vec<String>,
     /// Lo que conviene recordar para las próximas notas.
     pub dato: String,
+    /// Duplicado: la otra nota de adentro (su nota y el texto de su primera línea).
+    pub unir_nota: String,
+    pub unir: String,
+    /// Unir al revés: se queda esta y se quita la otra.
+    pub al_reves: bool,
+    /// "Son distintas": no volver a ofrecer unirlas.
+    pub distintas: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -51,6 +58,8 @@ pub struct Store {
     pub pending: Vec<Doubt>,
     /// Notas de adentro ya respondidas o ignoradas (hash de su texto): no se vuelve a preguntar.
     pub resolved: Vec<u64>,
+    /// Pares que la persona dijo que no son duplicados (ver `dups::pair`).
+    pub not_dups: Vec<u64>,
 }
 
 impl Store {
@@ -167,6 +176,7 @@ pub fn from_ai(text: &str, note: &str, a: &crate::ai::Analysis, today: &str, mut
                                 .map(|a| a.iter().filter_map(|t| t.as_str()).map(crate::organize::clean_tag).filter(|t| !t.is_empty()).collect())
                                 .unwrap_or_default(),
                             dato: s("dato"),
+                            ..Choice::default()
                         }
                     }
                     _ => return None,
@@ -219,7 +229,7 @@ mod tests {
         learn(&dir, "LaVet es de Docencia").unwrap();
         learn(&dir, "lavet es de docencia").unwrap();
         assert_eq!(learned(&dir), vec!["LaVet es de Docencia"]);
-        let mut s = Store { pending: d, resolved: vec![] };
+        let s = Store { pending: d, ..Store::default() };
         s.save(&dir).unwrap();
         let mut s = Store::load(&dir);
         assert_eq!(s.resolve("d1").unwrap().unit, "Debo entregar el LaVet");

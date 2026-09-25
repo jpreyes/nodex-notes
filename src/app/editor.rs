@@ -824,7 +824,7 @@ mod tests {
         app.note.text = "Uno
 dos".into();
         let key = |k: Key, modifiers: Modifiers| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers };
-        let mut frame = |app: &mut NotesApp, events: Vec<egui::Event>| {
+        let frame = |app: &mut NotesApp, events: Vec<egui::Event>| {
             let input = egui::RawInput {
                 events,
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),

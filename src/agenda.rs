@@ -283,6 +283,17 @@ impl Agenda {
         Ok(true)
     }
 
+    /// Borra la tarea con ese identificador (al unir dos tareas duplicadas).
+    pub fn remove_by_id(&self, id: &str) -> io::Result<()> {
+        let lines: Vec<String> = self
+            .read_lines(TASKS_FILE)
+            .into_iter()
+            .filter(|l| parse_task(l).and_then(|t| t.id).as_deref() != Some(id))
+            .collect();
+        self.write_lines(TASKS_FILE, &lines)?;
+        self.write_ics()
+    }
+
     /// Cambia (o pone) la fecha de la tarea con ese identificador. Devuelve si la encontró.
     pub fn set_due_by_id(&self, id: &str, date: &str) -> io::Result<bool> {
         let mut found = false;

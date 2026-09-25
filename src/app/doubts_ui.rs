@@ -129,6 +129,10 @@ impl NotesApp {
             return;
         }
         let Some(c) = choice else { return };
+        if !c.unir.is_empty() {
+            self.answer_duplicate(&d, &c);
+            return;
+        }
         if doubts::find_unit(&text, &d.unit).is_none() {
             self.doubts.resolve(id);
             let _ = self.doubts.save(&root);
@@ -275,6 +279,89 @@ impl NotesApp {
         self.msg(format!("Respuesta aplicada: {what}"));
     }
 
+    /// Busca duplicados de lo recién escrito (`notes`: nota relativa y texto) en todas las notas
+    /// y los deja como preguntas. Devuelve cuántas agregó.
+    pub(super) fn detect_duplicates(&mut self, notes: Vec<(String, String)>) -> usize {
+        let all: Vec<(String, String)> = self.vault.all_notes().iter().map(|n| (self.rel(&n.path), n.text.clone())).collect();
+        let found = crate::dups::find(&notes, &all, &self.doubts, &today(), new_task_id);
+        let n = found.len();
+        if n > 0 {
+            self.doubts.pending.extend(found);
+            let _ = self.doubts.save(&self.vault.root);
+        }
+        n
+    }
+
+    /// Botón "Buscar duplicados": revisa todas las notas.
+    pub(super) fn scan_duplicates(&mut self) {
+        self.save();
+        self.vault.scan();
+        let mut all: Vec<(String, String)> = self.vault.all_notes().iter().map(|n| (self.rel(&n.path), n.text.clone())).collect();
+        // Primero las notas de captura: lo de la nota del día se ofrece unir a la nota con título, no al revés.
+        all.sort_by_key(|(rel, _)| !capture::is_capture(rel.rsplit('/').next().unwrap_or(rel)));
+        let n = self.detect_duplicates(all);
+        self.msg(if n == 0 { "No encontré duplicados".to_string() } else { format!("Encontré {} posibles duplicados: revísalos en Hoy", n) });
+    }
+
+    /// Unir dos notas duplicadas (o anotar que son distintas).
+    fn answer_duplicate(&mut self, d: &Doubt, c: &Choice) {
+        let root = self.vault.root.clone();
+        if c.distintas {
+            self.doubts.not_dups.push(crate::dups::pair(&d.unit, &c.unir));
+            self.doubts.resolve(&d.id);
+            let _ = self.doubts.save(&root);
+            self.msg("Anotado: son distintas");
+            return;
+        }
+        let a = root.join(format!("{}.md", d.note));
+        let b = root.join(format!("{}.md", c.unir_nota));
+        let (keep_path, keep_unit, drop_path, drop_unit) =
+            if c.al_reves { (a, d.unit.clone(), b, c.unir.clone()) } else { (b, c.unir.clone(), a, d.unit.clone()) };
+        let same = keep_path == drop_path;
+        let keep_text = vault::read_text(&keep_path).unwrap_or_default();
+        let drop_text = if same { keep_text.clone() } else { vault::read_text(&drop_path).unwrap_or_default() };
+        let Some(m) = crate::dups::merge(&keep_text, &keep_unit, &drop_text, &drop_unit, same) else {
+            self.doubts.resolve(&d.id);
+            let _ = self.doubts.save(&root);
+            self.msg("Esas líneas cambiaron; la pregunta se descartó");
+            return;
+        };
+        let snapshot = self.agenda.snapshot();
+        let mut files = vec![(keep_path.clone(), Some(keep_text))];
+        if !same {
+            files.push((drop_path.clone(), Some(drop_text)));
+        }
+        let _ = fs::write(&keep_path, &m.keep);
+        self.analyzed.insert(ai::fnv(&m.keep));
+        if !same {
+            if m.drop.trim().is_empty() {
+                let _ = self.vault.trash(&drop_path);
+            } else {
+                let _ = fs::write(&drop_path, &m.drop);
+                self.analyzed.insert(ai::fnv(&m.drop));
+            }
+        }
+        if let Some(id) = &m.remove_task {
+            let _ = self.agenda.remove_by_id(id);
+        }
+        if let (Some(id), false) = (&m.moved_task, same) {
+            let ws = workspace_of(&keep_path).unwrap_or_default();
+            let _ = self.agenda.retarget(None, std::slice::from_ref(id), &self.rel(&keep_path), &ws);
+        }
+        self.gcal_dirty = true;
+        self.save_analyzed();
+        self.doubts.resolve(&d.id);
+        let _ = self.doubts.save(&root);
+        self.vault.scan();
+        let current = self.note.path.clone();
+        if current == keep_path || current == drop_path {
+            self.note = OpenNote::load(current);
+        }
+        self.prune_doubts();
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now() });
+        self.msg(format!("Unidas en «{}»", vault::stem(&keep_path)));
+    }
+
     /// La tarjeta de una pregunta. `note_label` = mostrar de qué nota es (en la vista Hoy).
     pub(super) fn doubt_card(&mut self, ui: &mut Ui, d: &Doubt, number: usize, note_label: Option<String>) -> Option<Reply> {
         let mut reply = None;
@@ -413,6 +500,42 @@ mod tests {
         app.undo_ai();
         assert!(fs::read_to_string(&daily).unwrap().contains("Debo entregar la próxima semana el LaVet"));
         assert!(!dir.join("Docencia").join("LaVet.md").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Duplicados: se detectan al buscar, "Unir" deja una sola línea con todo, Deshacer lo revierte.
+    #[test]
+    fn duplicates_are_found_merged_and_undone() {
+        let dir = std::env::temp_dir().join(format!("nodex-dups-app-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        fs::create_dir_all(dir.join("General")).unwrap();
+        fs::create_dir_all(dir.join("Consorcio")).unwrap();
+        let trin = dir.join("Consorcio").join("Trincheras.md");
+        let daily = dir.join("General").join("2026-09-25.md");
+        fs::write(&trin, "Entregar informe revisión trincheras #informe\n").unwrap();
+        let daily_text = "- [ ] Debo entregar el informe de revisión de las trincheras #trincheras due:2026-09-30 ^k3f9a\nComprar pan\n";
+        fs::write(&daily, daily_text).unwrap();
+        fs::write(dir.join("tareas.txt"), "2026-09-25 Entregar informe trincheras +General due:2026-09-30 nota:General/2026-09-25 id:k3f9a\n").unwrap();
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut app = NotesApp::new(cfg, None, egui::Context::default());
+        app.scan_duplicates();
+        assert_eq!(app.doubts.pending.len(), 1, "{:?}", app.doubts.pending);
+        let id = app.doubts.pending[0].id.clone();
+        app.handle_reply(Reply::Choose(id, 0)); // "Unir en «Consorcio / Trincheras»"
+        assert_eq!(
+            fs::read_to_string(&trin).unwrap(),
+            "- [ ] Entregar informe revisión trincheras #informe #trincheras due:2026-09-30 ^k3f9a\n"
+        );
+        assert_eq!(fs::read_to_string(&daily).unwrap(), "Comprar pan\n");
+        let t = app.agenda.tasks();
+        assert_eq!((t.len(), t[0].note.as_deref(), t[0].project.as_str()), (1, Some("Consorcio/Trincheras"), "Consorcio"));
+        // Ya no se vuelve a preguntar, y Deshacer deja todo como estaba.
+        app.scan_duplicates();
+        assert!(app.doubts.pending.is_empty());
+        app.undo_ai();
+        assert_eq!(fs::read_to_string(&daily).unwrap(), daily_text);
+        assert_eq!(fs::read_to_string(&trin).unwrap(), "Entregar informe revisión trincheras #informe\n");
         let _ = fs::remove_dir_all(&dir);
     }
 }
