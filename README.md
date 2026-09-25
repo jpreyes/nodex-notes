@@ -29,6 +29,7 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 - **Etiquetas:** `#palabra` es una etiqueta. Se ve como una píldora de color, sin el `#`, y cada etiqueta tiene siempre el mismo color. Haz clic en ella en la barra lateral para ver todas sus líneas. En la línea donde está el cursor se ve el texto tal cual, para poder editarlo.
 - **Tareas en la nota:** `- [ ] tarea` se ve con una casilla. Un clic la marca como hecha, también en Tareas y en Google Calendar. `due:2026-09-26` se ve como una fecha ("mañana", "vie 26") y en rojo si venció.
 - **Rutas y webs:** las direcciones web y las rutas de carpetas se abren con un clic. Una ruta escrita a mano, como `/workspace/proyectos/consorcio/04 Trincheras`, se busca dentro de Dropbox aunque tenga mayúsculas distintas o un error de tipeo.
+- **Preguntar (Ctrl+K):** pregúntale a la IA sobre todas tus notas, por ejemplo "¿cómo eran las notas de la reunión de la semana pasada con el CIC?", "resumen de las notas del proyecto LaVet" o "¿cuáles son todas las tareas que me faltan?". Responde citando cada dato con el número de su nota (un clic la abre en esa línea), las tareas de la respuesta se pueden marcar ahí mismo, y puedes seguir preguntando sobre lo mismo. La respuesta se puede guardar como nota o copiar.
 - **Hoy (Ctrl+H):** lo atrasado, lo de hoy, lo de mañana y lo que viene en la semana. Aparece solo la primera vez que abres la app cada día, si hay algo pendiente.
 - **Espacios de trabajo:** cada espacio es una carpeta; cada nota es un archivo `.md`.
 - **Reuniones:** con **Ctrl+R**, cada línea lleva su hora y **Esc** agrega `## fin · hora`. También se cierra sola tras 30 minutos sin escribir, al abrir otra reunión o al cerrar la app.
@@ -39,6 +40,7 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 | Ctrl+N | Nueva nota |
 | Ctrl+D | Nota de hoy |
 | Ctrl+H | Hoy: atrasado, hoy y esta semana |
+| Ctrl+K | Preguntar a tus notas |
 | Ctrl+R | Nueva reunión |
 | Ctrl+F | Buscar en todas las notas |
 | Ctrl+, | Configuración |
@@ -69,6 +71,8 @@ Al dejar una nota (o tras 45 segundos sin tocarla), la IA la organiza.
 En ambos casos, extrae tareas a `tareas.txt` (formato [todo.txt](https://github.com/todotxt/todo.txt)) y eventos a `agenda.txt`, los sincroniza con [Google Calendar](#google-calendar) y genera `agenda.ics` para Outlook u otros calendarios.
 
 Cada cambio se puede deshacer desde la barra inferior. El botón ✦ organiza las notas antiguas pendientes.
+
+**Preguntar** envía a la IA la pregunta junto con tus tareas, la agenda y tus notas, con sus líneas numeradas para que pueda citarlas. Si tienes pocas notas (hasta unos 80.000 caracteres) van todas. Si son más, la IA primero elige cuáles leer a partir de un índice (espacio, título, fecha, etiquetas y el comienzo de cada una) y después responde leyendo solo esas. Si la respuesta no está en tus notas, lo dice. La última pregunta queda en `ia-pregunta.txt` (junto a `config.toml`).
 
 ## Configuración
 
@@ -137,6 +141,8 @@ Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro eq
 | `src/app.rs` | Interfaz y comportamiento: barra de íconos, barra lateral, reuniones, lo que hace la IA (y deshacer), vistas Tareas y Agenda. |
 | `src/app/editor.rs` | El editor: números, píldoras de etiquetas, sangrías y listas, casillas, fechas, enlaces; Tab, Enter y Retroceso. |
 | `src/app/today.rs` | Vista Hoy (atrasado, hoy, mañana y la semana). |
+| `src/app/ask_view.rs` | Vista Preguntar: conversación, citas clicables, casillas de tareas, guardar y copiar. |
+| `src/ask.rs` | Preguntar: elige qué notas leer, arma la pregunta con las líneas numeradas y separa la respuesta en párrafos, listas y citas. |
 | `src/app/settings.rs` | Ventana de Configuración (General, IA, Calendar, Atajos, Acerca de). |
 | `src/ai.rs` | Conexión con la IA (genai) en un hilo aparte y el prompt con las reglas. |
 | `src/lines.rs` | Estructura de una nota: niveles de sangría, casillas, `due:`/`^id` y qué líneas forman cada nota. |

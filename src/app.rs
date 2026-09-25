@@ -21,6 +21,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+mod ask_view;
 mod editor;
 mod settings;
 mod today;
@@ -90,6 +91,7 @@ struct Undo {
 enum View {
     Editor,
     Today,
+    Ask,
     Tag(String),
     Tasks,
     Agenda,
@@ -161,6 +163,8 @@ pub struct NotesApp {
     links: editor::LinkCache,
     /// Día en que ya se mostró la vista "Hoy" al abrir.
     today_shown: String,
+    /// Conversación de Preguntar.
+    ask: ask_view::AskState,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -307,12 +311,19 @@ impl NotesApp {
             gcal_last_try: long_ago(),
             links: editor::LinkCache::new(&cfg_root),
             today_shown: estado_hoy,
+            ask: ask_view::AskState::default(),
         };
         // La primera vez de cada día se abre en "Hoy", si hay algo atrasado, para hoy o mañana.
         if app.today_shown != today() && app.has_something_today() {
             app.view = View::Today;
             app.today_shown = today();
             app.save_estado();
+        }
+        // Solo en compilaciones de prueba: abrir Preguntar con una pregunta (para capturas).
+        #[cfg(debug_assertions)]
+        if let Ok(q) = std::env::var("NODEX_DEMO_ASK") {
+            app.view = View::Ask;
+            app.ask(q);
         }
         app
     }
@@ -1033,6 +1044,7 @@ impl NotesApp {
                 self.search.clear();
                 self.view = if self.view == v { View::Editor } else { v };
                 self.focus_editor = self.view == View::Editor;
+                self.ask.focus = self.view == View::Ask;
             }
             Action::CloseResults => {
                 self.search.clear();
@@ -1104,6 +1116,9 @@ impl NotesApp {
         if pressed(Key::H) {
             return Some(Action::Show(View::Today));
         }
+        if pressed(Key::K) {
+            return Some(Action::Show(View::Ask));
+        }
         if pressed(Key::R) {
             return Some(Action::StartMeeting);
         }
@@ -1145,6 +1160,10 @@ impl NotesApp {
             };
             if rail_button(ui, icon::USERS, &tip, self.meeting.is_some(), color).clicked() {
                 action = Some(if self.meeting.is_some() { Action::CloseMeeting } else { Action::StartMeeting });
+            }
+            let tip = if self.ask.busy() { "Preguntar: buscando la respuesta…" } else { "Preguntar a tus notas (Ctrl+K)" };
+            if rail_button(ui, icon::CHAT_CIRCLE_TEXT, tip, self.view == View::Ask, if self.ask.busy() { ACCENT } else { TEXT }).clicked() {
+                action = Some(Action::Show(View::Ask));
             }
             if rail_button(ui, icon::HOUSE_LINE, "Hoy: atrasado, hoy y esta semana (Ctrl+H)", self.view == View::Today, TEXT).clicked() {
                 action = Some(Action::Show(View::Today));
@@ -1673,6 +1692,7 @@ impl eframe::App for NotesApp {
         }
         self.handle_ai_results();
         self.handle_gcal();
+        self.poll_ask();
 
         egui::Panel::bottom("status")
             .exact_size(26.0)
@@ -1701,6 +1721,7 @@ impl eframe::App for NotesApp {
                 match self.view.clone() {
                     View::Editor => self.editor(ui),
                     View::Today => actions.extend(self.today_view(ui)),
+                    View::Ask => actions.extend(self.ask_view(ui)),
                     View::Tag(_) => actions.extend(self.results(ui)),
                     View::Tasks => actions.extend(self.tasks_view(ui)),
                     View::Agenda => actions.extend(self.agenda_view(ui)),

@@ -3,6 +3,7 @@
 mod agenda;
 mod ai;
 mod app;
+mod ask;
 mod capture;
 mod config;
 mod gcal;

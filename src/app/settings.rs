@@ -586,6 +586,7 @@ fn section_shortcuts(ui: &mut Ui) {
         ("Ctrl + N", "Nueva nota"),
         ("Ctrl + D", "Nota de hoy"),
         ("Ctrl + H", "Hoy: atrasado, hoy y esta semana"),
+        ("Ctrl + K", "Preguntar a tus notas"),
         ("Ctrl + R", "Nueva reunión"),
         ("Esc", "Cerrar la reunión, la búsqueda o la vista"),
         ("Ctrl + F", "Buscar en todas las notas"),

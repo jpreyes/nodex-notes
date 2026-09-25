@@ -49,7 +49,7 @@ pub fn config_path() -> PathBuf {
 /// Devuelve la configuración y, si hubo algo que avisar, un mensaje.
 pub fn load() -> (Config, Option<String>) {
     let path = config_path();
-    let (mut cfg, msg) = match fs::read_to_string(&path) {
+    let (mut cfg, msg) = match crate::vault::read_text(&path) {
         Ok(s) => match toml::from_str::<Config>(&s) {
             Ok(c) => (c, None),
             Err(e) => (
@@ -129,7 +129,7 @@ fn estado_path() -> PathBuf {
 }
 
 pub fn load_estado() -> Estado {
-    fs::read_to_string(estado_path())
+    crate::vault::read_text(&estado_path())
         .ok()
         .and_then(|s| toml::from_str(&s).ok())
         .unwrap_or_default()
@@ -160,5 +160,12 @@ mod tests {
         };
         let back: Config = toml::from_str(&render(&c)).unwrap();
         assert_eq!(back, c);
+        // Guardado por Notepad con BOM: se lee igual.
+        let dir = std::env::temp_dir().join(format!("nodex-bom-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("c.toml"), format!("\u{feff}{}", render(&c))).unwrap();
+        let text = crate::vault::read_text(&dir.join("c.toml")).unwrap();
+        assert_eq!(toml::from_str::<Config>(&text).unwrap(), c);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

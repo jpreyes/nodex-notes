@@ -156,7 +156,15 @@ fn connection(cfg: &Config) -> Result<(Client, ModelSpec), String> {
     }
     let iden = ModelIden::new(prov.kind, cfg.modelo.trim().to_string());
     // Con URL propia se usa un destino fijo (URL + clave + modelo); si no, genai resuelve el proveedor.
+    // Para pruebas: otro servidor compatible (nunca se usa en la app normal).
+    let test_url = std::env::var("NODEX_AI_ENDPOINT").ok().filter(|u| !u.is_empty() && prov.endpoint.is_some());
     let model: ModelSpec = match (prov.endpoint, &key) {
+        (Some(_), Some(k)) if test_url.is_some() => ServiceTarget {
+            endpoint: Endpoint::from_owned(test_url.unwrap_or_default()),
+            auth: AuthData::from_single(k.clone()),
+            model: iden,
+        }
+        .into(),
         (Some(url), Some(k)) => ServiceTarget {
             endpoint: Endpoint::from_static(url),
             auth: AuthData::from_single(k.clone()),
@@ -194,6 +202,26 @@ pub fn test_connection(cfg: &Config, ctx: eframe::egui::Context) -> Receiver<Res
         ctx.request_repaint();
     });
     rx
+}
+
+/// Una consulta de texto libre (la usa Preguntar). Bloquea: se llama desde un hilo aparte.
+/// Devuelve el texto de la respuesta, o el motivo si vino vacía o falló.
+pub fn complete(cfg: &Config, system: &str, user: &str) -> Result<String, String> {
+    let (client, model) = connection(cfg)?;
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
+    let options = ChatOptions::default()
+        .with_temperature(0.2)
+        .with_normalize_reasoning_content(true)
+        .with_extra_headers(request_headers(cfg));
+    let req = ChatRequest::default().with_system(system).append_message(ChatMessage::user(user));
+    let r = rt.block_on(client.exec_chat(model, req, Some(&options))).map_err(|e| friendly_error(&e.to_string()))?;
+    let text = r.first_text().unwrap_or("").trim().to_string();
+    if text.is_empty() {
+        let stop = r.stop_reason.as_ref().map(|s| format!("{s:?}")).unwrap_or_else(|| "?".into());
+        let why = if stop.contains("MaxTokens") { "se cortó por el límite de tokens del modelo".to_string() } else { format!("motivo: {stop}") };
+        return Err(format!("el modelo devolvió una respuesta vacía ({why})"));
+    }
+    Ok(text)
 }
 
 impl Ai {
