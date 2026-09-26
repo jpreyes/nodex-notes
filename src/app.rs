@@ -120,6 +120,8 @@ enum Action {
     SelectWorkspace(String),
     CreateWorkspace(String),
     Trash(PathBuf),
+    /// Pedir confirmación para mover un espacio a la papelera.
+    AskTrashWorkspace(String),
     ShowTag(String),
     Show(View),
     CloseResults,
@@ -221,6 +223,8 @@ pub struct NotesApp {
     cal_form: Option<(String, String)>,
     /// Correo: lo leído, lo que falta que lea la IA y su estado.
     mail: mail_ui::MailState,
+    /// Espacio que se quiere mover a la papelera (esperando confirmación).
+    confirm_ws: Option<String>,
     /// Campos de Inicio: anotar y preguntar rápido.
     home_capture: String,
     home_question: String,
@@ -384,6 +388,7 @@ impl NotesApp {
             cals: crate::calendars::Calendars::load(),
             cal_form: None,
             mail: mail_ui::MailState::load(),
+            confirm_ws: None,
             home_capture: String::new(),
             home_question: String::new(),
         };
@@ -520,9 +525,9 @@ impl NotesApp {
         }
     }
 
-    fn save_estado(&self) {
+    fn save_estado(&mut self) {
         let nota = self.note.path.strip_prefix(&self.vault.root).unwrap_or(&self.note.path);
-        config::save_estado(&Estado {
+        let r = config::save_estado(&Estado {
             espacio: self.ws.clone(),
             nota: nota.to_string_lossy().into_owned(),
             hoy: self.today_shown.clone(),
@@ -530,6 +535,9 @@ impl NotesApp {
             pestanas: self.tabs.list.iter().map(|t| tabs::encode(t, &self.vault.root)).collect(),
             pestana: self.tabs.active,
         });
+        if let Err(e) = r {
+            self.msg(format!("No se pudo guardar estado.toml: {e}"));
+        }
     }
 
     fn save_analyzed(&self) {
@@ -614,12 +622,28 @@ impl NotesApp {
 
     fn trash(&mut self, path: PathBuf) {
         let is_open = path == self.note.path;
+        if is_open {
+            self.save();
+        }
         if path.exists() {
-            if let Err(e) = self.vault.trash(&path) {
-                self.msg(format!("No se pudo eliminar: {e}"));
-                return;
+            match self.vault.trash(&path) {
+                Ok(dest) => {
+                    // Se puede deshacer desde la barra inferior.
+                    self.undo = Some(Undo {
+                        files: Vec::new(),
+                        renamed: None,
+                        agenda: self.agenda.snapshot(),
+                        at: Instant::now(),
+                        moved: vec![(path.clone(), dest)],
+                        created_dir: None,
+                    });
+                    self.msg(format!("«{}» movida a la papelera", vault::stem(&path)));
+                }
+                Err(e) => {
+                    self.msg(format!("No se pudo eliminar: {e}"));
+                    return;
+                }
             }
-            self.msg("Nota movida a .papelera");
         }
         if self.meeting.as_ref().is_some_and(|m| m.path == path) {
             self.meeting = None;
@@ -630,6 +654,69 @@ impl NotesApp {
             self.note.disk_mtime = None;
             let ws = self.ws.clone();
             self.select_workspace(ws);
+        }
+    }
+
+    /// Mueve un espacio completo a la papelera (con Deshacer).
+    fn trash_workspace(&mut self, ws: String) {
+        self.save();
+        if self.meeting.as_ref().is_some_and(|m| workspace_of(&m.path).as_deref() == Some(ws.as_str())) {
+            self.close_meeting(Local::now());
+        }
+        match self.vault.trash_workspace(&ws) {
+            Ok(dest) => {
+                self.undo = Some(Undo {
+                    files: Vec::new(),
+                    renamed: None,
+                    agenda: self.agenda.snapshot(),
+                    at: Instant::now(),
+                    moved: vec![(self.vault.root.join(&ws), dest)],
+                    created_dir: None,
+                });
+                self.touched.retain(|p| workspace_of(p).as_deref() != Some(ws.as_str()));
+                if workspace_of(&self.note.path).as_deref() == Some(ws.as_str()) || self.ws == ws {
+                    self.note.dirty = false;
+                    let next = self.vault.workspaces.first().cloned().unwrap_or_else(|| vault::DEFAULT_WORKSPACE.into());
+                    self.select_workspace(next);
+                }
+                self.msg(format!("Espacio «{ws}» movido a la papelera"));
+            }
+            Err(e) => self.msg(format!("No se pudo mover el espacio: {e}")),
+        }
+    }
+
+    /// Confirmación para mover un espacio a la papelera.
+    fn confirm_window(&mut self, ctx: &egui::Context) {
+        let Some(ws) = self.confirm_ws.clone() else { return };
+        let n = self.vault.notes_in(&ws).len();
+        let mut answer: Option<bool> = None;
+        let modal = egui::Modal::new(Id::new("borrar-espacio")).show(ctx, |ui| {
+            ui.set_width(380.0);
+            ui.label(RichText::new(format!("¿Mover el espacio «{ws}» a la papelera?")).font(theme::bold(16.0)));
+            ui.add_space(4.0);
+            let what = if n == 0 { "Está vacío.".to_string() } else { format!("Se va con sus {}.", plural(n, "nota")) };
+            ui.label(RichText::new(format!("{what} Queda en la carpeta .papelera y se puede deshacer.")).size(13.0).color(MUTED));
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                let b = egui::Button::new(RichText::new(format!("{} Mover a la papelera", icon::TRASH)).color(Color32::WHITE)).fill(RED);
+                if ui.add(b).clicked() {
+                    answer = Some(true);
+                }
+                if ui.button("Cancelar").clicked() {
+                    answer = Some(false);
+                }
+            });
+        });
+        if modal.should_close() {
+            answer = Some(false);
+        }
+        match answer {
+            Some(true) => {
+                self.confirm_ws = None;
+                self.trash_workspace(ws);
+            }
+            Some(false) => self.confirm_ws = None,
+            None => {}
         }
     }
 
@@ -1199,7 +1286,7 @@ impl NotesApp {
             }
         }
         self.gcal_dirty = true;
-        self.msg("Se deshizo lo que hizo la IA");
+        self.msg("Deshecho");
     }
 
     fn apply(&mut self, action: Action) {
@@ -1220,6 +1307,7 @@ impl NotesApp {
                 Err(e) => self.msg(format!("No se pudo crear el espacio: {e}")),
             },
             Action::Trash(p) => self.trash(p),
+            Action::AskTrashWorkspace(ws) => self.confirm_ws = Some(ws),
             Action::ShowTag(t) => {
                 self.save();
                 self.search.clear();
@@ -1490,9 +1578,18 @@ impl NotesApp {
                 self.new_ws = Some(String::new());
             }
             for ws in self.vault.workspaces.clone() {
-                if list_row(ui, icon::FOLDER_SIMPLE, &ws, "", ws == self.ws).clicked() {
-                    action = Some(Action::SelectWorkspace(ws));
+                let r = list_row(ui, icon::FOLDER_SIMPLE, &ws, "", ws == self.ws);
+                if row_trash_button(ui, &r, "Mover el espacio a la papelera") {
+                    action = Some(Action::AskTrashWorkspace(ws.clone()));
+                } else if r.clicked() {
+                    action = Some(Action::SelectWorkspace(ws.clone()));
                 }
+                r.context_menu(|ui| {
+                    if ui.button(format!("{}  Mover el espacio a la papelera", icon::TRASH)).clicked() {
+                        action = Some(Action::AskTrashWorkspace(ws.clone()));
+                        ui.close();
+                    }
+                });
             }
             if let Some(name) = &mut self.new_ws {
                 let r = ui.add(
@@ -1524,15 +1621,20 @@ impl NotesApp {
                 .collect();
             let open_is_new = self.note.disk_mtime.is_none();
             if open_is_new && workspace_of(&self.note.path).as_deref() == Some(self.ws.as_str()) {
-                list_row(ui, icon::FILE_TEXT, &self.note.title, "nueva", self.view == View::Editor);
+                let r = list_row(ui, icon::FILE_TEXT, &self.note.title, "nueva", self.view == View::Editor);
+                if row_trash_button(ui, &r, "Descartar la nota nueva") {
+                    action = Some(Action::Trash(self.note.path.clone()));
+                }
             }
             let live = self.meeting.as_ref().map(|m| m.path.clone());
             for (path, title, modified, meeting) in notes {
                 let selected = path == self.note.path && self.view == View::Editor;
                 let glyph = if meeting { icon::USERS } else { icon::FILE_TEXT };
                 let right = if live.as_ref() == Some(&path) { "en curso".to_string() } else { short_date(modified) };
-                let r = list_row(ui, glyph, &title, &right, selected).on_hover_text("Ctrl+clic: abrir en otra pestaña");
-                if r.middle_clicked() || (r.clicked() && ui.input(|i| i.modifiers.command)) {
+                let r = list_row(ui, glyph, &title, &right, selected);
+                if row_trash_button(ui, &r, "Mover a la papelera (se puede deshacer)") {
+                    action = Some(Action::Trash(path.clone()));
+                } else if r.middle_clicked() || (r.clicked() && ui.input(|i| i.modifiers.command)) {
                     action = Some(Action::OpenNewTab(path.clone()));
                 } else if r.clicked() {
                     action = Some(Action::Open(path.clone(), None));
@@ -2040,6 +2142,7 @@ impl eframe::App for NotesApp {
         self.sync_tab();
         self.settings_window(&ctx);
         self.followup_window(&ctx);
+        self.confirm_window(&ctx);
 
         if self.note.dirty && self.note.last_edit.elapsed() >= AUTOSAVE {
             self.save();
@@ -2173,6 +2276,22 @@ fn tag_pill(ui: &mut Ui, tag: &str, count: usize, selected: bool) -> Response {
     p.galley(egui::pos2(x, cy - name.size().y / 2.0), name.clone(), c.text);
     p.galley(egui::pos2(x + name.size().x + 6.0, cy - num.size().y / 2.0), num, c.text);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Al pasar el mouse por una fila, un tacho a la derecha; devuelve true si se hizo clic en él.
+fn row_trash_button(ui: &Ui, r: &Response, tip: &str) -> bool {
+    if !r.hovered() {
+        return false;
+    }
+    let rect = egui::Rect::from_min_size(egui::pos2(r.rect.right() - 28.0, r.rect.top()), egui::vec2(28.0, r.rect.height()));
+    let over = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| rect.contains(p));
+    let p = ui.painter();
+    p.rect_filled(rect.shrink(2.0), 5, if over { Color32::from_rgb(250, 225, 225) } else { HOVER });
+    p.text(rect.center(), Align2::CENTER_CENTER, icon::TRASH, FontId::proportional(14.0), if over { RED } else { MUTED });
+    if over {
+        egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("tacho"), egui::PopupAnchor::Pointer).show(|ui| ui.label(tip));
+    }
+    over && r.clicked()
 }
 
 /// Fila de lista a todo el ancho: ícono + texto recortado a la izquierda, dato a la derecha.

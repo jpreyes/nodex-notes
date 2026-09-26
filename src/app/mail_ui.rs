@@ -303,12 +303,12 @@ impl NotesApp {
         self.mail.rx = Some(rx);
     }
 
-    /// Lo que entendió la IA: resumen en cada correo; compromisos y fechas a la agenda (con Deshacer).
+    /// Lo que entendió la IA: el resumen de cada correo y, si importa, una línea en la nota de hoy
+    /// de su espacio. El organizador de notas hace el resto: la lleva a su nota, le pone
+    /// etiquetas, casilla y fecha a sus tareas, manda las citas a la Agenda y sugiere espacios.
     fn apply_mail_results(&mut self, results: Vec<mail_ai::MailResult>) {
         let snapshot = self.agenda.snapshot();
-        let created = today();
-        let (mut tasks, mut events) = (Vec::new(), Vec::new());
-        let mut found = 0;
+        let mut entries: Vec<(String, String, String)> = Vec::new(); // (espacio, línea, id del correo)
         let batch = std::mem::take(&mut self.mail.batch);
         let pending = std::mem::take(&mut self.mail.batch_tasks);
         for (key, id) in &batch {
@@ -318,25 +318,27 @@ impl NotesApp {
             m.summary = r.resumen.trim().to_string();
             m.important = r.importante;
             m.workspace = self.vault.workspaces.iter().find(|w| w.eq_ignore_ascii_case(r.espacio.trim())).cloned().unwrap_or_default();
+            m.items.clear();
             for c in r.compromisos.iter().filter(|c| !c.que.trim().is_empty()) {
                 let me = mail_ai::is_me(&c.quien);
-                let who = c.quien.split_whitespace().collect::<Vec<_>>().join("_");
-                let text = if me { c.que.trim().to_string() } else { format!("{} @{who}", c.que.trim()) };
                 let due = Some(c.fecha.trim()).filter(|d| agenda::is_date(d));
-                let tid = new_task_id();
-                tasks.push(agenda::format_mail_task(&created, &text, &m.workspace, due, &m.id, &tid));
-                m.task_ids.push(tid);
                 let when = due.map(|d| format!(" · {}", long_date(d))).unwrap_or_default();
                 m.items.push(if me { format!("Tú: {}{when}", c.que.trim()) } else { format!("{}: {}{when}", c.quien.trim(), c.que.trim()) });
-                found += 1;
             }
             for e in r.eventos.iter().filter(|e| agenda::is_date(e.fecha.trim()) && !e.titulo.trim().is_empty()) {
                 let time = Some(e.hora.trim()).filter(|h| agenda::is_time(h));
-                let line = agenda::format_mail_event(e.fecha.trim(), time, &e.titulo, &m.workspace, &m.id);
-                events.push(line.clone());
-                m.event_lines.push(line);
                 m.items.push(format!("{} · {}{}", e.titulo.trim(), long_date(e.fecha.trim()), time.map(|t| format!(" {t}")).unwrap_or_default()));
-                found += 1;
+            }
+            // Si importa (pide algo, fija una fecha o trae un compromiso), se anota.
+            let relevant = m.important || !r.compromisos.is_empty() || !r.eventos.is_empty();
+            if relevant && m.noted.is_empty() && !m.summary.is_empty() {
+                let d = NaiveDate::parse_from_str(m.date.get(..10).unwrap_or(""), "%Y-%m-%d")
+                    .map(|d| format!("{} {}", d.day(), MESES[d.month0() as usize]))
+                    .unwrap_or_default();
+                let who = if m.sent { format!("Correo a {}", short_name(&m.to)) } else { format!("Correo de {}", short_name(&m.from)) };
+                let subject = m.subject.trim().trim_end_matches('.');
+                let line = format!("{who} ({d}): {subject}. {}", m.summary.replace('\n', " "));
+                entries.push((m.workspace.clone(), line, m.id.clone()));
             }
             for k in &r.cumple {
                 if let Some((_, t)) = pending.iter().find(|(pk, _)| pk.eq_ignore_ascii_case(k.trim())) {
@@ -347,17 +349,52 @@ impl NotesApp {
                 }
             }
         }
+        if entries.is_empty() {
+            self.mail.store.save();
+            return;
+        }
+        // Una línea por correo al final de la nota de hoy de su espacio (o de General).
+        let fallback = self.vault.workspaces.iter().find(|w| *w == vault::DEFAULT_WORKSPACE).cloned().unwrap_or_else(|| self.ws.clone());
+        let mut files: Vec<(PathBuf, Option<String>)> = Vec::new();
+        let mut spaces: Vec<String> = entries.iter().map(|(w, _, _)| if w.is_empty() { fallback.clone() } else { w.clone() }).collect();
+        spaces.dedup();
+        for ws in spaces {
+            let path = self.vault.note_path(&ws, &today());
+            let lines: Vec<&(String, String, String)> = entries.iter().filter(|(w, _, _)| (if w.is_empty() { &fallback } else { w }) == &ws).collect();
+            let add = lines.iter().map(|(_, l, _)| l.as_str()).collect::<Vec<_>>().join("\n");
+            let open = path == self.note.path;
+            let before = if open { Some(self.note.text.clone()).filter(|t| !t.is_empty() || self.note.disk_mtime.is_some()) } else { vault::read_text(&path).ok() };
+            let base = before.clone().unwrap_or_default();
+            let text = if base.trim().is_empty() { format!("{add}\n") } else { format!("{}\n{add}\n", base.trim_end()) };
+            if open {
+                self.note.text = text.clone();
+                self.note.dirty = true;
+                self.save();
+            } else {
+                if let Some(dir) = path.parent() {
+                    let _ = fs::create_dir_all(dir);
+                }
+                if let Err(e) = fs::write(&path, &text) {
+                    self.msg(format!("No se pudo anotar el correo: {e}"));
+                    continue;
+                }
+                if let Some(mt) = vault::modified(&path) {
+                    self.vault.upsert(path.clone(), text, mt);
+                }
+            }
+            // La IA la ordena como cualquier nota del día.
+            self.touched.insert(path.clone());
+            files.push((path.clone(), before));
+            let rel = self.rel(&path);
+            for (_, _, id) in lines {
+                if let Some(m) = self.mail.store.mails.iter_mut().find(|m| m.id == *id) {
+                    m.noted = rel.clone();
+                }
+            }
+        }
         self.mail.store.save();
-        if tasks.is_empty() && events.is_empty() {
-            return;
-        }
-        if let Err(e) = self.agenda.add_lines(&tasks, &events) {
-            self.msg(format!("No se pudo escribir tareas/agenda: {e}"));
-            return;
-        }
-        self.gcal_dirty = true;
-        self.undo = Some(Undo { files: Vec::new(), renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
-        self.msg(format!("Correo · {} en Tareas y Agenda", plural(found, "compromiso o fecha")));
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
+        self.msg(format!("Correo · {} en la nota de hoy; la IA los ordena", plural(entries.len(), "correo anotado")));
     }
 
     /// "Sí, se cumplió": marca la tarea (y su casilla en la nota).
@@ -496,17 +533,23 @@ impl NotesApp {
                     ui.label(RichText::new(if d == today() { format!("Hoy · {}", long_date(&d)) } else { long_date(&d) }).font(theme::bold(14.0)));
                 }
                 let who = if m.sent { format!("Tú → {}", short_name(&m.to)) } else { short_name(&m.from) };
+                let mut head = egui::Rect::NOTHING;
                 let r = Frame::new().inner_margin(Margin::symmetric(4, 6)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.horizontal(|ui| {
-                        let color = if m.important { TEXT } else { MUTED };
-                        ui.label(RichText::new(&who).size(14.0).strong().color(color));
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            let time = m.date.get(11..).unwrap_or("");
-                            ui.label(RichText::new(if m.sent { format!("{time} · enviado") } else { time.to_string() }).size(12.0).color(MUTED));
-                        });
-                    });
-                    ui.label(RichText::new(&m.subject).size(14.0));
+                    head = ui
+                        .vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                let color = if m.important { TEXT } else { MUTED };
+                                ui.label(RichText::new(&who).size(14.0).strong().color(color));
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    let time = m.date.get(11..).unwrap_or("");
+                                    ui.label(RichText::new(if m.sent { format!("{time} · enviado") } else { time.to_string() }).size(12.0).color(MUTED));
+                                });
+                            });
+                            ui.label(RichText::new(&m.subject).size(14.0));
+                        })
+                        .response
+                        .rect;
                     if !m.summary.is_empty() {
                         ui.label(RichText::new(&m.summary).size(12.5).color(MUTED));
                     } else if !m.analyzed {
@@ -519,7 +562,9 @@ impl NotesApp {
                                 let c = theme::tag_colors(it.split(':').next().unwrap_or(it));
                                 ui.label(RichText::new(format!("{} {it}", icon::CHECK_SQUARE)).size(12.0).color(c.text).background_color(c.bg));
                             }
-                            if !m.workspace.is_empty() {
+                            if !m.noted.is_empty() {
+                                ui.label(RichText::new(format!("→ anotado en {}", m.noted.replace('/', " / "))).size(12.0).color(MUTED));
+                            } else if !m.workspace.is_empty() {
                                 ui.label(RichText::new(format!("→ {}", m.workspace)).size(12.0).color(MUTED));
                             }
                         });
@@ -549,7 +594,7 @@ impl NotesApp {
                         });
                     }
                 });
-                let hit = ui.interact(r.response.rect, Id::new(("correo", &m.id)), Sense::click());
+                let hit = ui.interact(head, Id::new(("correo", &m.id)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
                 if hit.hovered() {
                     ui.painter().rect_stroke(r.response.rect, 6, Stroke::new(1.0, theme::BORDER), egui::StrokeKind::Inside);
                 }
@@ -609,7 +654,7 @@ impl NotesApp {
 mod tests {
     use super::*;
 
-    /// Lo que entiende la IA de un correo va a Tareas y Agenda, se puede quitar y verifica compromisos.
+    /// Un correo importante se anota en la nota de hoy de su espacio (una vez) y verifica compromisos.
     #[test]
     fn mail_results_become_tasks_and_checks() {
         let dir = std::env::temp_dir().join(format!("nodex-correo-{}", std::process::id()));
@@ -632,19 +677,21 @@ mod tests {
         let m = &app.mail.store.mails[0];
         assert!(m.analyzed && m.important && m.workspace == "Consorcio");
         assert_eq!(m.items.len(), 2);
-        let tasks = app.agenda.tasks();
-        let t = tasks.iter().find(|t| t.mail.is_some()).unwrap();
-        assert_eq!((t.text.as_str(), t.due.as_deref(), t.project.as_str()), ("Enviar la cubicación", Some("2026-09-29"), "Consorcio"));
-        assert_eq!(app.agenda.events()[0].title, "Visita a obra");
+        // Queda anotado en la nota de hoy de su espacio, y la IA la ordenará como cualquier nota.
+        let daily = dir.join("Consorcio").join(format!("{}.md", today()));
+        let text = fs::read_to_string(&daily).unwrap();
+        assert_eq!(text, "Correo de Juan (26 sep): Planos rev. B. Juan manda los planos y pide la cubicación\n");
+        assert_eq!(app.mail.store.mails[0].noted, format!("Consorcio/{}", today()));
+        assert!(app.touched.contains(&daily));
+        // No se anota dos veces.
+        app.mail.batch = vec![("c1".into(), "jp@gmail.com:INBOX:3".into())];
+        app.apply_mail_results(mail_ai::parse_reply(r#"{"correos": [{"id": "c1", "resumen": "otra vez", "importante": true}]}"#).unwrap());
+        assert_eq!(fs::read_to_string(&daily).unwrap().lines().count(), 1);
         // Verificar: "Sí" marca la tarea de Juan como hecha.
         assert_eq!(app.mail.open_checks().len(), 1);
         app.mail_fulfill("jp@gmail.com:INBOX:3", 0, true);
         assert!(app.agenda.tasks().iter().find(|t| t.id.as_deref() == Some("cic01")).unwrap().done);
         assert!(app.mail.open_checks().is_empty());
-        // Quitar lo que sacó la IA.
-        app.mail_remove_items("jp@gmail.com:INBOX:3");
-        assert!(app.agenda.tasks().iter().all(|t| t.mail.is_none()));
-        assert!(app.agenda.events().is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 }

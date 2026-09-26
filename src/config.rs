@@ -185,17 +185,31 @@ fn render_estado(e: &Estado) -> String {
     )
 }
 
-pub fn save_estado(e: &Estado) {
+pub fn save_estado(e: &Estado) -> std::io::Result<()> {
     let path = estado_path();
     if let Some(dir) = path.parent() {
-        let _ = fs::create_dir_all(dir);
+        fs::create_dir_all(dir)?;
     }
-    let _ = fs::write(path, render_estado(e));
+    fs::write(path, render_estado(e))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Guardar y volver a leer estado.toml de verdad (en una carpeta de prueba).
+    #[test]
+    fn estado_is_written_to_disk() {
+        let dir = std::env::temp_dir().join(format!("nodex-estado-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("estado.toml");
+        let e = Estado { espacio: "Obra".into(), nota: r"Obra\Nota.md".into(), hoy: "2026-09-26".into(), semana: "2026-W39".into(), pestanas: vec!["vista:inicio".into()], pestana: 0 };
+        fs::write(&path, render_estado(&e)).unwrap();
+        let back: Estado = toml::from_str(&crate::vault::read_text(&path).unwrap()).unwrap();
+        assert_eq!((back.espacio, back.hoy, back.pestanas), (e.espacio, e.hoy, e.pestanas));
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn saved_estado_keeps_every_field() {

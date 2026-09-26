@@ -78,6 +78,8 @@ pub struct Mail {
     pub event_lines: Vec<String>,
     /// Tareas pendientes que este correo parece cumplir (id, texto) y si ya se respondió.
     pub fulfills: Vec<Fulfill>,
+    /// Nota donde quedó anotado (relativa, sin ".md"); vacío = no se anotó.
+    pub noted: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
@@ -97,6 +99,8 @@ pub struct Store {
     pub last_uid: HashMap<String, u32>,
     /// Día de la última revisión diaria (AAAA-MM-DD).
     pub last_daily: String,
+    /// Versión del formato: desde la 2, los correos importantes se anotan en las notas.
+    pub version: u32,
 }
 
 fn store_path() -> std::path::PathBuf {
@@ -105,7 +109,15 @@ fn store_path() -> std::path::PathBuf {
 
 impl Store {
     pub fn load() -> Store {
-        crate::vault::read_text(&store_path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+        let mut s: Store = crate::vault::read_text(&store_path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        // Los leídos antes de la versión 2 no se anotaron en las notas: la IA los vuelve a leer.
+        if s.version < 2 {
+            for m in s.mails.iter_mut().filter(|m| !m.bulk && m.noted.is_empty()) {
+                m.analyzed = false;
+            }
+            s.version = 2;
+        }
+        s
     }
 
     pub fn save(&self) {

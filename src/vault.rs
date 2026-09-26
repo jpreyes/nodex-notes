@@ -165,8 +165,8 @@ impl Vault {
         Ok(name)
     }
 
-    /// Mueve la nota a `.papelera` (no se borra).
-    pub fn trash(&mut self, path: &Path) -> io::Result<()> {
+    /// Mueve la nota a `.papelera` (no se borra). Devuelve dónde quedó.
+    pub fn trash(&mut self, path: &Path) -> io::Result<PathBuf> {
         let dir = self.root.join(TRASH);
         fs::create_dir_all(&dir)?;
         let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
@@ -176,15 +176,46 @@ impl Vault {
             dest = dir.join(format!("{} {i}.md", stem(path)));
             i += 1;
         }
-        fs::rename(path, dest)?;
+        fs::rename(path, &dest)?;
         self.notes.remove(path);
-        Ok(())
+        Ok(dest)
+    }
+
+    /// Mueve un espacio completo (con sus notas) a `.papelera`. Devuelve dónde quedó.
+    pub fn trash_workspace(&mut self, ws: &str) -> io::Result<PathBuf> {
+        let dir = self.root.join(TRASH);
+        fs::create_dir_all(&dir)?;
+        let mut dest = dir.join(ws);
+        let mut i = 2;
+        while dest.exists() {
+            dest = dir.join(format!("{ws} {i}"));
+            i += 1;
+        }
+        fs::rename(self.root.join(ws), &dest)?;
+        self.scan();
+        Ok(dest)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trash_keeps_notes_and_workspaces() {
+        let root = std::env::temp_dir().join(format!("nodex-papelera-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("Obra")).unwrap();
+        fs::create_dir_all(root.join("General")).unwrap();
+        fs::write(root.join("Obra").join("A.md"), "a").unwrap();
+        fs::write(root.join("General").join("B.md"), "b").unwrap();
+        let mut v = Vault::new(root.clone());
+        let dest = v.trash(&root.join("General").join("B.md")).unwrap();
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "b");
+        let dest = v.trash_workspace("Obra").unwrap();
+        assert!(dest.join("A.md").exists() && !v.workspaces.contains(&"Obra".to_string()));
+        let _ = fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn sanitizes_titles() {

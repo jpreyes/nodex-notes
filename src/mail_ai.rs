@@ -70,10 +70,10 @@ pub fn prompt(mails: &[&Mail], pending: &[(String, Task)], workspaces: &[String]
 
 Reglas:
 - Un objeto por correo, con su id.
-- resumen: una frase corta con lo esencial (qué pide, informa o acuerda).
+- resumen: 1 o 2 frases que se entiendan solas (se anotan en las notas de la persona): quién, qué pide, informa o acuerda, con las fechas escritas con día y mes (por ejemplo "antes del martes 29 de septiembre", "el jueves 1 de octubre a las 10:00"). Si la persona debe hacer algo, escríbelo en primera persona ("Debo enviar la cubicación antes del martes 29 de septiembre"). Nombra el proyecto u obra si se menciona.
 - importante: true si pide algo a la persona, fija una fecha, espera respuesta o cambia un plan.
 - espacio: el espacio de trabajo de la lista al que corresponde, escrito igual; "" si no está claro.
-- compromisos: acciones concretas pendientes. "quien" = "yo" si la persona debe hacerlo (lo que le piden en un correo recibido, o lo que ella prometió en uno enviado); si no, el nombre de quien se comprometió (por ejemplo, el que escribe "te lo envío el viernes"). "que" con verbo en infinitivo. "fecha" AAAA-MM-DD si se indica o se deduce ("el martes" = la fecha de ese martes), si no "". No incluyas compromisos que ya pasaron o que otro correo del lote muestra resueltos.
+- compromisos (para mostrar en la lista de correos): acciones concretas pendientes. "quien" = "yo" si la persona debe hacerlo (lo que le piden en un correo recibido, o lo que ella prometió en uno enviado); si no, el nombre de quien se comprometió (por ejemplo, el que escribe "te lo envío el viernes"). "que" con verbo en infinitivo. "fecha" AAAA-MM-DD si se indica o se deduce ("el martes" = la fecha de ese martes), si no "". No incluyas compromisos que ya pasaron o que otro correo del lote muestra resueltos.
 - eventos: reuniones, visitas o llamadas con fecha (AAAA-MM-DD) y hora (HH:MM) si se indica.
 - cumple: claves de las tareas pendientes (lista de abajo) que este correo muestra como cumplidas (por ejemplo, llega lo que alguien había prometido enviar). Solo si es claro.
 - Correos automáticos, boletines, avisos o publicidad: solo resumen, sin compromisos.

@@ -144,24 +144,6 @@ pub fn format_event(date: &str, time: Option<&str>, title: &str, ws: &str, note:
     format!("{date} {time}{} {} nota:{}", title.trim(), project_token(ws), encode_note(note))
 }
 
-/// Tarea que salió de un correo (sin nota; "correo:" apunta al correo).
-pub fn format_mail_task(created: &str, text: &str, ws: &str, due: Option<&str>, mail: &str, id: &str) -> String {
-    let mut s = format!("{created} {}", text.trim());
-    if !ws.trim().is_empty() {
-        s += &format!(" {}", project_token(ws));
-    }
-    if let Some(d) = due {
-        s += &format!(" due:{d}");
-    }
-    s + &format!(" correo:{} id:{id}", encode_note(mail))
-}
-
-pub fn format_mail_event(date: &str, time: Option<&str>, title: &str, ws: &str, mail: &str) -> String {
-    let time = time.map(|t| format!("{t} ")).unwrap_or_default();
-    let ws = if ws.trim().is_empty() { String::new() } else { format!(" {}", project_token(ws)) };
-    format!("{date} {time}{}{ws} correo:{}", title.trim(), encode_note(mail))
-}
-
 /// Quita los eventos con esas líneas exactas.
 impl Agenda {
     pub fn remove_events(&self, lines: &[String]) -> io::Result<()> {
@@ -437,10 +419,8 @@ mod tests {
         assert_eq!(t.due.as_deref(), Some("2026-09-26"));
         assert_eq!(t.note.as_deref(), Some("Proyecto A/Reunión 1"));
         assert_eq!(t.id.as_deref(), Some("k3f9a"));
-        let m = parse_task(&format_mail_task("2026-09-26", "Enviar cubicación", "", Some("2026-09-29"), "jp@gmail.com:INBOX:3", "abc12")).unwrap();
-        assert_eq!((m.text.as_str(), m.mail.as_deref(), m.project.as_str()), ("Enviar cubicación", Some("jp@gmail.com:INBOX:3"), ""));
-        let e = parse_event(&format_mail_event("2026-10-01", Some("10:00"), "Visita a obra", "Consorcio", "jp@gmail.com:Sent Items:4")).unwrap();
-        assert_eq!(e.mail.as_deref(), Some("jp@gmail.com:Sent Items:4"));
+        let m = parse_task("2026-09-26 Enviar cubicación due:2026-09-29 correo:jp@gmail.com:INBOX:3 id:abc12").unwrap();
+        assert_eq!((m.text.as_str(), m.mail.as_deref()), ("Enviar cubicación", Some("jp@gmail.com:INBOX:3")));
         let d = parse_task(&format!("x 2026-09-25 {l}")).unwrap();
         assert!(d.done && d.text == "Enviar planos");
     }
