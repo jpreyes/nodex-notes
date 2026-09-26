@@ -274,7 +274,7 @@ impl NotesApp {
                 self.ws = ws;
             }
         }
-        self.undo = Some(Undo { files, renamed, agenda: snapshot, at: Instant::now() });
+        self.undo = Some(Undo { files, renamed, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
         let what = if done.is_empty() { "listo".to_string() } else { done.join(" · ") };
         self.msg(format!("Respuesta aplicada: {what}"));
     }
@@ -358,7 +358,7 @@ impl NotesApp {
             self.note = OpenNote::load(current);
         }
         self.prune_doubts();
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now() });
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
         self.msg(format!("Unidas en «{}»", vault::stem(&keep_path)));
     }
 

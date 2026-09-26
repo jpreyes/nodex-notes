@@ -29,7 +29,7 @@ fn day(offset: i64) -> String {
 impl NotesApp {
     /// ¿Hay algo atrasado, para hoy o para mañana?
     pub(super) fn has_something_today(&self) -> bool {
-        if !self.doubts.pending.is_empty() {
+        if !self.doubts.pending.is_empty() || self.ideas.ready().next().is_some() {
             return true;
         }
         let tomorrow = day(1);
@@ -64,9 +64,11 @@ impl NotesApp {
         let ev_week = ev(&|d| d > tomorrow.as_str() && d <= week.as_str());
         let root = self.vault.root.clone();
         let asks = self.live_doubts();
+        let ideas = self.ready_ideas();
+        let mut space_reply = None;
         let mut reply = None;
         let mut find_dups = false;
-        let nothing = asks.is_empty() && overdue.is_empty() && for_today.is_empty() && for_tomorrow.is_empty() && this_week.is_empty()
+        let nothing = asks.is_empty() && ideas.is_empty() && overdue.is_empty() && for_today.is_empty() && for_tomorrow.is_empty() && this_week.is_empty()
             && ev_today.is_empty() && ev_tomorrow.is_empty() && ev_week.is_empty();
 
         Self::column(ui, "today", |ui, _| {
@@ -79,6 +81,16 @@ impl NotesApp {
             };
             if view_header(ui, "Hoy", &subtitle) {
                 action = Some(Action::CloseResults);
+            }
+            if !ideas.is_empty() {
+                ui.label(RichText::new(format!("{} Sugerencias", icon::SPARKLE)).font(theme::bold(15.0)).color(SUCCESS));
+                ui.add_space(6.0);
+                for i in &ideas {
+                    if let Some(r) = self.idea_card(ui, i) {
+                        space_reply = Some(r);
+                    }
+                }
+                ui.add_space(10.0);
             }
             if !asks.is_empty() {
                 ui.label(RichText::new(format!("{} La IA pregunta", icon::SPARKLE)).font(theme::bold(15.0)).color(ACCENT));
@@ -134,6 +146,9 @@ impl NotesApp {
         }
         if find_dups {
             self.scan_duplicates();
+        }
+        if let Some(r) = space_reply {
+            self.handle_space_reply(r);
         }
         if self.esc(ui) {
             action = Some(Action::CloseResults);

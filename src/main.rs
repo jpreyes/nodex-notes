@@ -12,6 +12,7 @@ mod gcal;
 mod lines;
 mod links;
 mod organize;
+mod spaces;
 mod tags;
 mod theme;
 mod vault;

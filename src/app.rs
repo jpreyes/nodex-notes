@@ -26,6 +26,7 @@ mod ask_view;
 mod doubts_ui;
 mod editor;
 mod settings;
+mod spaces_ui;
 mod today;
 use settings::Section;
 
@@ -87,6 +88,10 @@ struct Undo {
     renamed: Option<(PathBuf, PathBuf)>,
     agenda: (String, String),
     at: Instant,
+    /// Otras notas movidas completas: (ruta original, ruta nueva).
+    moved: Vec<(PathBuf, PathBuf)>,
+    /// Carpeta de un espacio creado (se borra al deshacer, si quedó vacía).
+    created_dir: Option<PathBuf>,
 }
 
 #[derive(PartialEq, Clone)]
@@ -171,6 +176,8 @@ pub struct NotesApp {
     doubts: doubts::Store,
     /// Respuesta escrita que se está redactando: (id de la pregunta, texto).
     doubt_reply: Option<(String, String)>,
+    /// Temas sin espacio que la IA fue encontrando (.nodex/espacios.json).
+    ideas: crate::spaces::Ideas,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -320,8 +327,10 @@ impl NotesApp {
             ask: ask_view::AskState::default(),
             doubts: doubts::Store::load(&cfg_root),
             doubt_reply: None,
+            ideas: crate::spaces::Ideas::load(&cfg_root),
         };
         app.prune_doubts();
+        app.prune_ideas();
         // La primera vez de cada día se abre en "Hoy", si hay algo atrasado, para hoy o mañana.
         if app.today_shown != today() && app.has_something_today() {
             app.view = View::Today;
@@ -384,6 +393,7 @@ impl NotesApp {
         self.agenda = Agenda::new(&self.vault.root);
         self.links = editor::LinkCache::new(&self.vault.root);
         self.doubts = doubts::Store::load(&self.vault.root);
+        self.ideas = crate::spaces::Ideas::load(&self.vault.root);
         self.analyzed = load_analyzed(&self.vault.root);
         self.touched.clear();
         self.backlog.clear();
@@ -726,7 +736,7 @@ impl NotesApp {
             capture,
             &infos,
             &all_tags,
-            &doubts::learned(&self.vault.root),
+            &self.ai_facts(),
         );
         if let Ok(ai) = &mut self.ai {
             ai.send(ai::Job { path: path.clone(), hash, system, user });
@@ -938,6 +948,26 @@ impl NotesApp {
         if asked > 0 {
             done.push(plural(asked, "pregunta"));
         }
+        // Temas sin espacio: se juntan y, al reunir varias notas, se sugiere crear el espacio.
+        if !emptied {
+            let ready_before: Vec<String> = self.ideas.ready().map(|i| i.name.clone()).collect();
+            let placed = |id: &str| plan.placed.contains_key(id);
+            for r in &mut self.ideas.ideas {
+                for x in &mut r.refs {
+                    if x.note == source_old {
+                        x.note = source_rel.clone();
+                    }
+                }
+            }
+            let workspaces = self.vault.workspaces.clone();
+            for (name, r) in crate::spaces::refs_from_ai(&new_text, &source_rel, &a, is_capture, &placed) {
+                self.ideas.add(&name, r, &workspaces);
+            }
+            let _ = self.ideas.save(&self.vault.root);
+            if let Some(i) = self.ideas.ready().find(|i| !ready_before.contains(&i.name)) {
+                done.push(format!("sugerencia: espacio «{}»", i.name));
+            }
+        }
 
         // Estado de la app: nada de esto se vuelve a analizar.
         self.analyzed.insert(ai::fnv(&text));
@@ -973,6 +1003,8 @@ impl NotesApp {
             renamed: (new_path != path).then(|| (path.clone(), new_path.clone())),
             agenda: snapshot,
             at: Instant::now(),
+            moved: Vec::new(),
+            created_dir: None,
         });
         let name = if emptied { String::new() } else { format!(" {}:", vault::stem(&new_path)) };
         self.msg(format!("IA ·{name} {}", done.join(" · ")));
@@ -1010,6 +1042,12 @@ impl NotesApp {
 
     fn undo_ai(&mut self) {
         let Some(u) = self.undo.take() else { return };
+        for (orig, new) in u.moved.iter().rev() {
+            let _ = fs::rename(new, orig);
+            if self.note.path == *new {
+                self.note.path = orig.clone();
+            }
+        }
         if let Some((orig, new)) = &u.renamed {
             if let Some(dir) = orig.parent() {
                 let _ = fs::create_dir_all(dir);
@@ -1032,14 +1070,20 @@ impl NotesApp {
             }
             self.touched.remove(p);
         }
+        if let Some(dir) = &u.created_dir {
+            let _ = fs::remove_dir(dir); // solo si quedó vacía
+        }
         let _ = self.agenda.restore(&u.agenda);
         self.save_analyzed();
         self.vault.scan();
         let current = self.note.path.clone();
         let reopen = match &u.renamed {
             Some((orig, new)) if *new == current => Some(orig.clone()),
-            _ => u.files.iter().any(|(p, _)| *p == current).then(|| current.clone()),
+            _ => (u.files.iter().any(|(p, _)| *p == current) || u.moved.iter().any(|(o, _)| *o == current)).then(|| current.clone()),
         };
+        if !self.vault.workspaces.contains(&self.ws) {
+            self.ws = workspace_of(&current).unwrap_or_else(|| vault::DEFAULT_WORKSPACE.into());
+        }
         if let Some(p) = reopen {
             self.note = OpenNote::load(p.clone());
             if let Some(ws) = workspace_of(&p) {
@@ -1217,8 +1261,8 @@ impl NotesApp {
             if r.clicked() {
                 action = Some(Action::Organize);
             }
-            // Cuántas preguntas de la IA esperan respuesta (se responden en Hoy o en su nota).
-            let asks = self.doubts.pending.len();
+            // Cuántas preguntas y sugerencias de la IA esperan respuesta (en Hoy o en su nota).
+            let asks = self.doubts.pending.len() + self.ideas.ready().count();
             if asks > 0 {
                 let c = r.rect.right_top() + egui::vec2(-7.0, 7.0);
                 ui.painter().circle_filled(c, 7.5, ACCENT);
