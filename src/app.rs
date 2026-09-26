@@ -22,6 +22,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+mod ai_view;
 mod ask_view;
 mod calendars_ui;
 mod doubts_ui;
@@ -107,7 +108,7 @@ enum View {
     Mail,
     Today,
     Week,
-    Ask,
+    Ai,
     Tag(String),
     Tasks,
     Agenda,
@@ -124,6 +125,8 @@ enum Action {
     AskTrashWorkspace(String),
     ShowTag(String),
     Show(View),
+    /// La ventana de la IA, en una de sus secciones.
+    ShowAi(ai_view::AiTab),
     CloseResults,
     FocusSearch,
     StartMeeting,
@@ -228,6 +231,12 @@ pub struct NotesApp {
     /// Campos de Inicio: anotar y preguntar rápido.
     home_capture: String,
     home_question: String,
+    /// Ventana de la IA: sección abierta, lo que hizo y cuál de sus cambios se puede deshacer.
+    ai_tab: ai_view::AiTab,
+    activity: crate::activity::Log,
+    undo_entry: Option<String>,
+    /// Último error de la IA al organizar (se muestra en su ventana).
+    ai_error: Option<String>,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -391,13 +400,25 @@ impl NotesApp {
             confirm_ws: None,
             home_capture: String::new(),
             home_question: String::new(),
+            ai_tab: ai_view::AiTab::default(),
+            activity: crate::activity::Log::load(&cfg_root),
+            undo_entry: None,
+            ai_error: None,
         };
         // Pestañas de la sesión anterior (o la nota que estaba abierta).
-        let saved: Vec<tabs::Tab> = estado_tabs.iter().filter_map(|t| tabs::decode(t, &app.vault.root)).collect();
+        let decoded: Vec<tabs::Tab> = estado_tabs.iter().filter_map(|t| tabs::decode(t, &app.vault.root)).collect();
+        // Sin repetidas (versiones anteriores podían dejar la misma nota en varias pestañas).
+        let was_active = decoded.get(estado_tab).cloned();
+        let mut saved: Vec<tabs::Tab> = Vec::new();
+        for t in decoded {
+            if !saved.contains(&t) {
+                saved.push(t);
+            }
+        }
         app.tabs = if saved.is_empty() {
             tabs::Tabs { list: vec![tabs::Tab::View(View::Home), tabs::Tab::Note(app.note.path.clone())], active: 1 }
         } else {
-            let active = estado_tab.min(saved.len() - 1);
+            let active = was_active.and_then(|t| saved.iter().position(|x| *x == t)).unwrap_or(0);
             tabs::Tabs { list: saved, active }
         };
         app.prune_doubts();
@@ -419,8 +440,17 @@ impl NotesApp {
         // Solo en compilaciones de prueba: abrir Preguntar con una pregunta (para capturas).
         #[cfg(debug_assertions)]
         if let Ok(q) = std::env::var("NODEX_DEMO_ASK") {
-            app.view = View::Ask;
+            app.view = View::Ai;
             app.ask(q);
+        }
+        #[cfg(debug_assertions)]
+        if let Ok(t) = std::env::var("NODEX_DEMO_AI") {
+            app.ai_tab = match t.as_str() {
+                "preguntas" => ai_view::AiTab::Asks,
+                "hizo" => ai_view::AiTab::Log,
+                _ => ai_view::AiTab::Chat,
+            };
+            app.view = View::Ai;
         }
         #[cfg(debug_assertions)]
         if std::env::var("NODEX_DEMO_WEEK").is_ok() {
@@ -478,6 +508,8 @@ impl NotesApp {
         self.links = editor::LinkCache::new(&self.vault.root);
         self.doubts = doubts::Store::load(&self.vault.root);
         self.ideas = crate::spaces::Ideas::load(&self.vault.root);
+        self.activity = crate::activity::Log::load(&self.vault.root);
+        self.undo_entry = None;
         self.analyzed = load_analyzed(&self.vault.root);
         self.touched.clear();
         self.backlog.clear();
@@ -565,7 +597,15 @@ impl NotesApp {
     fn new_note(&mut self) {
         self.save();
         let path = self.vault.unique_path(&self.ws, "Sin título");
-        self.note = OpenNote::load(path);
+        let from_view = self.view != View::Editor;
+        if from_view {
+            self.sync_tab();
+        }
+        self.note = OpenNote::load(path.clone());
+        if from_view {
+            // Desde Inicio, Hoy o la IA: en una pestaña nueva.
+            self.new_tab(tabs::Tab::Note(path));
+        }
         self.view = View::Editor;
         self.search.clear();
         self.focus_title = true;
@@ -577,7 +617,7 @@ impl NotesApp {
             Some(n) => n.path.clone(),
             None => self.vault.note_path(&ws, &today()),
         };
-        self.open(path, Some(usize::MAX));
+        self.open_in_tab(path, Some(usize::MAX));
     }
 
     /// Renombra el archivo según el campo de título.
@@ -637,6 +677,7 @@ impl NotesApp {
                         moved: vec![(path.clone(), dest)],
                         created_dir: None,
                     });
+                    self.undo_entry = None;
                     self.msg(format!("«{}» movida a la papelera", vault::stem(&path)));
                 }
                 Err(e) => {
@@ -673,6 +714,7 @@ impl NotesApp {
                     moved: vec![(self.vault.root.join(&ws), dest)],
                     created_dir: None,
                 });
+                self.undo_entry = None;
                 self.touched.retain(|p| workspace_of(p).as_deref() != Some(ws.as_str()));
                 if workspace_of(&self.note.path).as_deref() == Some(ws.as_str()) || self.ws == ws {
                     self.note.dirty = false;
@@ -822,15 +864,7 @@ impl NotesApp {
             return;
         }
         self.save();
-        let meeting = self.meeting.as_ref().map(|m| m.path.clone());
-        self.backlog = self
-            .vault
-            .all_notes()
-            .into_iter()
-            .filter(|n| Some(&n.path) != meeting.as_ref() && !self.analyzed.contains(&ai::fnv(&n.text)))
-            .filter(|n| n.text.split_whitespace().count() >= 3)
-            .map(|n| n.path.clone())
-            .collect();
+        self.backlog = self.unorganized().into();
         self.backlog_total = self.backlog.len();
         if self.backlog.is_empty() {
             self.msg("Todo está organizado");
@@ -937,11 +971,21 @@ impl NotesApp {
             }
             self.in_flight = None;
             match r.result {
-                Ok(a) => self.apply_analysis(r.path, r.hash, a),
+                Ok(a) => {
+                    self.ai_error = None;
+                    self.apply_analysis(r.path, r.hash, a)
+                }
                 Err(e) => {
                     self.touched.remove(&r.path);
                     self.backlog.clear(); // sin conexión o clave inválida: no insistir
-                    self.msg(format!("IA: {}", e.chars().take(160).collect::<String>()));
+                    let e: String = e.chars().take(160).collect();
+                    self.msg(format!("IA: {e}"));
+                    if self.ai_error.as_deref() != Some(e.as_str()) {
+                        let note = self.rel(&r.path);
+                        let what = format!("No pudo organizar «{}»: {e}", vault::stem(&r.path));
+                        self.log_ai(crate::activity::Kind::Error, &note, what, Vec::new(), false);
+                    }
+                    self.ai_error = Some(e);
                 }
             }
         }
@@ -1139,6 +1183,7 @@ impl NotesApp {
 
         // Preguntas de la IA sobre lo que no supo con seguridad.
         let found = if emptied { Vec::new() } else { doubts::from_ai(&text, &source_rel, &a, &today(), new_task_id) };
+        let questions: Vec<String> = found.iter().map(|d| d.question.clone()).collect();
         let asked = self.add_doubts(&source_old, &source_rel, &new_text, found);
         if asked > 0 {
             done.push(plural(asked, "pregunta"));
@@ -1185,13 +1230,47 @@ impl NotesApp {
         if is_open {
             // Si la nota quedó vacía, sigue abierta como nota nueva para seguir anotando.
             self.note = OpenNote::load(new_path.clone());
-            self.ws = workspace_of(&new_path).unwrap_or(ws);
+            self.ws = workspace_of(&new_path).unwrap_or_else(|| ws.clone());
             self.save_estado();
         } else if written.iter().any(|(p, _, _)| *p == self.note.path) && !self.note.dirty {
             self.note = OpenNote::load(self.note.path.clone());
         }
         if done.is_empty() {
             return;
+        }
+        // El detalle, para "Lo que hizo" en la ventana de la IA.
+        let mut details: Vec<String> = Vec::new();
+        if title != old_title {
+            details.push(format!("Título: «{title}»"));
+        }
+        if ws != old_ws {
+            details.push(format!("Movida al espacio {ws}"));
+        }
+        for (p, w, _) in &written {
+            details.push(format!("→ {w}/{}", vault::stem(p)));
+        }
+        if plan.tags_added > 0 {
+            let mut tags: Vec<String> = a.unidades.iter().flat_map(|u| u.etiquetas.iter()).map(|t| organize::clean_tag(t)).filter(|t| !t.is_empty()).collect();
+            tags.sort();
+            tags.dedup();
+            if !tags.is_empty() {
+                details.push(format!("Etiquetas: {}", tags.join(", ")));
+            }
+        }
+        let when = |d: Option<&str>| d.filter(|d| agenda::is_date(d)).map(|d| format!(" · {}", long_date(d))).unwrap_or_default();
+        for g in &plan.agreements {
+            let who = if g.who.is_empty() { String::new() } else { format!("{}: ", g.who) };
+            details.push(format!("Acuerdo: {who}{}{}", g.what, when(g.due.as_deref())));
+        }
+        for t in a.tareas.iter().filter(|t| !t.texto.trim().is_empty() && !meeting_units.contains(&t.unidad.trim().to_uppercase())) {
+            details.push(format!("Tarea: {}{}", t.texto.trim(), when(Some(t.fecha.trim()))));
+        }
+        for e in a.eventos.iter().filter(|e| agenda::is_date(e.fecha.trim()) && !e.titulo.trim().is_empty()) {
+            let hour = Some(e.hora.trim()).filter(|h| agenda::is_time(h)).map(|h| format!(" {h}")).unwrap_or_default();
+            details.push(format!("Evento: {}{}{hour}", e.titulo.trim(), when(Some(e.fecha.trim()))));
+        }
+        for q in &questions {
+            details.push(format!("Pregunta: {q}"));
         }
         self.undo = Some(Undo {
             files,
@@ -1203,6 +1282,9 @@ impl NotesApp {
         });
         let name = if emptied { String::new() } else { format!(" {}:", vault::stem(&new_path)) };
         self.msg(format!("IA ·{name} {}", done.join(" · ")));
+        let note = if emptied { source_old.clone() } else { self.rel(&new_path) };
+        let what = format!("Organizó «{}»: {}", vault::stem(&path), done.join(" · "));
+        self.log_ai(crate::activity::Kind::Organizar, &note, what, details, true);
     }
 
     /// Deja la casilla de la línea "^id" de una nota como hecha o pendiente.
@@ -1237,6 +1319,11 @@ impl NotesApp {
 
     fn undo_ai(&mut self) {
         let Some(u) = self.undo.take() else { return };
+        if let Some(id) = self.undo_entry.take() {
+            if self.activity.mark_undone(&id) {
+                let _ = self.activity.save(&self.vault.root);
+            }
+        }
         for (orig, new) in u.moved.iter().rev() {
             let _ = fs::rename(new, orig);
             if self.note.path == *new {
@@ -1293,13 +1380,13 @@ impl NotesApp {
         match action {
             Action::Open(p, c) => {
                 self.search.clear();
-                self.open(p, c)
+                self.open_in_tab(p, c)
             }
             Action::NewNote => self.new_note(),
             Action::Today => {
                 self.search.clear();
                 let p = self.vault.note_path(&self.ws, &today());
-                self.open(p, Some(usize::MAX));
+                self.open_in_tab(p, Some(usize::MAX));
             }
             Action::SelectWorkspace(ws) => self.select_workspace(ws),
             Action::CreateWorkspace(name) => match self.vault.create_workspace(&name) {
@@ -1317,9 +1404,18 @@ impl NotesApp {
             Action::Show(v) => {
                 self.save();
                 self.search.clear();
-                self.view = if self.view == v { View::Editor } else { v };
-                self.focus_editor = self.view == View::Editor;
-                self.ask.focus = self.view == View::Ask;
+                if self.view == v {
+                    self.view = View::Editor;
+                    self.focus_editor = true;
+                } else {
+                    self.show_in_tab(v);
+                }
+            }
+            Action::ShowAi(t) => {
+                self.search.clear();
+                self.ai_tab = t;
+                self.show_in_tab(View::Ai);
+                self.ask.focus = t == ai_view::AiTab::Chat;
             }
             Action::CloseResults => {
                 self.search.clear();
@@ -1456,7 +1552,7 @@ impl NotesApp {
             return Some(Action::ShowTab(View::Today));
         }
         if pressed(Key::K) {
-            return Some(Action::ShowTab(View::Ask));
+            return Some(Action::ShowAi(ai_view::AiTab::Chat));
         }
         if pressed(Key::R) {
             return Some(Action::StartMeeting);
@@ -1503,11 +1599,7 @@ impl NotesApp {
             if rail_button(ui, icon::USERS, &tip, self.meeting.is_some(), color).clicked() {
                 action = Some(if self.meeting.is_some() { Action::CloseMeeting } else { Action::StartMeeting });
             }
-            let tip = if self.ask.busy() { "Preguntar: buscando la respuesta…" } else { "Preguntar a tus notas (Ctrl+K)" };
-            if rail_button(ui, icon::CHAT_CIRCLE_TEXT, tip, self.view == View::Ask, if self.ask.busy() { ACCENT } else { TEXT }).clicked() {
-                action = Some(Action::ShowTab(View::Ask));
-            }
-            if rail_button(ui, icon::TRAY, "Hoy: atrasado, preguntas de la IA y la semana (Ctrl+H)", self.view == View::Today, TEXT).clicked() {
+            if rail_button(ui, icon::TRAY, "Hoy: lo atrasado, lo de hoy y la semana (Ctrl+H)", self.view == View::Today, TEXT).clicked() {
                 action = Some(Action::ShowTab(View::Today));
             }
             if rail_button(ui, icon::CHECK_SQUARE, "Tareas", self.view == View::Tasks, TEXT).clicked() {
@@ -1527,21 +1619,24 @@ impl NotesApp {
                 ui.painter().circle_filled(c, 7.5, SUCCESS);
                 ui.painter().text(c, Align2::CENTER_CENTER, checks.min(9).to_string(), FontId::proportional(10.5), Color32::WHITE);
             }
-            let (tip, color) = match &self.ai {
-                Ok(ai) => (format!("Organizar con IA las notas pendientes ({})", ai.label), TEXT),
-                Err(e) => (format!("IA no disponible: {e}"), MUTED),
+            // La IA: conversar, sus preguntas y lo que hizo, en una sola ventana.
+            let asks = self.pending_asks();
+            let working = self.in_flight.is_some() || self.ask.busy();
+            let color = if self.ai.is_err() { MUTED } else if working { ACCENT } else { TEXT };
+            let tip = match &self.ai {
+                Ok(_) if asks > 0 => format!("IA: tiene {} para ti · conversar y lo que hizo (Ctrl+K)", plural(asks, "pregunta")),
+                Ok(_) => "IA: conversar con tus notas, sus preguntas y lo que hizo (Ctrl+K)".to_string(),
+                Err(e) => format!("IA no disponible: {e}"),
             };
-            let r = rail_button(ui, icon::SPARKLE, &tip, !self.backlog.is_empty(), color);
+            let r = rail_button(ui, icon::SPARKLE, &tip, self.view == View::Ai, color);
             if r.clicked() {
-                action = Some(Action::Organize);
+                let tab = if asks > 0 && self.view != View::Ai { ai_view::AiTab::Asks } else { self.ai_tab };
+                action = Some(Action::ShowAi(tab));
             }
-            // Cuántas preguntas y sugerencias de la IA esperan respuesta (en Hoy o en su nota).
-            let asks = self.doubts.pending.len() + self.ideas.ready().count();
             if asks > 0 {
                 let c = r.rect.right_top() + egui::vec2(-7.0, 7.0);
                 ui.painter().circle_filled(c, 7.5, ACCENT);
                 ui.painter().text(c, Align2::CENTER_CENTER, asks.min(9).to_string(), FontId::proportional(10.5), Color32::WHITE);
-                r.on_hover_text(format!("La IA tiene {} (en Hoy)", plural(asks, "pregunta")));
             }
             ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
                 if rail_button(ui, icon::GEAR, "Configuración (Ctrl+,)", self.settings.is_some(), TEXT).clicked() {
@@ -1728,6 +1823,11 @@ impl NotesApp {
 
     /// Columna centrada con desplazamiento, común a todas las vistas.
     fn column<R>(ui: &mut Ui, id: &str, add: impl FnOnce(&mut Ui, f32) -> R) -> R {
+        Self::column_at(ui, id, 26.0, add)
+    }
+
+    /// Igual que `column`, con otro margen arriba.
+    fn column_at<R>(ui: &mut Ui, id: &str, top: f32, add: impl FnOnce(&mut Ui, f32) -> R) -> R {
         egui::ScrollArea::vertical()
             .id_salt(id)
             .auto_shrink([false, false])
@@ -1738,7 +1838,7 @@ impl NotesApp {
                     ui.add_space((w - col_w) / 2.0);
                     ui.vertical(|ui| {
                         ui.set_width(col_w);
-                        ui.add_space(26.0);
+                        ui.add_space(top);
                         let r = add(ui, col_w);
                         ui.add_space(40.0);
                         r
@@ -2128,7 +2228,7 @@ impl eframe::App for NotesApp {
                     View::Mail => actions.extend(self.mail_view(ui)),
                     View::Today => actions.extend(self.today_view(ui)),
                     View::Week => actions.extend(self.week_view(ui)),
-                    View::Ask => actions.extend(self.ask_view(ui)),
+                    View::Ai => actions.extend(self.ai_view(ui)),
                     View::Tag(_) => actions.extend(self.results(ui)),
                     View::Tasks => actions.extend(self.tasks_view(ui)),
                     View::Agenda => actions.extend(self.agenda_view(ui)),

@@ -25,15 +25,18 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 ## Uso
 
 - **Inicio:** un resumen de todo en una página. Desde ahí puedes anotar algo rápido (va a la nota de hoy y la IA lo ordena después) o preguntarle a tus notas. También muestra lo de hoy y mañana, lo que la IA tiene pendiente, las reuniones recientes con sus acuerdos abiertos, las notas recientes, tus espacios con sus tareas y cómo va la semana. Se abre la primera vez de cada día.
-- **Pestañas:** cada pestaña muestra una nota o una vista (Inicio, Hoy, Preguntar, Semana, Tareas…), para cambiar de conversación o de tema con un clic. **Ctrl+T** abre una nueva, **Ctrl+W** la cierra, **Ctrl+Tab** pasa a la siguiente (con Shift, a la anterior) y **Ctrl+1…9** salta a una. **Ctrl+clic** (o clic con la rueda) en una nota la abre en otra pestaña. Se recuerdan al cerrar la app.
+- **Pestañas:** cada pestaña muestra una nota o una vista (Inicio, Hoy, IA, Semana, Tareas…), para cambiar de conversación o de tema con un clic. Una nota o vista nunca queda en dos pestañas: si ya está abierta, se va a su pestaña, y lo que abres desde Inicio, Hoy o la IA se abre en una pestaña nueva (Inicio no se reemplaza). **Ctrl+T** abre una nueva, **Ctrl+W** la cierra, **Ctrl+Tab** pasa a la siguiente (con Shift, a la anterior) y **Ctrl+1…9** salta a una. **Ctrl+clic** (o clic con la rueda) en una nota la abre en otra pestaña. Se recuerdan al cerrar la app.
 - **Escribir:** se escribe directo en el editor y se guarda solo.
 - **Cada línea es una nota** y lleva su número a la izquierda. Con **Tab** la línea pasa a ser parte de la nota de arriba; con **Tab Tab**, un ítem de lista de esa nota (Tab Tab Tab, un subítem). **Shift+Tab** quita un nivel y **Enter** sigue la lista (en un ítem vacío, sale de ella). En el archivo queda como Markdown normal: `  texto`, `  - ítem`, `    - subítem`.
 - **Borrar:** al pasar el mouse por una nota o un espacio de la barra lateral aparece un tacho (también con clic derecho). La nota va a la carpeta `.papelera` y se puede deshacer desde la barra inferior; un espacio pide confirmación y también se puede deshacer.
 - **Etiquetas:** `#palabra` es una etiqueta. Se ve como una píldora de color, sin el `#`, y cada etiqueta tiene siempre el mismo color. Haz clic en ella en la barra lateral para ver todas sus líneas. En la línea donde está el cursor se ve el texto tal cual, para poder editarlo.
 - **Tareas en la nota:** `- [ ] tarea` se ve con una casilla. Un clic la marca como hecha, también en Tareas y en Google Calendar. `due:2026-09-26` se ve como una fecha ("mañana", "vie 26") y en rojo si venció.
 - **Rutas y webs:** las direcciones web y las rutas de carpetas se abren con un clic. Una ruta escrita a mano, como `/workspace/proyectos/consorcio/04 Trincheras`, se busca dentro de Dropbox aunque tenga mayúsculas distintas o un error de tipeo.
-- **Preguntar (Ctrl+K):** pregúntale a la IA sobre todas tus notas, por ejemplo "¿cómo eran las notas de la reunión de la semana pasada con el CIC?", "resumen de las notas del proyecto LaVet" o "¿cuáles son todas las tareas que me faltan?". Responde citando cada dato con el número de su nota (un clic la abre en esa línea), las tareas de la respuesta se pueden marcar ahí mismo, y puedes seguir preguntando sobre lo mismo. La respuesta se puede guardar como nota o copiar.
-- **La IA pregunta cuando duda:** si no está segura de algo (a qué proyecto va una línea, si una línea es detalle de otra, qué fecha es "la próxima semana"), no adivina: deja una pregunta con opciones arriba de la nota y en la vista Hoy (el ícono ✦ muestra cuántas hay). Tu respuesta se aplica al tiro (mover, unir, fecha, etiquetas) y se puede deshacer. También puedes escribir tu propia respuesta, o ignorar la pregunta. Lo que conviene recordar queda en `aprendido.txt` (en tu carpeta de notas; puedes editarlo), y la IA lo usa en cada análisis para no volver a preguntar lo mismo.
+- **La ventana de la IA (✦ o Ctrl+K):** todo lo de la IA en un solo lugar, con tres secciones. Arriba muestra qué modelo usa, si está organizando algo y cuántas notas faltan por organizar (con **Organizar ahora**).
+  - **Conversar:** pregúntale a la IA sobre todas tus notas, por ejemplo "¿cómo eran las notas de la reunión de la semana pasada con el CIC?", "resumen de las notas del proyecto LaVet" o "¿cuáles son todas las tareas que me faltan?". Responde citando cada dato con el número de su nota (un clic la abre en esa línea), las tareas de la respuesta se pueden marcar ahí mismo, y puedes seguir preguntando sobre lo mismo. La respuesta se puede guardar como nota o copiar.
+  - **Preguntas:** lo que la IA no supo con seguridad y las sugerencias de espacios nuevos, para responder ahí mismo (el ✦ muestra cuántas hay y al hacer clic abre esta sección). También **Buscar notas repetidas** y lo que aprendió de tus respuestas.
+  - **Lo que hizo:** cada cambio de la IA, por día y hora: qué nota organizó y a dónde llevó cada cosa, qué etiquetas, tareas y eventos agregó, qué preguntas dejó, qué correos anotó, qué respuestas aplicó y qué notas repetidas unió. Cada uno con un enlace a su nota; el último se puede deshacer ahí mismo. Se guarda en `.nodex/actividad.json`.
+- **La IA pregunta cuando duda:** si no está segura de algo (a qué proyecto va una línea, si una línea es detalle de otra, qué fecha es "la próxima semana"), no adivina: deja una pregunta con opciones arriba de la nota y en la ventana de la IA (el ícono ✦ muestra cuántas hay; Hoy e Inicio avisan). Tu respuesta se aplica al tiro (mover, unir, fecha, etiquetas) y se puede deshacer. También puedes escribir tu propia respuesta, o ignorar la pregunta. Lo que conviene recordar queda en `aprendido.txt` (en tu carpeta de notas; puedes editarlo), y la IA lo usa en cada análisis para no volver a preguntar lo mismo.
 - **Duplicados:** si anotas algo que ya estaba (en la misma nota o en otra), la app lo detecta comparando las palabras importantes, sin acentos ni palabras de relleno y sin usar la IA, y pregunta "¿es lo mismo que…?". **Unir** deja una sola línea con las etiquetas y los detalles de ambas; si las dos eran tareas, queda una sola, con la fecha que hubiera. **Son distintas** hace que no vuelva a preguntar por ese par. Se revisa sola después de cada análisis, y el botón **Buscar duplicados** de la vista Hoy revisa todas las notas. Unir se puede deshacer.
 - **Espacios nuevos:** la IA va notando qué notas tratan de un proyecto o tema concreto que no tiene espacio (por ejemplo "LaVet"). Cuando junta 3 notas del mismo tema, la vista Hoy sugiere crearlo: **Crear y mover** crea el espacio y lleva ahí esas notas con sus tareas (se puede deshacer); **Solo crear**; **Ahora no** (vuelve a sugerirlo cuando haya 3 notas más); **No, gracias** (no lo vuelve a sugerir, y la IA lo sabe).
 - **Revisión semanal:** desde el lunes, Hoy te ofrece revisar la semana (también con el enlace *Revisión semanal*). Muestra cuántas notas escribiste, tareas hiciste y reuniones tuviste; lo atrasado, lo que viene en los próximos 7 días, las tareas sin fecha y lo hecho, todo marcable ahí mismo. Con **Hacer el resumen**, la IA lee solo las notas de la semana y arma un resumen por proyecto (qué avanzó, qué se decidió, qué quedó pendiente) con 3 prioridades para la próxima, citando sus fuentes; se puede guardar como nota.
@@ -51,7 +54,7 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 | Ctrl+N | Nueva nota |
 | Ctrl+D | Nota de hoy |
 | Ctrl+H | Hoy: atrasado, hoy y esta semana |
-| Ctrl+K | Preguntar a tus notas |
+| Ctrl+K | La IA: conversar con tus notas |
 | Ctrl+R | Nueva reunión |
 | Ctrl+F | Buscar en todas las notas |
 | Ctrl+, | Configuración |
@@ -81,9 +84,9 @@ Al dejar una nota (o tras 45 segundos sin tocarla), la IA la organiza.
 
 En ambos casos, extrae tareas a `tareas.txt` (formato [todo.txt](https://github.com/todotxt/todo.txt)) y eventos a `agenda.txt`, los sincroniza con [Google Calendar](#google-calendar) y genera `agenda.ics` para Outlook u otros calendarios.
 
-Cada cambio se puede deshacer desde la barra inferior. El botón ✦ organiza las notas antiguas pendientes.
+Cada cambio se puede deshacer desde la barra inferior o desde **Lo que hizo** en la ventana de la IA, donde también está **Organizar ahora** para las notas antiguas pendientes.
 
-**Preguntar** envía a la IA la pregunta junto con tus tareas, la agenda y tus notas, con sus líneas numeradas para que pueda citarlas. Si tienes pocas notas (hasta unos 80.000 caracteres) van todas. Si son más, la IA primero elige cuáles leer a partir de un índice (espacio, título, fecha, etiquetas y el comienzo de cada una) y después responde leyendo solo esas. Si la respuesta no está en tus notas, lo dice. La última pregunta queda en `ia-pregunta.txt` (junto a `config.toml`).
+**Conversar** envía a la IA la pregunta junto con tus tareas, la agenda y tus notas, con sus líneas numeradas para que pueda citarlas. Si tienes pocas notas (hasta unos 80.000 caracteres) van todas. Si son más, la IA primero elige cuáles leer a partir de un índice (espacio, título, fecha, etiquetas y el comienzo de cada una) y después responde leyendo solo esas. Si la respuesta no está en tus notas, lo dice. La última pregunta queda en `ia-pregunta.txt` (junto a `config.toml`).
 
 ## Configuración
 
@@ -159,7 +162,9 @@ Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro eq
 | `src/app/followup.rs` | Correo de seguimiento de una reunión. |
 | `src/app/week.rs` | Revisión semanal: números, listas de la semana y resumen de la IA. |
 | `src/app/today.rs` | Vista Hoy (atrasado, hoy, mañana y la semana). |
-| `src/app/ask_view.rs` | Vista Preguntar: conversación, citas clicables, casillas de tareas, guardar y copiar. |
+| `src/app/ai_view.rs` | Ventana de la IA: estado, Conversar, Preguntas y Lo que hizo. |
+| `src/activity.rs` | Lo que hizo la IA: historial por día en `.nodex/actividad.json`. |
+| `src/app/ask_view.rs` | Conversar: conversación, citas clicables, casillas de tareas, guardar y copiar. |
 | `src/ask.rs` | Preguntar: elige qué notas leer, arma la pregunta con las líneas numeradas y separa la respuesta en párrafos, listas y citas. |
 | `src/app/settings.rs` | Ventana de Configuración (General, IA, Calendar, Atajos, Acerca de). |
 | `src/ai.rs` | Conexión con la IA (genai) en un hilo aparte y el prompt con las reglas. |

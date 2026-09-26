@@ -34,7 +34,7 @@ pub(super) fn encode(tab: &Tab, root: &Path) -> String {
                 View::Home => "inicio".to_string(),
                 View::Mail => "correos".into(),
                 View::Today => "hoy".into(),
-                View::Ask => "preguntar".into(),
+                View::Ai => "ia".into(),
                 View::Week => "semana".into(),
                 View::Tasks => "tareas".into(),
                 View::Agenda => "agenda".into(),
@@ -53,7 +53,7 @@ pub(super) fn decode(s: &str, root: &Path) -> Option<Tab> {
         "inicio" => View::Home,
         "correos" => View::Mail,
         "hoy" => View::Today,
-        "preguntar" => View::Ask,
+        "ia" | "preguntar" => View::Ai,
         "semana" => View::Week,
         "tareas" => View::Tasks,
         "agenda" => View::Agenda,
@@ -67,7 +67,7 @@ fn view_label(v: &View) -> (&'static str, String) {
         View::Home | View::Editor => (icon::HOUSE, "Inicio".into()),
         View::Mail => (icon::ENVELOPE_SIMPLE, "Correos".into()),
         View::Today => (icon::TRAY, "Hoy".into()),
-        View::Ask => (icon::CHAT_CIRCLE_TEXT, "Preguntar".into()),
+        View::Ai => (icon::SPARKLE, "IA".into()),
         View::Week => (icon::CALENDAR_CHECK, "Semana".into()),
         View::Tasks => (icon::CHECK_SQUARE, "Tareas".into()),
         View::Agenda => (icon::CALENDAR_BLANK, "Agenda".into()),
@@ -91,10 +91,43 @@ impl NotesApp {
             self.tabs.active = self.tabs.list.len().saturating_sub(1);
         }
         match self.tabs.list.get_mut(self.tabs.active) {
-            Some(t) if *t != cur => *t = cur,
+            Some(t) if *t != cur => *t = cur.clone(),
             Some(_) => {}
-            None => self.tabs.list.push(cur),
+            None => self.tabs.list.push(cur.clone()),
         }
+        // Nunca dos pestañas con lo mismo: se queda la activa.
+        let active = self.tabs.active.min(self.tabs.list.len() - 1);
+        let before = self.tabs.list.len();
+        let mut i = 0;
+        let mut removed_before = 0;
+        self.tabs.list.retain(|t| {
+            let keep = i == active || *t != cur;
+            if !keep && i < active {
+                removed_before += 1;
+            }
+            i += 1;
+            keep
+        });
+        if self.tabs.list.len() != before {
+            self.tabs.active = active - removed_before;
+        }
+    }
+
+    /// Abre una nota como en un navegador: si ya tiene pestaña, va a esa; si se está viendo una
+    /// vista (Inicio, Hoy, IA…), la abre en una pestaña nueva; si no, la muestra en la pestaña activa.
+    pub(super) fn open_in_tab(&mut self, path: PathBuf, cursor: Option<usize>) {
+        self.sync_tab();
+        let tab = Tab::Note(path.clone());
+        match self.tabs.list.iter().position(|t| *t == tab) {
+            Some(i) if i != self.tabs.active => self.activate_tab(i),
+            None if self.view != View::Editor => {
+                self.save();
+                self.note = OpenNote::load(path.clone());
+                self.new_tab(tab);
+            }
+            _ => {}
+        }
+        self.open(path, cursor);
     }
 
     pub(super) fn activate_tab(&mut self, i: usize) {
@@ -120,7 +153,7 @@ impl NotesApp {
                 }
             }
             Tab::View(v) => {
-                self.ask.focus = v == View::Ask;
+                self.ask.focus = v == View::Ai && self.ai_tab == ai_view::AiTab::Chat;
                 self.view = v;
             }
         }
@@ -276,7 +309,7 @@ mod tests {
         for t in [
             Tab::Note(root.join("General").join("Notas generales.md")),
             Tab::View(View::Home),
-            Tab::View(View::Ask),
+            Tab::View(View::Ai),
             Tab::View(View::Tag("informe".into())),
         ] {
             let s = encode(&t, &root);
@@ -285,5 +318,55 @@ mod tests {
         }
         assert_eq!(encode(&Tab::Note(root.join("General").join("x.md")), &root), "nota:General/x");
         assert!(decode("otra cosa", &root).is_none());
+        assert_eq!(decode("vista:preguntar", &root), Some(Tab::View(View::Ai)), "pestañas guardadas antes de la v0.15");
+    }
+
+    /// Abrir una nota que ya tiene pestaña va a esa pestaña; desde Inicio se abre en otra
+    /// (Inicio no se transforma), y nunca quedan dos pestañas con lo mismo.
+    #[test]
+    fn notes_open_in_their_own_tab() {
+        let dir = std::env::temp_dir().join(format!("nodex-tabs-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        fs::create_dir_all(dir.join("General")).unwrap();
+        let general = dir.join("General").join("Notas generales.md");
+        let other = dir.join("General").join("Otra.md");
+        fs::write(&general, "hola\n").unwrap();
+        fs::write(&other, "otra\n").unwrap();
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut app = NotesApp::new(cfg, None, egui::Context::default());
+        app.tabs = Tabs { list: vec![Tab::View(View::Home), Tab::Note(general.clone())], active: 1 };
+        app.activate_tab(1);
+
+        // Inicio, y de vuelta a Notas generales desde la barra lateral: se vuelve a su pestaña.
+        app.apply(Action::ShowTab(View::Home));
+        assert_eq!(app.tabs.active, 0);
+        app.apply(Action::Open(general.clone(), None));
+        app.sync_tab();
+        assert_eq!(app.tabs.list, vec![Tab::View(View::Home), Tab::Note(general.clone())]);
+        assert_eq!((app.tabs.active, app.view.clone()), (1, View::Editor));
+
+        // Desde Inicio, otra nota: pestaña nueva; Inicio sigue ahí.
+        app.apply(Action::ShowTab(View::Home));
+        app.apply(Action::Open(other.clone(), None));
+        app.sync_tab();
+        assert_eq!(app.tabs.list, vec![Tab::View(View::Home), Tab::Note(other.clone()), Tab::Note(general.clone())]);
+        assert_eq!(app.tabs.active, 1);
+
+        // Si igual quedaran repetidas, se juntan en la activa.
+        app.tabs.list = vec![Tab::Note(general.clone()), Tab::View(View::Home), Tab::Note(general.clone()), Tab::Note(general.clone())];
+        app.tabs.active = 2;
+        app.note = OpenNote::load(general.clone());
+        app.view = View::Editor;
+        app.sync_tab();
+        assert_eq!(app.tabs.list, vec![Tab::View(View::Home), Tab::Note(general.clone())]);
+        assert_eq!(app.tabs.active, 1);
+
+        // La ventana de la IA se abre en la sección pedida, en su propia pestaña.
+        app.apply(Action::ShowAi(super::super::ai_view::AiTab::Log));
+        app.sync_tab();
+        assert_eq!(app.tabs.list.iter().filter(|t| **t == Tab::View(View::Ai)).count(), 1);
+        assert_eq!((app.view.clone(), app.ai_tab), (View::Ai, super::super::ai_view::AiTab::Log));
+        let _ = fs::remove_dir_all(&dir);
     }
 }

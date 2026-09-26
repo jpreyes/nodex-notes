@@ -1,4 +1,4 @@
-//! Vista Preguntar (Ctrl+K): una conversación con la IA sobre todas las notas.
+//! Conversar (en la ventana de la IA, Ctrl+K): una conversación con la IA sobre todas las notas.
 //! Cada dato de la respuesta lleva un número que abre la nota en esa línea, y las
 //! tareas de la respuesta se pueden marcar ahí mismo.
 
@@ -208,14 +208,14 @@ impl NotesApp {
         self.open(path, Some(0));
     }
 
-    pub(super) fn ask_view(&mut self, ui: &mut Ui) -> Option<Action> {
+    /// La conversación (sección "Conversar" de la ventana de la IA).
+    pub(super) fn chat_view(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
         let mut save: Option<usize> = None;
         let mut send: Option<String> = None;
         let tasks_now = self.agenda.tasks();
         let busy = self.ask.busy();
         let n_notes = self.vault.all_notes().len();
-        let ai_error = self.ai.as_ref().err().cloned();
 
         egui::ScrollArea::vertical().id_salt("ask").auto_shrink([false, false]).stick_to_bottom(true).show(ui, |ui| {
             let w = ui.available_width();
@@ -224,22 +224,10 @@ impl NotesApp {
                 ui.add_space((w - col_w) / 2.0);
                 ui.vertical(|ui| {
                     ui.set_width(col_w);
-                    ui.add_space(26.0);
-                    if view_header(ui, "Preguntar", &format!("Busca en {}, tus tareas y la agenda; cada dato lleva el número de su nota", plural(n_notes, "nota"))) {
-                        action = Some(Action::CloseResults);
-                    }
-                    if let Some(e) = &ai_error {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(RichText::new(format!("IA no disponible: {e}")).color(RED).size(13.0));
-                            if ui.link("Configurar").clicked() {
-                                action = Some(Action::OpenSettings(Section::Ai));
-                            }
-                        });
-                        ui.add_space(8.0);
-                    }
-
+                    ui.add_space(16.0);
                     if self.ask.turns.is_empty() {
-                        ui.label(RichText::new("Pregunta lo que quieras sobre tus notas. Por ejemplo:").color(MUTED));
+                        let intro = format!("Pregunta lo que quieras: busca en {}, tus tareas, la agenda y tus correos, y cada dato lleva el número de su nota. Por ejemplo:", plural(n_notes, "nota"));
+                        ui.label(RichText::new(intro).color(MUTED));
                         ui.add_space(6.0);
                         let examples = [
                             "¿Cuáles son todas las tareas que me faltan?".to_string(),
@@ -354,9 +342,6 @@ impl NotesApp {
         }
         if let Some(i) = save {
             self.save_answer(i);
-        }
-        if self.esc(ui) {
-            action = Some(Action::CloseResults);
         }
         action
     }

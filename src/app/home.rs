@@ -218,12 +218,15 @@ impl NotesApp {
                         if ideas > 0 {
                             ui.label(RichText::new(format!("{} de espacio nuevo", plural(ideas, "sugerencia"))).size(13.5));
                         }
-                        if ui.link(RichText::new("Responder en Hoy").size(12.5)).clicked() {
-                            act_r = Some(Action::ShowTab(View::Today));
+                        if ui.link(RichText::new("Responder").size(12.5)).clicked() {
+                            act_r = Some(Action::ShowAi(super::ai_view::AiTab::Asks));
                         }
                     }
                     if let Some(p) = &self.in_flight {
                         ui.label(RichText::new(format!("Organizando «{}»…", vault::stem(p))).size(12.5).color(ACCENT));
+                    }
+                    if ui.link(RichText::new("Lo que hizo la IA").size(12.5)).clicked() {
+                        act_r = Some(Action::ShowAi(super::ai_view::AiTab::Log));
                     }
                 });
                 if !self.cfg.correos.is_empty() {
@@ -277,7 +280,8 @@ impl NotesApp {
             self.quick_capture(&line);
         }
         if let Some(q) = question {
-            self.show_in_tab(View::Ask);
+            self.ai_tab = super::ai_view::AiTab::Chat;
+            self.show_in_tab(View::Ai);
             self.ask(q);
         }
         action

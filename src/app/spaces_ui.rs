@@ -154,7 +154,10 @@ impl NotesApp {
         if files.iter().any(|(p, _)| *p == self.note.path) {
             self.note = OpenNote::load(self.note.path.clone());
         }
-        if !files.is_empty() || !moved.is_empty() || created_dir.is_some() {
+        let mut details: Vec<String> = moved.iter().map(|(from, _)| format!("{} → {ws}", self.rel(from))).collect();
+        details.extend(files.iter().filter(|(p, _)| workspace_of(p).as_deref() == Some(ws.as_str())).map(|(p, _)| format!("→ {}", self.rel(p))));
+        let undoable = !files.is_empty() || !moved.is_empty() || created_dir.is_some();
+        if undoable {
             self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved, created_dir });
         }
         self.prune_doubts();
@@ -162,6 +165,7 @@ impl NotesApp {
         let what = if count > 0 { format!(" con {}", plural(count, "nota")) } else { String::new() };
         self.select_workspace(ws.clone());
         self.msg(format!("Espacio «{ws}» creado{what}"));
+        self.log_ai(crate::activity::Kind::Espacio, "", format!("Creaste el espacio «{ws}» que sugirió{what}"), details, undoable);
     }
 
     /// La tarjeta de una sugerencia de espacio.

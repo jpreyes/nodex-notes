@@ -126,6 +126,8 @@ impl NotesApp {
             self.doubts.resolve(id);
             let _ = self.doubts.save(&root);
             self.msg("Anotado en aprendido.txt; la IA vuelve a revisar la nota");
+            let details = vec![format!("«{}»", d.unit), format!("Respondiste: {}", answer.trim())];
+            self.log_ai(crate::activity::Kind::Respuesta, &d.note, format!("{} → aprendido; vuelve a revisar la nota", d.question), details, false);
             return;
         }
         let Some(c) = choice else { return };
@@ -274,9 +276,15 @@ impl NotesApp {
                 self.ws = ws;
             }
         }
-        self.undo = Some(Undo { files, renamed, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
+        self.undo = Some(Undo { files, renamed: renamed.clone(), agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
         let what = if done.is_empty() { "listo".to_string() } else { done.join(" · ") };
         self.msg(format!("Respuesta aplicada: {what}"));
+        let note = match &renamed {
+            Some((_, to)) => self.rel(to),
+            None => d.note.clone(),
+        };
+        let details = vec![format!("«{}»", d.unit), format!("Elegiste: {}", c.label)];
+        self.log_ai(crate::activity::Kind::Respuesta, &note, format!("{} → {what}", d.question), details, true);
     }
 
     /// Busca duplicados de lo recién escrito (`notes`: nota relativa y texto) en todas las notas
@@ -300,7 +308,7 @@ impl NotesApp {
         // Primero las notas de captura: lo de la nota del día se ofrece unir a la nota con título, no al revés.
         all.sort_by_key(|(rel, _)| !capture::is_capture(rel.rsplit('/').next().unwrap_or(rel)));
         let n = self.detect_duplicates(all);
-        self.msg(if n == 0 { "No encontré duplicados".to_string() } else { format!("Encontré {} posibles duplicados: revísalos en Hoy", n) });
+        self.msg(if n == 0 { "No encontré duplicados".to_string() } else { format!("Encontré {} posibles duplicados: revísalos en la IA (✦)", n) });
     }
 
     /// Unir dos notas duplicadas (o anotar que son distintas).
@@ -360,6 +368,9 @@ impl NotesApp {
         self.prune_doubts();
         self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
         self.msg(format!("Unidas en «{}»", vault::stem(&keep_path)));
+        let note = self.rel(&keep_path);
+        let details = vec![format!("«{keep_unit}»"), format!("«{drop_unit}» ({})", self.rel(&drop_path))];
+        self.log_ai(crate::activity::Kind::Duplicado, &note, format!("Unió dos notas repetidas en «{}»", vault::stem(&keep_path)), details, true);
     }
 
     /// La tarjeta de una pregunta. `note_label` = mostrar de qué nota es (en la vista Hoy).
@@ -480,6 +491,12 @@ mod tests {
         assert_eq!(app.doubts.pending.len(), 1);
         assert_eq!(doubts::Store::load(&dir).pending[0].unit, "Debo entregar la próxima semana el LaVet");
         assert_eq!(app.live_doubts()[0].1, 2, "es la nota 2");
+        // Queda en "Lo que hizo", con el detalle.
+        let e = app.activity.entries.last().unwrap().clone();
+        assert_eq!(e.kind, crate::activity::Kind::Organizar);
+        assert!(e.details.iter().any(|d| d.starts_with("Tarea: Entregar el LaVet")), "{:?}", e.details);
+        assert!(e.details.iter().any(|d| d == "Pregunta: ¿De qué proyecto es el LaVet?"), "{:?}", e.details);
+        assert_eq!(app.undo_entry.as_deref(), Some(e.id.as_str()));
 
         // Elegir "Docencia": la línea se va a Docencia/LaVet con la fecha nueva, y su tarea también.
         let id = app.doubts.pending[0].id.clone();
@@ -496,8 +513,11 @@ mod tests {
         let again = doubts::from_ai(&moved, "Docencia/LaVet", &serde_json::from_str::<Analysis>(r#"{"dudas": [{"unidad": "L1", "pregunta": "¿?", "opciones": ["a"]}]}"#).unwrap(), "2026-09-25", || "x".into());
         assert_eq!(app.add_doubts("Docencia/LaVet", "Docencia/LaVet", &moved, again), 0);
 
-        // Deshacer devuelve la línea a la nota del día.
+        // Deshacer devuelve la línea a la nota del día (y la respuesta queda como deshecha).
+        let answered = app.activity.entries.last().unwrap().clone();
+        assert_eq!(answered.kind, crate::activity::Kind::Respuesta);
         app.undo_ai();
+        assert!(crate::activity::Log::load(&dir).entries.iter().any(|x| x.id == answered.id && x.undone));
         assert!(fs::read_to_string(&daily).unwrap().contains("Debo entregar la próxima semana el LaVet"));
         assert!(!dir.join("Docencia").join("LaVet.md").exists());
         let _ = fs::remove_dir_all(&dir);

@@ -221,8 +221,8 @@ impl NotesApp {
                 }
                 ui.add_space(14.0);
             }
-            if asks > 0 && ui.link(RichText::new(format!("{} La IA tiene {} en Hoy", icon::SPARKLE, plural(asks, "pregunta o sugerencia"))).size(13.0)).clicked() {
-                action = Some(Action::Show(View::Today));
+            if asks > 0 && ui.link(RichText::new(format!("{} La IA tiene {}", icon::SPARKLE, plural(asks, "pregunta o sugerencia"))).size(13.0)).clicked() {
+                action = Some(Action::ShowAi(super::ai_view::AiTab::Asks));
             }
         });
         if ask_ai {

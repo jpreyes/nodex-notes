@@ -393,8 +393,12 @@ impl NotesApp {
             }
         }
         self.mail.store.save();
+        let notes: Vec<String> = files.iter().map(|(p, _)| self.rel(p)).collect();
         self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
         self.msg(format!("Correo · {} en la nota de hoy; la IA los ordena", plural(entries.len(), "correo anotado")));
+        let details: Vec<String> = entries.iter().map(|(_, l, _)| l.chars().take(220).collect()).collect();
+        let what = format!("Anotó {} en {}", plural(entries.len(), "correo"), notes.join(", "));
+        self.log_ai(crate::activity::Kind::Correo, notes.first().map_or("", |s| s.as_str()), what, details, true);
     }
 
     /// "Sí, se cumplió": marca la tarea (y su casilla en la nota).
