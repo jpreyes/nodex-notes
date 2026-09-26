@@ -24,6 +24,8 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 
 ## Uso
 
+- **Inicio:** un resumen de todo en una página. Desde ahí puedes anotar algo rápido (va a la nota de hoy y la IA lo ordena después) o preguntarle a tus notas. También muestra lo de hoy y mañana, lo que la IA tiene pendiente, las reuniones recientes con sus acuerdos abiertos, las notas recientes, tus espacios con sus tareas y cómo va la semana. Se abre la primera vez de cada día.
+- **Pestañas:** cada pestaña muestra una nota o una vista (Inicio, Hoy, Preguntar, Semana, Tareas…), para cambiar de conversación o de tema con un clic. **Ctrl+T** abre una nueva, **Ctrl+W** la cierra, **Ctrl+Tab** pasa a la siguiente (con Shift, a la anterior) y **Ctrl+1…9** salta a una. **Ctrl+clic** (o clic con la rueda) en una nota la abre en otra pestaña. Se recuerdan al cerrar la app.
 - **Escribir:** se escribe directo en el editor y se guarda solo.
 - **Cada línea es una nota** y lleva su número a la izquierda. Con **Tab** la línea pasa a ser parte de la nota de arriba; con **Tab Tab**, un ítem de lista de esa nota (Tab Tab Tab, un subítem). **Shift+Tab** quita un nivel y **Enter** sigue la lista (en un ítem vacío, sale de ella). En el archivo queda como Markdown normal: `  texto`, `  - ítem`, `    - subítem`.
 - **Etiquetas:** `#palabra` es una etiqueta. Se ve como una píldora de color, sin el `#`, y cada etiqueta tiene siempre el mismo color. Haz clic en ella en la barra lateral para ver todas sus líneas. En la línea donde está el cursor se ve el texto tal cual, para poder editarlo.
@@ -36,11 +38,13 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 - **Revisión semanal:** desde el lunes, Hoy te ofrece revisar la semana (también con el enlace *Revisión semanal*). Muestra cuántas notas escribiste, tareas hiciste y reuniones tuviste; lo atrasado, lo que viene en los próximos 7 días, las tareas sin fecha y lo hecho, todo marcable ahí mismo. Con **Hacer el resumen**, la IA lee solo las notas de la semana y arma un resumen por proyecto (qué avanzó, qué se decidió, qué quedó pendiente) con 3 prioridades para la próxima, citando sus fuentes; se puede guardar como nota.
 - **Hoy (Ctrl+H):** lo atrasado, lo de hoy, lo de mañana y lo que viene en la semana. Aparece solo la primera vez que abres la app cada día, si hay algo pendiente.
 - **Espacios de trabajo:** cada espacio es una carpeta; cada nota es un archivo `.md`.
-- **Reuniones:** con **Ctrl+R**, cada línea lleva su hora y **Esc** agrega `## fin · hora`. También se cierra sola tras 30 minutos sin escribir, al abrir otra reunión o al cerrar la app.
+- **Reuniones:** con **Ctrl+R**, cada línea lleva su hora y **Esc** agrega `## fin · hora`. También se cierra sola tras 30 minutos sin escribir, al abrir otra reunión o al cerrar la app. Al cerrarla, la IA agrega un resumen con los asistentes, las decisiones y los acuerdos: cada acuerdo queda como casilla con su responsable y su fecha (`- [ ] Juan: enviar planos due:…`). Los tuyos van a Tareas; los de otros también, marcados con `@Juan`, para saber qué esperas de quién. En una nota de reunión, **Correo de seguimiento** hace que la IA redacte el borrador del correo, que puedes editar, copiar o abrir en tu programa de correo.
 - **Tareas y Agenda:** las tareas se marcan como hechas con doble clic. La agenda muestra eventos y tareas con fecha.
 
 | Atajo | Acción |
 |---|---|
+| Ctrl+T / Ctrl+W | Nueva pestaña / cerrar pestaña |
+| Ctrl+Tab / Ctrl+1…9 | Pestaña siguiente / ir a una pestaña |
 | Ctrl+N | Nueva nota |
 | Ctrl+D | Nota de hoy |
 | Ctrl+H | Hoy: atrasado, hoy y esta semana |
@@ -145,6 +149,9 @@ Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro eq
 | `src/main.rs` | Punto de entrada: lee la configuración y abre la ventana. |
 | `src/app.rs` | Interfaz y comportamiento: barra de íconos, barra lateral, reuniones, lo que hace la IA (y deshacer), vistas Tareas y Agenda. |
 | `src/app/editor.rs` | El editor: números, píldoras de etiquetas, sangrías y listas, casillas, fechas, enlaces; Tab, Enter y Retroceso. |
+| `src/app/home.rs` | Inicio: el resumen de todo, con anotar y preguntar rápido. |
+| `src/app/tabs.rs` | Pestañas: notas y vistas, atajos y cómo se recuerdan. |
+| `src/app/followup.rs` | Correo de seguimiento de una reunión. |
 | `src/app/week.rs` | Revisión semanal: números, listas de la semana y resumen de la IA. |
 | `src/app/today.rs` | Vista Hoy (atrasado, hoy, mañana y la semana). |
 | `src/app/ask_view.rs` | Vista Preguntar: conversación, citas clicables, casillas de tareas, guardar y copiar. |

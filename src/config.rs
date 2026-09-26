@@ -124,6 +124,9 @@ pub struct Estado {
     pub hoy: String,
     /// Última semana (AAAA-Wnn) en que se abrió la revisión semanal.
     pub semana: String,
+    /// Pestañas abiertas ("nota:General/x", "vista:hoy") y cuál está activa.
+    pub pestanas: Vec<String>,
+    pub pestana: usize,
 }
 
 fn estado_path() -> PathBuf {
@@ -139,7 +142,15 @@ pub fn load_estado() -> Estado {
 
 fn render_estado(e: &Estado) -> String {
     let q = |s: &str| toml::Value::String(s.to_string()).to_string();
-    format!("espacio = {}\nnota = {}\nhoy = {}\nsemana = {}\n", q(&e.espacio), q(&e.nota), q(&e.hoy), q(&e.semana))
+    let tabs = toml::Value::Array(e.pestanas.iter().map(|t| toml::Value::String(t.clone())).collect()).to_string();
+    format!(
+        "espacio = {}\nnota = {}\nhoy = {}\nsemana = {}\npestanas = {tabs}\npestana = {}\n",
+        q(&e.espacio),
+        q(&e.nota),
+        q(&e.hoy),
+        q(&e.semana),
+        e.pestana
+    )
 }
 
 pub fn save_estado(e: &Estado) {
@@ -156,9 +167,17 @@ mod tests {
 
     #[test]
     fn saved_estado_keeps_every_field() {
-        let e = Estado { espacio: "General".into(), nota: r"General\Notas generales.md".into(), hoy: "2026-09-25".into(), semana: "2026-W39".into() };
+        let e = Estado {
+            espacio: "General".into(),
+            nota: r"General\Notas generales.md".into(),
+            hoy: "2026-09-25".into(),
+            semana: "2026-W39".into(),
+            pestanas: vec!["vista:inicio".into(), "nota:General/Notas \"raras\"".into()],
+            pestana: 1,
+        };
         let back: Estado = toml::from_str(&render_estado(&e)).unwrap();
         assert_eq!((back.espacio, back.nota, back.hoy, back.semana), (e.espacio, e.nota, e.hoy, e.semana));
+        assert_eq!((back.pestanas, back.pestana), (e.pestanas, e.pestana));
     }
 
     #[test]

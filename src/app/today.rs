@@ -27,16 +27,6 @@ fn day(offset: i64) -> String {
 }
 
 impl NotesApp {
-    /// ¿Hay algo atrasado, para hoy o para mañana?
-    pub(super) fn has_something_today(&self) -> bool {
-        if !self.doubts.pending.is_empty() || self.ideas.ready().next().is_some() || self.week_pending() {
-            return true;
-        }
-        let tomorrow = day(1);
-        self.agenda.tasks().iter().any(|t| !t.done && t.due.as_deref().is_some_and(|d| agenda::is_date(d) && *d <= *tomorrow))
-            || self.agenda.events().iter().any(|e| e.date >= today() && e.date <= tomorrow)
-    }
-
     pub(super) fn today_view(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
         let (today, tomorrow, week) = (today(), day(1), day(7));

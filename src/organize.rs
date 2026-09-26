@@ -30,6 +30,52 @@ pub struct Plan<D> {
     pub task_ids: Vec<Option<String>>,
     pub tags_added: usize,
     pub grouped: usize,
+    /// Acuerdos de reuniones que quedaron escritos en la nota (para tareas.txt).
+    pub agreements: Vec<Agreement>,
+}
+
+/// Un acuerdo de una reunión, ya con su línea en la nota.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Agreement {
+    pub unit: String,
+    /// Responsable; vacío si es quien escribe.
+    pub who: String,
+    pub what: String,
+    pub due: Option<String>,
+    pub id: String,
+}
+
+fn is_me(who: &str) -> bool {
+    matches!(who.trim().to_lowercase().as_str(), "" | "yo" | "me" | "mí" | "mi" | "yo mismo" | "yo misma")
+}
+
+/// Las líneas que se agregan después de "## fin": resumen, asistentes, decisiones y acuerdos.
+fn meeting_section(au: &AiUnit, new_id: &mut dyn FnMut() -> String) -> (Vec<String>, Vec<Agreement>) {
+    let mut out = vec!["### Resumen".to_string(), au.resumen.trim().to_string()];
+    let people: Vec<&str> = au.asistentes.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if !people.is_empty() {
+        out.push(format!("Asistentes: {}", people.join(", ")));
+    }
+    let decisions: Vec<&str> = au.decisiones.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if !decisions.is_empty() {
+        out.push("Decisiones:".into());
+        out.extend(decisions.iter().map(|d| format!("- {d}")));
+    }
+    let mut agreements = Vec::new();
+    let valid: Vec<&crate::ai::AiAgreement> = au.acuerdos.iter().filter(|a| !a.que.trim().is_empty()).collect();
+    if !valid.is_empty() {
+        out.push("Acuerdos:".into());
+        for a in valid {
+            let who = if is_me(&a.quien) { String::new() } else { a.quien.trim().to_string() };
+            let what = a.que.trim().trim_end_matches('.').to_string();
+            let due = Some(a.fecha.trim().to_string()).filter(|d| crate::agenda::is_date(d));
+            let id = new_id();
+            let text = if who.is_empty() { what.clone() } else { format!("{who}: {what}") };
+            out.push(lines::set_meta(&format!("- [ ] {text}"), due.as_deref(), Some(&id)));
+            agreements.push(Agreement { unit: au.id.trim().to_uppercase(), who, what, due, id });
+        }
+    }
+    (out, agreements)
 }
 
 fn norm(id: &str) -> String {
@@ -60,6 +106,15 @@ pub fn plan<D: Clone + PartialEq>(
         if au.resumen.trim().is_empty() {
             au.resumen = a.resumen.clone();
         }
+        if au.asistentes.is_empty() {
+            au.asistentes = a.asistentes.clone();
+        }
+        if au.decisiones.is_empty() {
+            au.decisiones = a.decisiones.clone();
+        }
+        if au.acuerdos.is_empty() {
+            au.acuerdos = a.acuerdos.clone();
+        }
     }
     // Respuesta al estilo antiguo (etiquetas de toda la nota): van a la primera nota.
     if a.unidades.is_empty() && !a.etiquetas.is_empty() && !units.is_empty() {
@@ -69,6 +124,7 @@ pub fn plan<D: Clone + PartialEq>(
 
     let mut body: Vec<Vec<String>> = units.iter().map(|u| lines[u.first..=u.last].iter().map(|l| l.to_string()).collect()).collect();
     let mut tags_added = 0;
+    let mut agreements: Vec<Agreement> = Vec::new();
 
     // 1. Etiquetas (y resumen de reunión) de cada unidad.
     for (i, u) in units.iter().enumerate() {
@@ -89,7 +145,11 @@ pub fn plan<D: Clone + PartialEq>(
             if au.es_reunion && closed && !has_summary && !au.resumen.trim().is_empty() {
                 // El resumen va después de "## fin" (y antes de una línea de etiquetas que ya exista).
                 let at = body[i].iter().rposition(|l| lines::is_block_end(l)).map_or(body[i].len(), |p| p + 1);
-                body[i].splice(at..at, ["### Resumen".to_string(), au.resumen.trim().to_string()]);
+                let mut au = au.clone();
+                au.id = u.id.clone();
+                let (section, found) = meeting_section(&au, &mut new_id);
+                body[i].splice(at..at, section);
+                agreements.extend(found);
             }
             if !hashes.is_empty() {
                 match body[i].last_mut().filter(|l| lines::is_tag_only(l)) {
@@ -220,7 +280,7 @@ pub fn plan<D: Clone + PartialEq>(
     }
     let source = clean.join("\n").trim().to_string();
     let source = if source.is_empty() { source } else { source + "\n" };
-    Plan { source, moves, placed, task_ids, tags_added, grouped }
+    Plan { source, moves, placed, task_ids, tags_added, grouped, agreements }
 }
 
 #[cfg(test)]
@@ -282,5 +342,27 @@ mod tests {
         assert_eq!(p.moves[1].1, "## Reunión X · 2026-09-24 15:00\n- 15:03 algo\n## fin · 15:30\n### Resumen\nSe habló.\n#reunión");
         assert_eq!(p.placed.get("L4"), Some(&0));
         assert_eq!(clean_tag("#Muro Contención"), "muro-contención");
+    }
+
+    #[test]
+    fn meetings_get_attendees_decisions_and_agreements() {
+        let text = "## Reunión CIC · 2026-09-24 10:00\n- 10:05 muro norte\n## fin · 10:40\n";
+        let a = analysis(
+            r#"{"unidades": [{"id": "B1", "es_reunion": true, "resumen": "Se revisó el muro norte.",
+                "asistentes": ["Juan", "María"], "decisiones": ["Muro norte en hormigón"],
+                "acuerdos": [{"quien": "Juan", "que": "Enviar planos corregidos.", "fecha": "2026-09-30"}, {"quien": "yo", "que": "Revisar cubicación", "fecha": ""}]}]}"#,
+        );
+        let mut n = 0;
+        let p = plan(text, &a, |_| None::<()>, || {
+            n += 1;
+            format!("ac{n}")
+        });
+        assert_eq!(
+            p.source,
+            "## Reunión CIC · 2026-09-24 10:00\n- 10:05 muro norte\n## fin · 10:40\n### Resumen\nSe revisó el muro norte.\nAsistentes: Juan, María\nDecisiones:\n- Muro norte en hormigón\nAcuerdos:\n- [ ] Juan: Enviar planos corregidos due:2026-09-30 ^ac1\n- [ ] Revisar cubicación ^ac2\n#reunión\n"
+        );
+        assert_eq!(p.agreements.len(), 2);
+        assert_eq!((p.agreements[0].who.as_str(), p.agreements[1].who.as_str()), ("Juan", ""));
+        assert_eq!(lines::units(&p.source).len(), 1, "todo sigue siendo una sola nota");
     }
 }

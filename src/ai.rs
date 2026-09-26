@@ -47,6 +47,19 @@ pub struct AiUnit {
     pub resumen: String,
     /// Proyecto o tema concreto que no tiene espacio todavía ("LaVet").
     pub espacio_nuevo: String,
+    // Reunión: quiénes estuvieron, qué se decidió y quién se comprometió a qué.
+    pub asistentes: Vec<String>,
+    pub decisiones: Vec<String>,
+    pub acuerdos: Vec<AiAgreement>,
+}
+
+/// Un compromiso de una reunión: quién ("yo" = quien escribe), qué y para cuándo.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct AiAgreement {
+    pub quien: String,
+    pub que: String,
+    pub fecha: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -67,6 +80,10 @@ pub struct Analysis {
     pub dudas: Vec<AiDoubt>,
     /// Nota con título: proyecto o tema concreto de toda la nota que no tiene espacio todavía.
     pub espacio_nuevo: String,
+    // Nota con título que es una reunión.
+    pub asistentes: Vec<String>,
+    pub decisiones: Vec<String>,
+    pub acuerdos: Vec<AiAgreement>,
 }
 
 /// Una pregunta de la IA sobre una unidad. Las opciones pueden venir como texto o como objeto
@@ -411,6 +428,8 @@ const RULES_DOUBTS: &str = r#"- dudas: si NO estás seguro de algo que importa, 
 
 const RULE_NEW_SPACE: &str = r#"espacio_nuevo: si trata de un proyecto, cliente, obra o tema concreto y recurrente que NO tiene espacio en la lista (por ejemplo, el nombre de un proyecto), ese nombre corto, tal como se llamaría el espacio ("LaVet"); si calza con un espacio existente o es algo general (informes, reuniones, compras, ideas), "". No propongas los que la persona descartó."#;
 
+const RULE_MEETING: &str = r#"asistentes (nombres mencionados), decisiones (lo que se decidió, frases cortas) y acuerdos (compromisos concretos: "quien" = nombre de la persona responsable, o "yo" si es quien escribe; "que" con verbo en infinitivo; "fecha" AAAA-MM-DD si se indica o se deduce, si no ""). Los compromisos de una reunión van en acuerdos, no en tareas."#;
+
 const DOUBTS_SHAPE: &str = r#""dudas": [{"unidad": "L1", "pregunta": "", "opciones": [{"texto": "", "espacio": "", "nota": "", "de": "", "fecha": "", "etiquetas": [], "dato": ""}]}]"#;
 
 /// Una nota se envía dividida en unidades: cada línea sin sangría (con sus líneas con sangría)
@@ -451,7 +470,7 @@ pub fn build_prompt(
     let system = if capture {
         format!(
             r###"{intro}
-{{"unidades": [{{"id": "L1", "etiquetas": [], "de": "", "espacio": "", "nota": "", "espacio_nuevo": "", "es_reunion": false, "resumen": ""}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}], {DOUBTS_SHAPE}}}
+{{"unidades": [{{"id": "L1", "etiquetas": [], "de": "", "espacio": "", "nota": "", "espacio_nuevo": "", "es_reunion": false, "resumen": "", "asistentes": [], "decisiones": [], "acuerdos": [{{"quien": "", "que": "", "fecha": ""}}]}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}], {DOUBTS_SHAPE}}}
 
 Son apuntes rápidos: cada unidad puede guardarse en la nota que le corresponde.
 Reglas:
@@ -459,7 +478,7 @@ Reglas:
 {RULES_UNITS}
 - espacio y nota: dónde guardarla, si claramente pertenece a un tema. "espacio": un espacio de la lista, escrito exactamente igual. "nota": el título exacto de una nota existente de ese espacio si alguna corresponde; si no, un título nuevo y breve (máximo 5 palabras). Las unidades del mismo tema van a la misma nota. En un bloque "##" que no calza con una nota existente, usa como nota el título del bloque (sin fecha). Si no se puede atribuir con seguridad, deja espacio y nota vacíos: se queda donde está. Una unidad con "de" se va junto con la otra.
 - {RULE_NEW_SPACE} Si la unidad no tiene espacio adecuado, déjala sin espacio ni nota y usa espacio_nuevo.
-- es_reunion y resumen solo para bloques que registran una reunión: 2 o 3 frases con decisiones y acuerdos.
+- es_reunion, resumen, asistentes, decisiones y acuerdos solo para bloques que registran una reunión. resumen: 2 o 3 frases. {RULE_MEETING}
 {RULES_TASKS}
 {RULES_DOUBTS}
 Hoy es {}."###,
@@ -468,14 +487,14 @@ Hoy es {}."###,
     } else {
         format!(
             r###"{intro}
-{{"es_reunion": false, "espacio": "", "confianza": "baja", "espacio_nuevo": "", "titulo": "", "resumen": "", "unidades": [{{"id": "L1", "etiquetas": [], "de": ""}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}], {DOUBTS_SHAPE}}}
+{{"es_reunion": false, "espacio": "", "confianza": "baja", "espacio_nuevo": "", "titulo": "", "resumen": "", "asistentes": [], "decisiones": [], "acuerdos": [{{"quien": "", "que": "", "fecha": ""}}], "unidades": [{{"id": "L1", "etiquetas": [], "de": ""}}], "tareas": [{{"texto": "", "fecha": "", "unidad": "L1"}}], "eventos": [{{"titulo": "", "fecha": "", "hora": "", "unidad": "L1"}}], {DOUBTS_SHAPE}}}
 
 Reglas:
 - es_reunion: true si la nota completa registra una reunión, llamada o conversación con otras personas.
 - espacio: el espacio de trabajo al que pertenece la nota completa, exactamente como en la lista. confianza "alta" solo si es evidente; si no está claro, deja el espacio actual con confianza "baja".
 - {RULE_NEW_SPACE} Aplica a la nota completa: solo si toda la nota trata de eso y no calza con ningún espacio.
 - titulo: título breve para la nota (máximo 6 palabras), sin fecha.
-- resumen: si es una reunión, 2 o 3 frases con decisiones y acuerdos; si no, "".
+- resumen: si es una reunión, 2 o 3 frases; si no, "". Si es una reunión, también {RULE_MEETING}
 - unidades: incluye cada unidad a la que le pongas etiquetas.
 {RULES_UNITS}
 {RULES_TASKS}

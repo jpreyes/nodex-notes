@@ -25,8 +25,11 @@ use std::time::{Duration, Instant, SystemTime};
 mod ask_view;
 mod doubts_ui;
 mod editor;
+mod followup;
+mod home;
 mod settings;
 mod spaces_ui;
+mod tabs;
 mod today;
 mod week;
 use settings::Section;
@@ -95,9 +98,10 @@ struct Undo {
     created_dir: Option<PathBuf>,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 enum View {
     Editor,
+    Home,
     Today,
     Week,
     Ask,
@@ -128,6 +132,13 @@ enum Action {
     AddTask(String),
     OpenExternal(PathBuf),
     OpenSettings(Section),
+    /// Pestañas.
+    OpenNewTab(PathBuf),
+    ShowTab(View),
+    NewTab,
+    CloseTab,
+    NextTab(bool),
+    ActivateTab(usize),
 }
 
 pub struct NotesApp {
@@ -184,6 +195,12 @@ pub struct NotesApp {
     week: week::WeekState,
     /// Última semana en que se abrió la revisión (AAAA-Wnn).
     week_seen: String,
+    /// Borrador del correo de seguimiento de una reunión.
+    followup: followup::FollowUp,
+    tabs: tabs::Tabs,
+    /// Campos de Inicio: anotar y preguntar rápido.
+    home_capture: String,
+    home_question: String,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -298,6 +315,8 @@ impl NotesApp {
         let analyzed = load_analyzed(&vault.root);
         let estado_hoy = estado.hoy.clone();
         let estado_semana = estado.semana.clone();
+        let estado_tabs = estado.pestanas.clone();
+        let estado_tab = estado.pestana;
         let mut app = NotesApp {
             cfg,
             ctx,
@@ -337,15 +356,35 @@ impl NotesApp {
             ideas: crate::spaces::Ideas::load(&cfg_root),
             week: week::WeekState::default(),
             week_seen: estado_semana,
+            followup: followup::FollowUp::default(),
+            tabs: tabs::Tabs::default(),
+            home_capture: String::new(),
+            home_question: String::new(),
+        };
+        // Pestañas de la sesión anterior (o la nota que estaba abierta).
+        let saved: Vec<tabs::Tab> = estado_tabs.iter().filter_map(|t| tabs::decode(t, &app.vault.root)).collect();
+        app.tabs = if saved.is_empty() {
+            tabs::Tabs { list: vec![tabs::Tab::View(View::Home), tabs::Tab::Note(app.note.path.clone())], active: 1 }
+        } else {
+            let active = estado_tab.min(saved.len() - 1);
+            tabs::Tabs { list: saved, active }
         };
         app.prune_doubts();
         app.prune_ideas();
-        // La primera vez de cada día se abre en "Hoy", si hay algo atrasado, para hoy o mañana.
-        if app.today_shown != today() && app.has_something_today() {
-            app.view = View::Today;
+        // La primera vez de cada día se abre en Inicio (el resumen de todo).
+        if app.today_shown != today() {
             app.today_shown = today();
-            app.save_estado();
+            match app.tabs.list.iter().position(|t| *t == tabs::Tab::View(View::Home)) {
+                Some(i) => app.tabs.active = i,
+                None => {
+                    app.tabs.list.insert(0, tabs::Tab::View(View::Home));
+                    app.tabs.active = 0;
+                }
+            }
         }
+        let active = app.tabs.active;
+        app.activate_tab(active);
+        app.focus_editor = app.view == View::Editor;
         // Solo en compilaciones de prueba: abrir Preguntar con una pregunta (para capturas).
         #[cfg(debug_assertions)]
         if let Ok(q) = std::env::var("NODEX_DEMO_ASK") {
@@ -462,6 +501,8 @@ impl NotesApp {
             nota: nota.to_string_lossy().into_owned(),
             hoy: self.today_shown.clone(),
             semana: self.week_seen.clone(),
+            pestanas: self.tabs.list.iter().map(|t| tabs::encode(t, &self.vault.root)).collect(),
+            pestana: self.tabs.active,
         });
     }
 
@@ -927,7 +968,20 @@ impl NotesApp {
         };
         let created = today();
         let (mut src_tasks, mut src_events, mut other_tasks, mut other_events) = (vec![], vec![], vec![], vec![]);
+        // Acuerdos de reuniones: los de otros llevan "@Nombre" (lo que se espera de cada uno).
+        let meeting_units: HashSet<String> = plan.agreements.iter().map(|g| g.unit.clone()).collect();
+        for g in &plan.agreements {
+            let text = if g.who.is_empty() { g.what.clone() } else { format!("{} @{}", g.what, g.who.split_whitespace().collect::<Vec<_>>().join("_")) };
+            match place(&g.unit) {
+                Some((rel, w)) => other_tasks.push(agenda::format_task(&created, &text, &w, g.due.as_deref(), &rel, Some(&g.id))),
+                None => src_tasks.push(agenda::format_task(&created, &text, &ws, g.due.as_deref(), &source_rel, Some(&g.id))),
+            }
+        }
         for (ti, t) in a.tareas.iter().enumerate().filter(|(_, t)| !t.texto.trim().is_empty()) {
+            // En una reunión con acuerdos, las tareas ya están en los acuerdos.
+            if meeting_units.contains(&t.unidad.trim().to_uppercase()) {
+                continue;
+            }
             let due = Some(t.fecha.trim()).filter(|d| agenda::is_date(d));
             let id = plan.task_ids.get(ti).cloned().flatten();
             match place(&t.unidad) {
@@ -1191,6 +1245,24 @@ impl NotesApp {
             }
             Action::OpenExternal(p) => open_external(&p),
             Action::OpenSettings(section) => self.open_settings(section),
+            Action::OpenNewTab(p) => self.new_tab(tabs::Tab::Note(p)),
+            Action::ShowTab(v) => self.show_in_tab(v),
+            Action::NewTab => self.new_tab(tabs::Tab::View(View::Home)),
+            Action::CloseTab => {
+                let i = self.tabs.active;
+                self.close_tab(i);
+            }
+            Action::NextTab(forward) => {
+                self.sync_tab();
+                let n = self.tabs.list.len();
+                let i = if forward { (self.tabs.active + 1) % n } else { (self.tabs.active + n - 1) % n };
+                self.activate_tab(i);
+            }
+            Action::ActivateTab(i) => {
+                self.sync_tab();
+                let i = i.min(self.tabs.list.len() - 1);
+                self.activate_tab(i);
+            }
         }
     }
 
@@ -1198,6 +1270,25 @@ impl NotesApp {
 
     fn shortcuts(&mut self, ctx: &egui::Context) -> Option<Action> {
         let pressed = |k| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, k)));
+        // Pestañas: Ctrl+T, Ctrl+W, Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+1…9.
+        if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::Tab))) {
+            return Some(Action::NextTab(false));
+        }
+        if pressed(Key::Tab) {
+            return Some(Action::NextTab(true));
+        }
+        if pressed(Key::T) {
+            return Some(Action::NewTab);
+        }
+        if pressed(Key::W) {
+            return Some(Action::CloseTab);
+        }
+        let numbers = [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5, Key::Num6, Key::Num7, Key::Num8, Key::Num9];
+        for (i, k) in numbers.into_iter().enumerate() {
+            if pressed(k) {
+                return Some(Action::ActivateTab(if i == 8 { usize::MAX } else { i }));
+            }
+        }
         if pressed(Key::N) {
             return Some(Action::NewNote);
         }
@@ -1208,10 +1299,10 @@ impl NotesApp {
             return Some(Action::FocusSearch);
         }
         if pressed(Key::H) {
-            return Some(Action::Show(View::Today));
+            return Some(Action::ShowTab(View::Today));
         }
         if pressed(Key::K) {
-            return Some(Action::Show(View::Ask));
+            return Some(Action::ShowTab(View::Ask));
         }
         if pressed(Key::R) {
             return Some(Action::StartMeeting);
@@ -1236,6 +1327,9 @@ impl NotesApp {
         let is_today = vault::stem(&self.note.path) == today() && self.view == View::Editor;
         ui.vertical_centered(|ui| {
             ui.spacing_mut().item_spacing.y = 6.0;
+            if rail_button(ui, icon::HOUSE, "Inicio: un resumen de todo", self.view == View::Home, TEXT).clicked() {
+                action = Some(Action::ShowTab(View::Home));
+            }
             if rail_button(ui, icon::NOTE_PENCIL, "Nueva nota (Ctrl+N)", false, TEXT).clicked() {
                 action = Some(Action::NewNote);
             }
@@ -1257,13 +1351,13 @@ impl NotesApp {
             }
             let tip = if self.ask.busy() { "Preguntar: buscando la respuesta…" } else { "Preguntar a tus notas (Ctrl+K)" };
             if rail_button(ui, icon::CHAT_CIRCLE_TEXT, tip, self.view == View::Ask, if self.ask.busy() { ACCENT } else { TEXT }).clicked() {
-                action = Some(Action::Show(View::Ask));
+                action = Some(Action::ShowTab(View::Ask));
             }
-            if rail_button(ui, icon::HOUSE_LINE, "Hoy: atrasado, hoy y esta semana (Ctrl+H)", self.view == View::Today, TEXT).clicked() {
-                action = Some(Action::Show(View::Today));
+            if rail_button(ui, icon::TRAY, "Hoy: atrasado, preguntas de la IA y la semana (Ctrl+H)", self.view == View::Today, TEXT).clicked() {
+                action = Some(Action::ShowTab(View::Today));
             }
             if rail_button(ui, icon::CHECK_SQUARE, "Tareas", self.view == View::Tasks, TEXT).clicked() {
-                action = Some(Action::Show(View::Tasks));
+                action = Some(Action::ShowTab(View::Tasks));
             }
             if rail_button(ui, icon::CALENDAR_BLANK, "Agenda", self.view == View::Agenda, TEXT).clicked() {
                 action = Some(Action::Show(View::Agenda));
@@ -1360,8 +1454,10 @@ impl NotesApp {
                 let selected = path == self.note.path && self.view == View::Editor;
                 let glyph = if meeting { icon::USERS } else { icon::FILE_TEXT };
                 let right = if live.as_ref() == Some(&path) { "en curso".to_string() } else { short_date(modified) };
-                let r = list_row(ui, glyph, &title, &right, selected);
-                if r.clicked() {
+                let r = list_row(ui, glyph, &title, &right, selected).on_hover_text("Ctrl+clic: abrir en otra pestaña");
+                if r.middle_clicked() || (r.clicked() && ui.input(|i| i.modifiers.command)) {
+                    action = Some(Action::OpenNewTab(path.clone()));
+                } else if r.clicked() {
                     action = Some(Action::Open(path.clone(), None));
                 }
                 r.context_menu(|ui| {
@@ -1817,12 +1913,18 @@ impl eframe::App for NotesApp {
                 ui.painter().vline(r.right() - 0.5, r.y_range(), Stroke::new(1.0, theme::BORDER));
                 actions.extend(self.sidebar(ui))
             });
+        egui::Panel::top("pestanas")
+            .exact_size(36.0)
+            .show_separator_line(false)
+            .frame(Frame::new().fill(BG_SIDE).inner_margin(Margin { left: 6, right: 6, top: 5, bottom: 0 }))
+            .show(ui, |ui| self.tab_bar(ui));
         egui::CentralPanel::default().frame(Frame::new().fill(BG_EDITOR)).show(ui, |ui| {
             if !self.search.trim().is_empty() {
                 actions.extend(self.results(ui));
             } else {
                 match self.view.clone() {
                     View::Editor => self.editor(ui),
+                    View::Home => actions.extend(self.home_view(ui)),
                     View::Today => actions.extend(self.today_view(ui)),
                     View::Week => actions.extend(self.week_view(ui)),
                     View::Ask => actions.extend(self.ask_view(ui)),
@@ -1836,7 +1938,9 @@ impl eframe::App for NotesApp {
         for a in actions {
             self.apply(a);
         }
+        self.sync_tab();
         self.settings_window(&ctx);
+        self.followup_window(&ctx);
 
         if self.note.dirty && self.note.last_edit.elapsed() >= AUTOSAVE {
             self.save();

@@ -310,6 +310,7 @@ impl NotesApp {
         let viewport_h = ui.available_height();
         let ctx = ui.ctx().clone();
         let mut reply = None;
+        let mut followup = false;
         Self::column(ui, "editor", |ui, col_w| {
             // Título = nombre del archivo
             let title = ui.add(
@@ -349,6 +350,12 @@ impl NotesApp {
                 ui.label(RichText::new(format!("{} {}{notes}   ·   {when}", icon::FOLDER_SIMPLE, self.ws)).size(12.5).color(MUTED));
                 if in_meeting {
                     ui.label(RichText::new(format!("  {} Reunión en curso", icon::RECORD)).size(12.5).color(SUCCESS));
+                } else if is_meeting(&self.note.text) && self.ai.is_ok() {
+                    ui.add_space(8.0);
+                    let r = ui.link(RichText::new(format!("{} Correo de seguimiento", icon::ENVELOPE_SIMPLE)).size(12.5));
+                    if r.on_hover_text("La IA redacta un correo con el resumen, las decisiones y los acuerdos").clicked() {
+                        followup = true;
+                    }
                 }
             });
             ui.add_space(14.0);
@@ -438,6 +445,9 @@ impl NotesApp {
         });
         if let Some(r) = reply {
             self.handle_reply(r);
+        }
+        if followup {
+            self.start_followup();
         }
     }
 
@@ -821,6 +831,7 @@ mod tests {
         theme::setup(&ctx);
         let mut app = NotesApp::new(cfg, None, ctx.clone());
         app.view = View::Editor;
+        app.focus_editor = true;
         app.note.text = "Uno
 dos".into();
         let key = |k: Key, modifiers: Modifiers| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers };
