@@ -29,7 +29,7 @@ fn day(offset: i64) -> String {
 impl NotesApp {
     /// ¿Hay algo atrasado, para hoy o para mañana?
     pub(super) fn has_something_today(&self) -> bool {
-        if !self.doubts.pending.is_empty() || self.ideas.ready().next().is_some() {
+        if !self.doubts.pending.is_empty() || self.ideas.ready().next().is_some() || self.week_pending() {
             return true;
         }
         let tomorrow = day(1);
@@ -82,6 +82,24 @@ impl NotesApp {
             if view_header(ui, "Hoy", &subtitle) {
                 action = Some(Action::CloseResults);
             }
+            if self.week_pending() {
+                Frame::new()
+                    .fill(BG_SIDE)
+                    .stroke(Stroke::new(1.0, theme::BORDER))
+                    .corner_radius(10)
+                    .inner_margin(Margin::symmetric(14, 10))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(RichText::new(format!("{} ¿Hacemos la revisión de la semana?", icon::CALENDAR_CHECK)).size(14.5).color(TEXT));
+                            ui.label(RichText::new("Lo hecho, lo atrasado, lo que viene y un resumen de la IA.").size(12.5).color(MUTED));
+                            if ui.button("Abrir revisión").clicked() {
+                                action = Some(Action::Show(View::Week));
+                            }
+                        });
+                    });
+                ui.add_space(14.0);
+            }
             if !ideas.is_empty() {
                 ui.label(RichText::new(format!("{} Sugerencias", icon::SPARKLE)).font(theme::bold(15.0)).color(SUCCESS));
                 ui.add_space(6.0);
@@ -132,6 +150,9 @@ impl NotesApp {
             ui.horizontal(|ui| {
                 if ui.button(format!("{} Escribir en la nota de hoy", icon::NOTE_PENCIL)).clicked() {
                     action = Some(Action::Today);
+                }
+                if ui.link(RichText::new(format!("{} Revisión semanal", icon::CALENDAR_CHECK)).size(12.5)).clicked() {
+                    action = Some(Action::Show(View::Week));
                 }
                 if ui.link(RichText::new(format!("{} Buscar duplicados", icon::COPY)).size(12.5)).on_hover_text("Revisa todas las notas y pregunta por las que parecen repetidas").clicked() {
                     find_dups = true;

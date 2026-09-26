@@ -122,6 +122,8 @@ pub struct Estado {
     pub nota: String,
     /// Último día en que se mostró la vista "Hoy" al abrir.
     pub hoy: String,
+    /// Última semana (AAAA-Wnn) en que se abrió la revisión semanal.
+    pub semana: String,
 }
 
 fn estado_path() -> PathBuf {
@@ -135,18 +137,29 @@ pub fn load_estado() -> Estado {
         .unwrap_or_default()
 }
 
-pub fn save_estado(e: &Estado) {
+fn render_estado(e: &Estado) -> String {
     let q = |s: &str| toml::Value::String(s.to_string()).to_string();
+    format!("espacio = {}\nnota = {}\nhoy = {}\nsemana = {}\n", q(&e.espacio), q(&e.nota), q(&e.hoy), q(&e.semana))
+}
+
+pub fn save_estado(e: &Estado) {
     let path = estado_path();
     if let Some(dir) = path.parent() {
         let _ = fs::create_dir_all(dir);
     }
-    let _ = fs::write(path, format!("espacio = {}\nnota = {}\n", q(&e.espacio), q(&e.nota)));
+    let _ = fs::write(path, render_estado(e));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_estado_keeps_every_field() {
+        let e = Estado { espacio: "General".into(), nota: r"General\Notas generales.md".into(), hoy: "2026-09-25".into(), semana: "2026-W39".into() };
+        let back: Estado = toml::from_str(&render_estado(&e)).unwrap();
+        assert_eq!((back.espacio, back.nota, back.hoy, back.semana), (e.espacio, e.nota, e.hoy, e.semana));
+    }
 
     #[test]
     fn saved_config_parses_back() {

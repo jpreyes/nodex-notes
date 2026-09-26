@@ -22,12 +22,32 @@ struct TaskKey {
 }
 
 pub(super) struct Turn {
-    question: String,
-    answer: Option<Result<String, String>>,
-    blocks: Vec<Block>,
-    progress: String,
+    pub(super) question: String,
+    pub(super) answer: Option<Result<String, String>>,
+    pub(super) blocks: Vec<Block>,
+    pub(super) progress: String,
     sources: HashMap<String, Source>,
     tasks: HashMap<String, TaskKey>,
+}
+
+impl Turn {
+    /// Recibe avances y la respuesta; devuelve true cuando terminó.
+    pub(super) fn receive(&mut self, rx: &Receiver<ask::Msg>) -> bool {
+        let mut finished = false;
+        for m in rx.try_iter() {
+            match m {
+                ask::Msg::Progress(p) => self.progress = p,
+                ask::Msg::Done(r) => {
+                    if let Ok(a) = &r {
+                        self.blocks = ask::parse_answer(a);
+                    }
+                    self.answer = Some(r);
+                    finished = true;
+                }
+            }
+        }
+        finished
+    }
 }
 
 #[derive(Default)]
@@ -45,7 +65,7 @@ impl AskState {
 }
 
 /// La respuesta como texto plano: citas como "(Espacio/Título)" y sin casillas.
-fn plain(turn: &Turn) -> String {
+pub(super) fn plain(turn: &Turn) -> String {
     let mut out = String::new();
     for b in &turn.blocks {
         let (prefix, parts) = match b {
@@ -88,11 +108,31 @@ impl NotesApp {
             return;
         }
         self.save();
+        let history: Vec<(String, String)> = self
+            .ask
+            .turns
+            .iter()
+            .filter_map(|t| match &t.answer {
+                Some(Ok(a)) => Some((t.question.clone(), a.clone())),
+                _ => None,
+            })
+            .collect();
+        let (input, turn) = self.build_request(question, history, None);
+        self.ask.rx = Some(ask::start(&self.cfg, input, self.ctx.clone()));
+        self.ask.turns.push(turn);
+    }
+
+    /// Arma la pregunta con las notas (todas, o solo las editadas desde `since`), tareas y agenda.
+    pub(super) fn build_request(&self, question: String, history: Vec<(String, String)>, since: Option<&str>) -> (ask::Input, Turn) {
         let mut sources = HashMap::new();
         let docs: Vec<ask::Doc> = self
             .vault
             .all_notes()
             .into_iter()
+            .filter(|n| {
+                let d: DateTime<Local> = n.modified.into();
+                since.is_none_or(|s| d.format("%Y-%m-%d").to_string().as_str() >= s)
+            })
             .enumerate()
             .map(|(i, n)| {
                 let d: DateTime<Local> = n.modified.into();
@@ -123,44 +163,23 @@ impl NotesApp {
             .collect();
         let month_ago = (Local::now() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
         let events: Vec<agenda::Event> = self.agenda.events().into_iter().filter(|e| e.date >= month_ago).collect();
-        let history: Vec<(String, String)> = self
-            .ask
-            .turns
-            .iter()
-            .filter_map(|t| match &t.answer {
-                Some(Ok(a)) => Some((t.question.clone(), a.clone())),
-                _ => None,
-            })
-            .collect();
         let input = ask::Input { question: question.clone(), history, docs, tasks: task_list, events, today: today() };
-        self.ask.rx = Some(ask::start(&self.cfg, input, self.ctx.clone()));
-        self.ask.turns.push(Turn {
-            question,
-            answer: None,
-            blocks: Vec::new(),
-            progress: "Buscando en tus notas…".into(),
-            sources,
-            tasks,
-        });
+        let turn = Turn { question, answer: None, blocks: Vec::new(), progress: "Buscando en tus notas…".into(), sources, tasks };
+        (input, turn)
     }
 
     /// Avances y respuesta del hilo de Preguntar.
     pub(super) fn poll_ask(&mut self) {
-        let Some(rx) = &self.ask.rx else { return };
-        let mut finished = false;
-        for m in rx.try_iter() {
-            let Some(turn) = self.ask.turns.last_mut() else { continue };
-            match m {
-                ask::Msg::Progress(p) => turn.progress = p,
-                ask::Msg::Done(r) => {
-                    if let Ok(a) = &r {
-                        turn.blocks = ask::parse_answer(a);
-                    }
-                    turn.answer = Some(r);
-                    finished = true;
-                }
+        if let (Some(rx), Some(turn)) = (&self.week.rx, &mut self.week.turn) {
+            if turn.receive(rx) {
+                self.week.rx = None;
             }
         }
+        let Some(rx) = &self.ask.rx else { return };
+        let finished = match self.ask.turns.last_mut() {
+            Some(turn) => turn.receive(rx),
+            None => true,
+        };
         if finished {
             self.ask.rx = None;
         }
@@ -171,7 +190,12 @@ impl NotesApp {
         let Some(turn) = self.ask.turns.get(idx) else { return };
         let q: String = turn.question.trim_end_matches('?').trim_start_matches('¿').chars().take(50).collect();
         let text = format!("Pregunta: {}\n\n{}", turn.question, plain(turn));
-        let path = self.vault.unique_path(&self.ws, &format!("Respuesta · {}", q.trim()));
+        self.save_text_note(&format!("Respuesta · {}", q.trim()), text);
+    }
+
+    /// Guarda un texto (respuesta, revisión) como nota nueva en el espacio actual y la abre.
+    pub(super) fn save_text_note(&mut self, title: &str, text: String) {
+        let path = self.vault.unique_path(&self.ws, title);
         if let Err(e) = fs::write(&path, &text) {
             self.msg(format!("No se pudo guardar: {e}"));
             return;
@@ -180,7 +204,7 @@ impl NotesApp {
         self.analyzed.insert(ai::fnv(&text));
         self.save_analyzed();
         self.vault.scan();
-        self.msg(format!("Respuesta guardada en «{}»", vault::stem(&path)));
+        self.msg(format!("Guardada en «{}»", vault::stem(&path)));
         self.open(path, Some(0));
     }
 
@@ -338,7 +362,7 @@ impl NotesApp {
     }
 
     /// La respuesta: párrafos, listas, casillas de tareas y citas numeradas; al final, las fuentes.
-    fn answer_ui(&self, ui: &mut Ui, turn: &Turn, tasks_now: &[agenda::Task]) -> Option<Action> {
+    pub(super) fn answer_ui(&self, ui: &mut Ui, turn: &Turn, tasks_now: &[agenda::Task]) -> Option<Action> {
         let mut action = None;
         // Número de cada nota citada, en orden de aparición (con la primera línea citada).
         let mut numbers: Vec<(String, Option<usize>)> = Vec::new();

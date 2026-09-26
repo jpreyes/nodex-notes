@@ -25,6 +25,8 @@ pub struct Task {
     pub note: Option<String>,
     /// Une la tarea con su línea en la nota ("^k3f9a" allá, "id:k3f9a" aquí).
     pub id: Option<String>,
+    /// Día en que se marcó como hecha ("x 2026-09-25 …").
+    pub done_on: Option<String>,
     pub raw: String,
 }
 
@@ -99,12 +101,13 @@ pub fn parse_task(line: &str) -> Option<Task> {
     if done {
         words.remove(0);
     }
+    let done_on = words.first().filter(|w| done && is_date(w)).map(|w| w.to_string());
     // Fechas de término y de creación al inicio.
     while words.first().is_some_and(|w| is_date(w)) {
         words.remove(0);
     }
     let Meta { text, project, due, note, id } = split_meta(&words);
-    Some(Task { done, text, project, due, note, id, raw: line.to_string() })
+    Some(Task { done, text, project, due, note, id, done_on, raw: line.to_string() })
 }
 
 pub fn parse_event(line: &str) -> Option<Event> {

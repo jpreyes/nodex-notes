@@ -28,6 +28,7 @@ mod editor;
 mod settings;
 mod spaces_ui;
 mod today;
+mod week;
 use settings::Section;
 
 /// Espera tras la última tecla antes de guardar.
@@ -98,6 +99,7 @@ struct Undo {
 enum View {
     Editor,
     Today,
+    Week,
     Ask,
     Tag(String),
     Tasks,
@@ -178,6 +180,10 @@ pub struct NotesApp {
     doubt_reply: Option<(String, String)>,
     /// Temas sin espacio que la IA fue encontrando (.nodex/espacios.json).
     ideas: crate::spaces::Ideas,
+    /// Revisión semanal: resumen de la IA.
+    week: week::WeekState,
+    /// Última semana en que se abrió la revisión (AAAA-Wnn).
+    week_seen: String,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -291,6 +297,7 @@ impl NotesApp {
         let ws = workspace_of(&path).unwrap_or(ws);
         let analyzed = load_analyzed(&vault.root);
         let estado_hoy = estado.hoy.clone();
+        let estado_semana = estado.semana.clone();
         let mut app = NotesApp {
             cfg,
             ctx,
@@ -328,6 +335,8 @@ impl NotesApp {
             doubts: doubts::Store::load(&cfg_root),
             doubt_reply: None,
             ideas: crate::spaces::Ideas::load(&cfg_root),
+            week: week::WeekState::default(),
+            week_seen: estado_semana,
         };
         app.prune_doubts();
         app.prune_ideas();
@@ -342,6 +351,11 @@ impl NotesApp {
         if let Ok(q) = std::env::var("NODEX_DEMO_ASK") {
             app.view = View::Ask;
             app.ask(q);
+        }
+        #[cfg(debug_assertions)]
+        if std::env::var("NODEX_DEMO_WEEK").is_ok() {
+            app.view = View::Week;
+            app.start_week_summary();
         }
         app
     }
@@ -447,6 +461,7 @@ impl NotesApp {
             espacio: self.ws.clone(),
             nota: nota.to_string_lossy().into_owned(),
             hoy: self.today_shown.clone(),
+            semana: self.week_seen.clone(),
         });
     }
 
@@ -1809,6 +1824,7 @@ impl eframe::App for NotesApp {
                 match self.view.clone() {
                     View::Editor => self.editor(ui),
                     View::Today => actions.extend(self.today_view(ui)),
+                    View::Week => actions.extend(self.week_view(ui)),
                     View::Ask => actions.extend(self.ask_view(ui)),
                     View::Tag(_) => actions.extend(self.results(ui)),
                     View::Tasks => actions.extend(self.tasks_view(ui)),
