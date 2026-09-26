@@ -1302,7 +1302,7 @@ impl NotesApp {
                 }
             }
             Action::TestMailAccount(i) => self.test_mail_account(i),
-            Action::CheckMail => self.mail.last_reset(),
+            Action::CheckMail => self.mail.request(),
             Action::MailFulfill(id, i, done) => self.mail_fulfill(&id, i, done),
             Action::MailRemoveItems(id) => self.mail_remove_items(&id),
             Action::MailSaveNote(id) => self.mail_save_note(&id),

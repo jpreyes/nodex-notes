@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -94,6 +95,8 @@ pub struct Store {
     pub mails: Vec<Mail>,
     /// "cuenta:carpeta" -> último UID leído.
     pub last_uid: HashMap<String, u32>,
+    /// Día de la última revisión diaria (AAAA-MM-DD).
+    pub last_daily: String,
 }
 
 fn store_path() -> std::path::PathBuf {
@@ -240,7 +243,29 @@ pub fn read_session<T: Read + Write>(s: &mut imap::Session<T>, account: &str, la
     Ok((out, uids))
 }
 
-type Tls = rustls::StreamOwned<rustls::ClientConnection, TcpStream>;
+/// La conexión cifrada, envuelta para poder ponerle tiempo de espera (lo necesita IDLE).
+pub struct Tls(rustls::StreamOwned<rustls::ClientConnection, TcpStream>);
+
+impl Read for Tls {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl Write for Tls {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl imap::extensions::idle::SetReadTimeout for Tls {
+    fn set_read_timeout(&mut self, timeout: Option<Duration>) -> imap::Result<()> {
+        self.0.sock.set_read_timeout(timeout).map_err(imap::Error::Io)
+    }
+}
 
 /// Conecta (IMAP sobre TLS) e inicia sesión.
 fn connect(account: &Account) -> Result<imap::Session<Tls>, String> {
@@ -257,7 +282,7 @@ fn connect(account: &Account) -> Result<imap::Session<Tls>, String> {
         .with_no_client_auth();
     let name = rustls::pki_types::ServerName::try_from(host.clone()).map_err(|e| e.to_string())?;
     let conn = rustls::ClientConnection::new(Arc::new(config), name).map_err(|e| e.to_string())?;
-    let tls = rustls::StreamOwned::new(conn, tcp);
+    let tls = Tls(rustls::StreamOwned::new(conn, tcp));
     let mut client = imap::Client::new(tls);
     client.read_greeting().map_err(|e| format!("{host}: {e}"))?;
     client.login(account.correo.trim(), account.clave.trim()).map_err(|(e, _)| {
@@ -268,6 +293,52 @@ fn connect(account: &Account) -> Result<imap::Session<Tls>, String> {
             e
         }
     })
+}
+
+/// Cada cuánto se renueva la espera (los servidores cortan a los 29 minutos; así también
+/// se nota antes si hay que dejar de esperar).
+const IDLE_ROUND: Duration = Duration::from_secs(10 * 60);
+
+/// Espera avisos de correo nuevo en la bandeja de entrada (IMAP IDLE) hasta que `stop` se active.
+/// Llama `notify` cada vez que llega algo.
+pub fn idle_loop<T: Read + Write + imap::extensions::idle::SetReadTimeout>(
+    s: &mut imap::Session<T>,
+    stop: &AtomicBool,
+    notify: &mut dyn FnMut(),
+) -> Result<(), String> {
+    s.examine("INBOX").map_err(|e| e.to_string())?;
+    while !stop.load(Ordering::Relaxed) {
+        let outcome = s
+            .idle()
+            .timeout(IDLE_ROUND)
+            .keepalive(false)
+            .wait_while(|r| !matches!(r, imap::types::UnsolicitedResponse::Exists(_)))
+            .map_err(|e| e.to_string())?;
+        if outcome == imap::extensions::idle::WaitOutcome::MailboxChanged {
+            notify();
+        }
+    }
+    Ok(())
+}
+
+/// Hilo que avisa al llegar un correo: se reconecta solo si se corta (cada minuto, hasta `stop`).
+pub fn watch(account: Account, stop: Arc<AtomicBool>, mut notify: impl FnMut(Result<(), String>)) {
+    while !stop.load(Ordering::Relaxed) {
+        let result = connect(&account).and_then(|mut s| {
+            let r = idle_loop(&mut s, &stop, &mut || notify(Ok(())));
+            let _ = s.logout();
+            r
+        });
+        if let Err(e) = result {
+            notify(Err(e));
+            for _ in 0..60 {
+                if stop.load(Ordering::Relaxed) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        }
+    }
 }
 
 /// Solo prueba que se pueda entrar.
@@ -364,5 +435,57 @@ mod tests {
         assert_eq!((mails[1].subject.as_str(), mails[1].sent), ("Re: Informe", true));
         assert_eq!(uids.get("jp@gmail.com:INBOX"), Some(&3));
         assert_eq!(uids.get("jp@gmail.com:[Gmail]/Enviados"), Some(&5));
+    }
+
+    /// IDLE: el servidor avisa "* 4 EXISTS" y la app se entera al instante.
+    #[test]
+    fn idle_notices_new_mail() {
+        use std::io::{BufRead, BufReader};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let (s, _) = listener.accept().unwrap();
+            let mut w = s.try_clone().unwrap();
+            let mut r = BufReader::new(s);
+            w.write_all(b"* OK ready\r\n").unwrap();
+            let mut idle_tag = String::new();
+            loop {
+                let mut line = String::new();
+                if r.read_line(&mut line).unwrap_or(0) == 0 {
+                    break;
+                }
+                let line = line.trim_end().to_string();
+                if line == "DONE" {
+                    w.write_all(format!("{idle_tag} OK idle done\r\n").as_bytes()).unwrap();
+                    continue;
+                }
+                let (tag, cmd) = line.split_once(' ').unwrap();
+                let up = cmd.to_uppercase();
+                if up.starts_with("IDLE") {
+                    idle_tag = tag.to_string();
+                    w.write_all(b"+ idling\r\n* 4 EXISTS\r\n").unwrap();
+                } else if up.starts_with("EXAMINE") {
+                    w.write_all(format!("* 3 EXISTS\r\n{tag} OK [READ-ONLY] done\r\n").as_bytes()).unwrap();
+                } else if up.starts_with("LOGOUT") {
+                    w.write_all(format!("* BYE\r\n{tag} OK bye\r\n").as_bytes()).unwrap();
+                    break;
+                } else {
+                    w.write_all(format!("{tag} OK\r\n").as_bytes()).unwrap();
+                }
+            }
+        });
+        let tcp = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let mut client = imap::Client::new(tcp);
+        client.read_greeting().unwrap();
+        let mut s = client.login("jp@gmail.com", "clave").map_err(|(e, _)| e).unwrap();
+        let stop = AtomicBool::new(false);
+        let mut count = 0;
+        idle_loop(&mut s, &stop, &mut || {
+            count += 1;
+            stop.store(true, Ordering::Relaxed);
+        })
+        .unwrap();
+        let _ = s.logout();
+        assert_eq!(count, 1);
     }
 }

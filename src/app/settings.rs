@@ -40,6 +40,8 @@ pub(super) struct Settings {
     cal_form: Option<(String, String)>,
     /// Formulario para agregar un correo (dirección, contraseña de aplicación, servidor).
     mail_form: Option<(String, String, String)>,
+    /// Hora de la revisión diaria, mientras se escribe.
+    mail_hour: String,
     test: Option<Receiver<Result<u128, String>>>,
     test_result: Option<Result<u128, String>>,
     update: Option<Receiver<Result<Option<String>, String>>>,
@@ -63,6 +65,7 @@ impl Settings {
             client_secret: cfg.google_client_secret.clone(),
             cal_form: None,
             mail_form: None,
+            mail_hour: cfg.correo_diario.clone(),
             test: None,
             test_result: None,
             update: None,
@@ -79,6 +82,8 @@ enum Change {
     Key(String),
     AiAuto(bool),
     GoogleCreds(String, String),
+    MailArrive(bool),
+    MailDaily(String),
     TestConnection,
     CheckUpdate,
     Do(Action),
@@ -326,6 +331,15 @@ impl NotesApp {
                 self.save_config();
                 self.restart_gcal();
             }
+            Change::MailArrive(on) => {
+                self.cfg.correo_al_llegar = on;
+                self.save_config();
+            }
+            Change::MailDaily(at) => {
+                self.cfg.correo_diario = at.clone();
+                s.mail_hour = at;
+                self.save_config();
+            }
             Change::TestConnection => {
                 s.test_result = None;
                 s.test = Some(ai::test_connection(&self.cfg, self.ctx.clone()));
@@ -495,8 +509,32 @@ impl NotesApp {
             }
         });
         ui.add_space(10.0);
+        ui.label(RichText::new("Cuándo revisar").font(theme::bold(14.0)));
+        let mut arrive = self.cfg.correo_al_llegar;
+        if ui.checkbox(&mut arrive, "Al llegar un correo nuevo (al instante)").changed() {
+            changes.push(Change::MailArrive(arrive));
+        }
+        ui.horizontal(|ui| {
+            let mut daily = !self.cfg.correo_diario.trim().is_empty();
+            if ui.checkbox(&mut daily, "Una vez al día a las").changed() {
+                changes.push(Change::MailDaily(if daily { "07:00".into() } else { String::new() }));
+            }
+            if daily {
+                let r = ui.add(egui::TextEdit::singleline(&mut s.mail_hour).desired_width(52.0).hint_text("07:00"));
+                if r.lost_focus() {
+                    let ok = chrono::NaiveTime::parse_from_str(s.mail_hour.trim(), "%H:%M").is_ok();
+                    if ok && s.mail_hour.trim() != self.cfg.correo_diario {
+                        changes.push(Change::MailDaily(s.mail_hour.trim().to_string()));
+                    } else if !ok {
+                        s.mail_hour = self.cfg.correo_diario.clone();
+                    }
+                }
+            }
+        });
+        ui.label(RichText::new("Y siempre que quieras, con «Revisar ahora» en Correos.").size(12.5).color(MUTED));
+        ui.add_space(10.0);
         ui.label(
-            RichText::new("Cómo funciona: cada 15 minutos se leen los correos nuevos de la última semana (entrada y enviados), sin marcarlos como leídos. La IA los resume y lleva a Tareas y Agenda los compromisos y fechas (se puede deshacer), y avisa cuando un correo parece cumplir algo pendiente. Los boletines y avisos automáticos se ignoran.")
+            RichText::new("Cómo funciona: se leen los correos nuevos (la primera vez, los de la última semana) de entrada y enviados, sin marcarlos como leídos. La IA los resume y lleva a Tareas y Agenda los compromisos y fechas (se puede deshacer), y avisa cuando un correo parece cumplir algo pendiente. Los boletines y avisos automáticos se ignoran.")
                 .size(12.5)
                 .color(MUTED),
         );

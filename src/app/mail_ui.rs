@@ -7,9 +7,6 @@ use crate::mail::{self, Account, Fulfill, Mail};
 use crate::mail_ai;
 use std::sync::mpsc::{self, Receiver};
 
-/// Cada cuánto se revisa el correo.
-const EVERY: Duration = Duration::from_secs(15 * 60);
-
 enum Msg {
     Fetched(String, Result<(Vec<Mail>, HashMap<String, u32>), String>),
     FetchDone,
@@ -28,7 +25,13 @@ pub(super) struct MailState {
     batch_tasks: Vec<(String, agenda::Task)>,
     pub(super) errors: HashMap<String, String>,
     ai_error: Option<String>,
-    last: Option<Instant>,
+    /// Hay que revisar (se pidió, llegó un correo o es la hora diaria).
+    due: bool,
+    started: bool,
+    /// Hilos que esperan correo nuevo (IMAP IDLE): avisos, cómo pararlos y para qué cuentas.
+    watch_rx: Option<Receiver<(String, Result<(), String>)>>,
+    watch_stop: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    watch_key: String,
     pub(super) last_ok: Option<DateTime<Local>>,
     /// Correo abierto en la vista.
     open: Option<String>,
@@ -52,10 +55,18 @@ impl MailState {
         self.fetching || self.analyzing
     }
 
-    /// "Revisar ahora": en el próximo ciclo (y la IA vuelve a intentar).
-    pub(super) fn last_reset(&mut self) {
-        self.last = None;
+    /// "Revisar ahora" (y la IA vuelve a intentar).
+    pub(super) fn request(&mut self) {
+        self.due = true;
         self.ai_error = None;
+    }
+
+    fn stop_watchers(&mut self) {
+        if let Some(s) = self.watch_stop.take() {
+            s.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.watch_rx = None;
+        self.watch_key.clear();
     }
 }
 
@@ -189,12 +200,63 @@ impl NotesApp {
                 }
             }
         }
-        if self.mail.rx.is_some() || self.cfg.correos.is_empty() {
+        if self.cfg.correos.is_empty() {
+            self.mail.stop_watchers();
+            return;
+        }
+        // Avisos de correo nuevo (IMAP IDLE), uno por cuenta; se reinician si cambian las cuentas.
+        let key = if self.cfg.correo_al_llegar { self.cfg.correos.iter().map(|a| format!("{}|{}|{}", a.correo, a.clave, a.servidor)).collect::<Vec<_>>().join(";") } else { String::new() };
+        if key != self.mail.watch_key {
+            self.mail.stop_watchers();
+            if !key.is_empty() {
+                let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let (tx, rx) = mpsc::channel();
+                for a in self.cfg.correos.clone() {
+                    let (tx, stop, ctx) = (tx.clone(), stop.clone(), self.ctx.clone());
+                    std::thread::spawn(move || {
+                        let email = a.correo.clone();
+                        mail::watch(a, stop, |r| {
+                            let _ = tx.send((email.clone(), r));
+                            ctx.request_repaint();
+                        });
+                    });
+                }
+                self.mail.watch_rx = Some(rx);
+                self.mail.watch_stop = Some(stop);
+                self.mail.watch_key = key;
+            }
+        }
+        if let Some(rx) = &self.mail.watch_rx {
+            for (account, r) in rx.try_iter() {
+                match r {
+                    Ok(()) => self.mail.due = true,
+                    Err(e) => {
+                        self.mail.errors.insert(account, format!("aviso de correo nuevo: {e}"));
+                    }
+                }
+            }
+        }
+        // Al abrir: lo que llegó mientras la app estaba cerrada (si avisa al llegar).
+        if !self.mail.started {
+            self.mail.started = true;
+            self.mail.due |= self.cfg.correo_al_llegar;
+        }
+        // Una vez al día, a la hora elegida (o al abrir la app, si a esa hora estaba cerrada).
+        if let Ok(at) = chrono::NaiveTime::parse_from_str(self.cfg.correo_diario.trim(), "%H:%M") {
+            let now = Local::now();
+            let day = now.format("%Y-%m-%d").to_string();
+            if now.time() >= at && self.mail.store.last_daily != day {
+                self.mail.store.last_daily = day;
+                self.mail.store.save();
+                self.mail.due = true;
+            }
+        }
+        if self.mail.rx.is_some() {
             return;
         }
         // Revisar.
-        if self.mail.last.is_none_or(|t| t.elapsed() >= EVERY) {
-            self.mail.last = Some(Instant::now());
+        if self.mail.due {
+            self.mail.due = false;
             self.mail.fetching = true;
             let accounts = self.cfg.correos.clone();
             let last_uid = self.mail.store.last_uid.clone();
@@ -379,8 +441,16 @@ impl NotesApp {
                 } else if let Some(t) = self.mail.last_ok {
                     format!("revisado a las {}", t.format("%H:%M"))
                 } else {
-                    String::new()
+                    "sin revisar todavía".to_string()
                 };
+                let mut when = Vec::new();
+                if self.cfg.correo_al_llegar {
+                    when.push("al llegar un correo".to_string());
+                }
+                if !self.cfg.correo_diario.trim().is_empty() {
+                    when.push(format!("a diario a las {}", self.cfg.correo_diario.trim()));
+                }
+                let status = if when.is_empty() { status } else { format!("{status} · revisa {}", when.join(" y ")) };
                 ui.label(RichText::new(format!("{} · {status}", accounts.join(", "))).size(12.5).color(MUTED));
                 if self.mail.busy() {
                     ui.spinner();

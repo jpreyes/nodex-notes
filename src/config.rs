@@ -22,6 +22,10 @@ pub struct Config {
     pub calendarios: Vec<crate::calendars::Subscription>,
     /// Cuentas de correo (IMAP con contraseña de aplicación).
     pub correos: Vec<crate::mail::Account>,
+    /// Revisar el correo en cuanto llega uno nuevo (IMAP IDLE).
+    pub correo_al_llegar: bool,
+    /// Revisar una vez al día a esta hora ("07:00"); vacío = no.
+    pub correo_diario: String,
 }
 
 impl Default for Config {
@@ -37,6 +41,8 @@ impl Default for Config {
             google_client_secret: String::new(),
             calendarios: Vec::new(),
             correos: Vec::new(),
+            correo_al_llegar: true,
+            correo_diario: "07:00".into(),
         }
     }
 }
@@ -113,7 +119,11 @@ fn render(c: &Config) -> String {
          \n\
          # Google Calendar: credenciales OAuth \"App de escritorio\" (pasos en el README)\n\
          google_client_id = {}\n\
-         google_client_secret = {}\n",
+         google_client_secret = {}\n\
+         \n\
+         # Correo: revisar al llegar un correo nuevo, y una vez al día a esta hora (\"\" = no)\n\
+         correo_al_llegar = {}\n\
+         correo_diario = {}\n",
         q(&c.carpeta_notas.to_string_lossy()),
         q(&c.proveedor),
         q(&c.modelo),
@@ -121,6 +131,8 @@ fn render(c: &Config) -> String {
         c.ia_automatica,
         q(&c.google_client_id),
         q(&c.google_client_secret),
+        c.correo_al_llegar,
+        q(&c.correo_diario),
     );
     main + &calendars
 }
@@ -207,6 +219,8 @@ mod tests {
             proveedor: "opencode-go".into(),
             clave_api: "sk-'abc'\"x".into(),
             ia_automatica: false,
+            correo_al_llegar: false,
+            correo_diario: "06:30".into(),
             google_client_secret: "GOCSPX-1".into(),
             correos: vec![crate::mail::Account { correo: "jp@gmail.com".into(), clave: "abcd efgh".into(), servidor: String::new() }],
             calendarios: vec![crate::calendars::Subscription { nombre: "Trabajo \"x\"".into(), url: "webcal://ejemplo.com/a.ics?x=1&y=2".into() }],
