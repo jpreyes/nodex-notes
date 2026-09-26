@@ -13,6 +13,8 @@ mod gcal;
 mod ics;
 mod lines;
 mod links;
+mod mail;
+mod mail_ai;
 mod organize;
 mod spaces;
 mod tags;

@@ -153,6 +153,7 @@ impl Calendars {
                 title: e.occ.title,
                 project: e.calendar,
                 note: None,
+                mail: None,
             })
             .collect()
     }

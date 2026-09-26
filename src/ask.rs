@@ -43,6 +43,8 @@ pub struct Input {
     /// Tareas con su clave ("t4").
     pub tasks: Vec<(String, Task)>,
     pub events: Vec<Event>,
+    /// Correos recientes, uno por línea (fecha · de/para · asunto · resumen).
+    pub mails: Vec<String>,
     pub today: String,
 }
 
@@ -264,6 +266,14 @@ Reglas:
         user.push('\n');
     }
 
+    if !input.mails.is_empty() {
+        user += "Correos recientes (cítalos en texto, por ejemplo: correo de Juan del 26 sep):\n";
+        for m in &input.mails {
+            user += &format!("- {m}\n");
+        }
+        user.push('\n');
+    }
+
     user += "Notas:\n";
     let mut used = 0;
     for &i in chosen {
@@ -401,6 +411,7 @@ mod tests {
             docs: vec![doc("n1", "Trincheras", "Revisión de taludes #trincheras\n  están en Dropbox ^k3f9a")],
             tasks: vec![("t1".into(), task)],
             events: vec![],
+            mails: vec![],
             today: "2026-09-25".into(),
         };
         let (system, user) = answer_prompt(&input, &[0]);
@@ -480,6 +491,7 @@ mod tests {
   están en Dropbox")],
             tasks: vec![("t1".into(), task)],
             events: vec![],
+            mails: vec![],
             today: "2026-09-25".into(),
         };
         let rx = start(&cfg, input, eframe::egui::Context::default());

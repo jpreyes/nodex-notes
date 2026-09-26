@@ -187,7 +187,7 @@ fn starts(e: &Event, to: NaiveDateTime) -> Vec<NaiveDateTime> {
     let Some(r) = &e.rule else { return vec![e.start] };
     let mut out = Vec::new();
     let limit = r.until.map_or(to, |u| u.min(to));
-    let mut push = |d: NaiveDateTime, out: &mut Vec<NaiveDateTime>| -> bool {
+    let push = |d: NaiveDateTime, out: &mut Vec<NaiveDateTime>| -> bool {
         if d > limit || r.count.is_some_and(|c| out.len() >= c) {
             return false;
         }

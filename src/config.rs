@@ -20,6 +20,8 @@ pub struct Config {
     pub google_client_secret: String,
     /// Calendarios que se ven en la Agenda (enlace ICS de Google, Outlook, iCloud…).
     pub calendarios: Vec<crate::calendars::Subscription>,
+    /// Cuentas de correo (IMAP con contraseña de aplicación).
+    pub correos: Vec<crate::mail::Account>,
 }
 
 impl Default for Config {
@@ -34,6 +36,7 @@ impl Default for Config {
             google_client_id: String::new(),
             google_client_secret: String::new(),
             calendarios: Vec::new(),
+            correos: Vec::new(),
         }
     }
 }
@@ -85,6 +88,12 @@ fn render(c: &Config) -> String {
         calendars += "\n# Calendarios que se ven en la Agenda (enlace ICS de Google, Outlook, iCloud…)\n";
         for cal in &c.calendarios {
             calendars += &format!("[[calendarios]]\nnombre = {}\nurl = {}\n", q(&cal.nombre), q(&cal.url));
+        }
+    }
+    if !c.correos.is_empty() {
+        calendars += "\n# Cuentas de correo (IMAP con contraseña de aplicación). Solo en este equipo.\n";
+        for m in &c.correos {
+            calendars += &format!("[[correos]]\ncorreo = {}\nclave = {}\nservidor = {}\n", q(&m.correo), q(&m.clave), q(&m.servidor));
         }
     }
     let main = format!(
@@ -199,6 +208,7 @@ mod tests {
             clave_api: "sk-'abc'\"x".into(),
             ia_automatica: false,
             google_client_secret: "GOCSPX-1".into(),
+            correos: vec![crate::mail::Account { correo: "jp@gmail.com".into(), clave: "abcd efgh".into(), servidor: String::new() }],
             calendarios: vec![crate::calendars::Subscription { nombre: "Trabajo \"x\"".into(), url: "webcal://ejemplo.com/a.ics?x=1&y=2".into() }],
             ..Config::default()
         };

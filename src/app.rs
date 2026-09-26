@@ -28,6 +28,7 @@ mod doubts_ui;
 mod editor;
 mod followup;
 mod home;
+mod mail_ui;
 mod settings;
 mod spaces_ui;
 mod tabs;
@@ -103,6 +104,7 @@ struct Undo {
 enum View {
     Editor,
     Home,
+    Mail,
     Today,
     Week,
     Ask,
@@ -133,6 +135,15 @@ enum Action {
     AddTask(String),
     OpenExternal(PathBuf),
     OpenSettings(Section),
+    /// Correo.
+    AddMailAccount(crate::mail::Account),
+    RemoveMailAccount(usize),
+    TestMailAccount(usize),
+    CheckMail,
+    MailFulfill(String, usize, bool),
+    MailRemoveItems(String),
+    MailSaveNote(String),
+    OpenMail(String),
     /// Calendarios agregados (enlace ICS).
     AddCalendar(String, String),
     RemoveCalendar(usize),
@@ -208,6 +219,8 @@ pub struct NotesApp {
     /// Calendarios agregados: lo descargado y el formulario para agregar uno.
     cals: crate::calendars::Calendars,
     cal_form: Option<(String, String)>,
+    /// Correo: lo leído, lo que falta que lea la IA y su estado.
+    mail: mail_ui::MailState,
     /// Campos de Inicio: anotar y preguntar rápido.
     home_capture: String,
     home_question: String,
@@ -370,6 +383,7 @@ impl NotesApp {
             tabs: tabs::Tabs::default(),
             cals: crate::calendars::Calendars::load(),
             cal_form: None,
+            mail: mail_ui::MailState::load(),
             home_capture: String::new(),
             home_question: String::new(),
         };
@@ -1270,6 +1284,29 @@ impl NotesApp {
             }
             Action::OpenExternal(p) => open_external(&p),
             Action::OpenSettings(section) => self.open_settings(section),
+            Action::AddMailAccount(a) => {
+                let email = a.correo.clone();
+                self.cfg.correos.retain(|x| !x.correo.eq_ignore_ascii_case(&email));
+                self.cfg.correos.push(a);
+                self.save_config();
+                let i = self.cfg.correos.len() - 1;
+                self.test_mail_account(i);
+                self.msg(format!("Correo {email} agregado; probando la conexión…"));
+            }
+            Action::RemoveMailAccount(i) => {
+                if i < self.cfg.correos.len() {
+                    let a = self.cfg.correos.remove(i);
+                    self.save_config();
+                    self.mail.errors.remove(&a.correo);
+                    self.msg(format!("Correo {} quitado", a.correo));
+                }
+            }
+            Action::TestMailAccount(i) => self.test_mail_account(i),
+            Action::CheckMail => self.mail.last_reset(),
+            Action::MailFulfill(id, i, done) => self.mail_fulfill(&id, i, done),
+            Action::MailRemoveItems(id) => self.mail_remove_items(&id),
+            Action::MailSaveNote(id) => self.mail_save_note(&id),
+            Action::OpenMail(id) => self.open_mail(id),
             Action::AddCalendar(name, url) => self.add_calendar(name, url),
             Action::RemoveCalendar(i) => self.remove_calendar(i),
             Action::RefreshCalendars => self.cals.last = None,
@@ -1389,7 +1426,18 @@ impl NotesApp {
                 action = Some(Action::ShowTab(View::Tasks));
             }
             if rail_button(ui, icon::CALENDAR_BLANK, "Agenda", self.view == View::Agenda, TEXT).clicked() {
-                action = Some(Action::Show(View::Agenda));
+                action = Some(Action::ShowTab(View::Agenda));
+            }
+            let checks = self.mail.open_checks().len();
+            let color = if self.mail.busy() { ACCENT } else { TEXT };
+            let r = rail_button(ui, icon::ENVELOPE_SIMPLE, "Correos: compromisos y fechas de tu correo", self.view == View::Mail, color);
+            if r.clicked() {
+                action = Some(Action::ShowTab(View::Mail));
+            }
+            if checks > 0 {
+                let c = r.rect.right_top() + egui::vec2(-7.0, 7.0);
+                ui.painter().circle_filled(c, 7.5, SUCCESS);
+                ui.painter().text(c, Align2::CENTER_CENTER, checks.min(9).to_string(), FontId::proportional(10.5), Color32::WHITE);
             }
             let (tip, color) = match &self.ai {
                 Ok(ai) => (format!("Organizar con IA las notas pendientes ({})", ai.label), TEXT),
@@ -1940,6 +1988,7 @@ impl eframe::App for NotesApp {
         self.handle_ai_results();
         self.handle_gcal();
         self.handle_calendars();
+        self.handle_mail();
         self.poll_ask();
 
         egui::Panel::bottom("status")
@@ -1974,6 +2023,7 @@ impl eframe::App for NotesApp {
                 match self.view.clone() {
                     View::Editor => self.editor(ui),
                     View::Home => actions.extend(self.home_view(ui)),
+                    View::Mail => actions.extend(self.mail_view(ui)),
                     View::Today => actions.extend(self.today_view(ui)),
                     View::Week => actions.extend(self.week_view(ui)),
                     View::Ask => actions.extend(self.ask_view(ui)),
@@ -2093,6 +2143,12 @@ fn task_row(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path) -> Option<A
             let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(MUTED)).frame(false);
             if ui.add(b).on_hover_text(format!("Abrir nota «{n}»")).clicked() {
                 action = Some(Action::Open(root.join(format!("{n}.md")), None));
+            }
+        }
+        if let Some(m) = &t.mail {
+            let b = egui::Button::new(RichText::new(icon::ENVELOPE_SIMPLE).size(14.0).color(MUTED)).frame(false);
+            if ui.add(b).on_hover_text("Salió de un correo: verlo").clicked() {
+                action = Some(Action::OpenMail(m.clone()));
             }
         }
     });

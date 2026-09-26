@@ -9,14 +9,16 @@ pub(super) enum Section {
     General,
     Ai,
     Calendar,
+    Mail,
     Shortcuts,
     About,
 }
 
-const SECTIONS: [(Section, &str, &str); 5] = [
+const SECTIONS: [(Section, &str, &str); 6] = [
     (Section::General, icon::FOLDER_SIMPLE, "General"),
     (Section::Ai, icon::SPARKLE, "Inteligencia artificial"),
     (Section::Calendar, icon::CALENDAR_BLANK, "Calendar"),
+    (Section::Mail, icon::ENVELOPE_SIMPLE, "Correo"),
     (Section::Shortcuts, icon::KEYBOARD, "Atajos"),
     (Section::About, icon::INFO, "Acerca de"),
 ];
@@ -36,6 +38,8 @@ pub(super) struct Settings {
     client_secret: String,
     /// Formulario para agregar un calendario (nombre, enlace).
     cal_form: Option<(String, String)>,
+    /// Formulario para agregar un correo (dirección, contraseña de aplicación, servidor).
+    mail_form: Option<(String, String, String)>,
     test: Option<Receiver<Result<u128, String>>>,
     test_result: Option<Result<u128, String>>,
     update: Option<Receiver<Result<Option<String>, String>>>,
@@ -58,6 +62,7 @@ impl Settings {
             client_id: cfg.google_client_id.clone(),
             client_secret: cfg.google_client_secret.clone(),
             cal_form: None,
+            mail_form: None,
             test: None,
             test_result: None,
             update: None,
@@ -252,6 +257,7 @@ impl NotesApp {
                                 Section::General => self.section_general(ui, &mut changes),
                                 Section::Ai => self.section_ai(ui, &mut s, &mut changes),
                                 Section::Calendar => self.section_calendar(ui, &mut s, &mut changes),
+                                Section::Mail => self.section_mail(ui, &mut s, &mut changes),
                                 Section::Shortcuts => section_shortcuts(ui),
                                 Section::About => section_about(ui, &mut s, &mut changes),
                             });
@@ -477,6 +483,29 @@ impl NotesApp {
                     .color(MUTED),
             );
         }
+    }
+
+    fn section_mail(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {
+        heading(ui, "Correo", "La IA revisa tu bandeja de entrada y tus enviados para no perder compromisos ni fechas.");
+        ui.add_space(12.0);
+        Frame::new().stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(10).inner_margin(Margin::same(16)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            if let Some(a) = super::mail_ui::accounts_panel(ui, &self.cfg.correos, &self.mail, &mut s.mail_form) {
+                changes.push(Change::Do(a));
+            }
+        });
+        ui.add_space(10.0);
+        ui.label(
+            RichText::new("Cómo funciona: cada 15 minutos se leen los correos nuevos de la última semana (entrada y enviados), sin marcarlos como leídos. La IA los resume y lleva a Tareas y Agenda los compromisos y fechas (se puede deshacer), y avisa cuando un correo parece cumplir algo pendiente. Los boletines y avisos automáticos se ignoran.")
+                .size(12.5)
+                .color(MUTED),
+        );
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new("Privacidad: la contraseña de aplicación queda en config.toml, solo en este equipo; los correos, en correos.json junto a él. Para entenderlos, su texto se envía al modelo de IA configurado.")
+                .size(12.5)
+                .color(MUTED),
+        );
     }
 
     fn section_calendar(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {

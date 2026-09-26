@@ -226,6 +226,25 @@ impl NotesApp {
                         ui.label(RichText::new(format!("Organizando «{}»…", vault::stem(p))).size(12.5).color(ACCENT));
                     }
                 });
+                if !self.cfg.correos.is_empty() {
+                    card(ui, icon::ENVELOPE_SIMPLE, "Correo", |ui| {
+                        let since = (Local::now() - chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+                        let important = self.mail.store.mails.iter().filter(|m| m.important && m.date >= since).count();
+                        let checks = self.mail.open_checks().len();
+                        if important == 0 && checks == 0 {
+                            ui.label(RichText::new("Nada importante en los últimos dos días.").color(MUTED));
+                        }
+                        if important > 0 {
+                            ui.label(RichText::new(format!("{} importantes en los últimos dos días", plural(important, "correo"))).size(13.5));
+                        }
+                        if checks > 0 {
+                            ui.label(RichText::new(format!("{} para verificar", plural(checks, "compromiso"))).size(13.5).color(SUCCESS));
+                        }
+                        if ui.link(RichText::new("Ver correos").size(12.5)).clicked() {
+                            act_r = Some(Action::ShowTab(View::Mail));
+                        }
+                    });
+                }
                 card(ui, icon::FOLDER_SIMPLE, "Espacios", |ui| {
                     for (w, n, p) in &spaces {
                         let right = if *p > 0 { format!("{} · {}", plural(*n, "nota"), plural(*p, "tarea")) } else { plural(*n, "nota") };

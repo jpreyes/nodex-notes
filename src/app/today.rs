@@ -141,6 +141,10 @@ impl NotesApp {
                 if ui.button(format!("{} Escribir en la nota de hoy", icon::NOTE_PENCIL)).clicked() {
                     action = Some(Action::Today);
                 }
+                let checks = self.mail.open_checks().len();
+                if checks > 0 && ui.link(RichText::new(format!("{} {} para verificar", icon::ENVELOPE_SIMPLE, plural(checks, "compromiso"))).size(12.5)).clicked() {
+                    action = Some(Action::ShowTab(View::Mail));
+                }
                 if ui.link(RichText::new(format!("{} Revisión semanal", icon::CALENDAR_CHECK)).size(12.5)).clicked() {
                     action = Some(Action::Show(View::Week));
                 }

@@ -163,7 +163,7 @@ impl NotesApp {
             .collect();
         let month_ago = (Local::now() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
         let events: Vec<agenda::Event> = self.all_events().into_iter().filter(|e| e.date >= month_ago).collect();
-        let input = ask::Input { question: question.clone(), history, docs, tasks: task_list, events, today: today() };
+        let input = ask::Input { question: question.clone(), history, docs, tasks: task_list, events, mails: self.mail_context(), today: today() };
         let turn = Turn { question, answer: None, blocks: Vec::new(), progress: "Buscando en tus notas…".into(), sources, tasks };
         (input, turn)
     }

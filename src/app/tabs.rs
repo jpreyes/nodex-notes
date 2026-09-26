@@ -32,6 +32,7 @@ pub(super) fn encode(tab: &Tab, root: &Path) -> String {
             "vista:{}",
             match v {
                 View::Home => "inicio".to_string(),
+                View::Mail => "correos".into(),
                 View::Today => "hoy".into(),
                 View::Ask => "preguntar".into(),
                 View::Week => "semana".into(),
@@ -50,6 +51,7 @@ pub(super) fn decode(s: &str, root: &Path) -> Option<Tab> {
     }
     let v = match s.strip_prefix("vista:")? {
         "inicio" => View::Home,
+        "correos" => View::Mail,
         "hoy" => View::Today,
         "preguntar" => View::Ask,
         "semana" => View::Week,
@@ -63,6 +65,7 @@ pub(super) fn decode(s: &str, root: &Path) -> Option<Tab> {
 fn view_label(v: &View) -> (&'static str, String) {
     match v {
         View::Home | View::Editor => (icon::HOUSE, "Inicio".into()),
+        View::Mail => (icon::ENVELOPE_SIMPLE, "Correos".into()),
         View::Today => (icon::TRAY, "Hoy".into()),
         View::Ask => (icon::CHAT_CIRCLE_TEXT, "Preguntar".into()),
         View::Week => (icon::CALENDAR_CHECK, "Semana".into()),
