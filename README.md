@@ -39,6 +39,7 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 - **Hoy (Ctrl+H):** lo atrasado, lo de hoy, lo de mañana y lo que viene en la semana. Aparece solo la primera vez que abres la app cada día, si hay algo pendiente.
 - **Espacios de trabajo:** cada espacio es una carpeta; cada nota es un archivo `.md`.
 - **Reuniones:** con **Ctrl+R**, cada línea lleva su hora y **Esc** agrega `## fin · hora`. También se cierra sola tras 30 minutos sin escribir, al abrir otra reunión o al cerrar la app. Al cerrarla, la IA agrega un resumen con los asistentes, las decisiones y los acuerdos: cada acuerdo queda como casilla con su responsable y su fecha (`- [ ] Juan: enviar planos due:…`). Los tuyos van a Tareas; los de otros también, marcados con `@Juan`, para saber qué esperas de quién. En una nota de reunión, **Correo de seguimiento** hace que la IA redacte el borrador del correo, que puedes editar, copiar o abrir en tu programa de correo.
+- **Tus calendarios:** en la Agenda (o en Configuración → Calendar), **+ Agregar calendario** y pega el enlace ICS de tu calendario. Google Calendar lo da en su configuración como «Dirección secreta en formato iCal», Outlook en «Publicar un calendario → ICS», e iCloud como enlace público (webcal://). Puedes agregar varios, cada uno con su color. Sus eventos aparecen en Agenda, Hoy, Inicio y Semana, y Preguntar también los conoce. Se leen al abrir la app y cada 15 minutos (solo se leen; la app no los cambia). En un evento de hoy, **Tomar notas** abre una reunión con su nombre.
 - **Tareas y Agenda:** las tareas se marcan como hechas con doble clic. La agenda muestra eventos y tareas con fecha.
 
 | Atajo | Acción |
@@ -108,7 +109,9 @@ Si tienes el plan **OpenCode Go** (suscripción mensual con límite de uso), usa
 
 Sin clave API la app funciona igual; solo se desactiva la IA. Con `ollama` no hace falta clave.
 
-## Google Calendar
+## Google Calendar (avanzado)
+
+Para *ver* tus calendarios basta con agregarlos con su enlace (arriba). Esto es para lo contrario: *enviar* la agenda de tus notas a Google Calendar.
 
 La app puede sincronizar la agenda con tu Google Calendar. Crea un calendario propio llamado **"Notas"** y solo toca ese: el permiso que pide (`calendar.app.created`) no le da acceso a tus otros calendarios. Envía los eventos de la agenda y las tareas pendientes con fecha. Si una tarea se marca como hecha, o se deshace un cambio de la IA, el evento se quita de Google. Sincroniza después de cada cambio y cada 10 minutos.
 
@@ -167,6 +170,9 @@ Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro eq
 | `src/app/doubts_ui.rs` | La tarjeta de cada pregunta y lo que pasa al responder. |
 | `src/capture.rs` | Qué notas son de captura (la del día y las "Sin título"). |
 | `src/links.rs` | Encuentra rutas (tolerando errores de tipeo) y direcciones web en las líneas. |
+| `src/ics.rs` | Lee calendarios ICS: eventos, repeticiones, excepciones y horas UTC. |
+| `src/calendars.rs` | Calendarios agregados con su enlace: descarga cada 15 minutos y copia para verlos sin internet. |
+| `src/app/calendars_ui.rs` | La lista de calendarios con «+ Agregar calendario». |
 | `src/gcal.rs` | Google Calendar: OAuth con PKCE, calendario "Notas" y sincronización de eventos. |
 | `src/agenda.rs` | `tareas.txt` (todo.txt), `agenda.txt` y `agenda.ics`. |
 | `src/vault.rs` | Carpeta de notas: espacios, notas `.md`, cambios en disco, papelera. |

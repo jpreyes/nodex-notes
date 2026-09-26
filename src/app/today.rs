@@ -43,7 +43,7 @@ impl NotesApp {
         let for_tomorrow = pick(&|d| d == tomorrow);
         let this_week = pick(&|d| d > tomorrow.as_str() && d <= week.as_str());
         let undated = pending.iter().filter(|t| due(t).is_none()).count();
-        let events = self.agenda.events();
+        let events = self.all_events();
         let ev = |f: &dyn Fn(&str) -> bool| -> Vec<agenda::Event> {
             let mut v: Vec<agenda::Event> = events.iter().filter(|e| f(&e.date)).cloned().collect();
             v.sort_by(|a, b| (a.date.clone(), a.time.clone()).cmp(&(b.date.clone(), b.time.clone())));

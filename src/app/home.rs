@@ -80,7 +80,7 @@ impl NotesApp {
         let overdue = pending.iter().filter(|t| due(t).is_some_and(|d| d < today_s)).count();
         let mut soon: Vec<&agenda::Task> = pending.iter().copied().filter(|t| due(t).is_some_and(|d| d <= tomorrow)).collect();
         soon.sort_by(|a, b| a.due.cmp(&b.due));
-        let events: Vec<agenda::Event> = self.agenda.events().into_iter().filter(|e| e.date == today_s || e.date == tomorrow).collect();
+        let events: Vec<agenda::Event> = self.all_events().into_iter().filter(|e| e.date == today_s || e.date == tomorrow).collect();
         let asks = self.doubts.pending.len();
         let ideas = self.ideas.ready().count();
         let notes = self.vault.all_notes();
@@ -164,7 +164,12 @@ impl NotesApp {
                     for e in &events {
                         let when = if e.date == today_s { "hoy" } else { "mañana" };
                         let time = e.time.clone().map(|t| format!(" {t}")).unwrap_or_default();
-                        ui.label(RichText::new(format!("{}  {}  ·  {when}{time}", icon::CALENDAR_BLANK, e.title)).size(13.5));
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(format!("{}  {}  ·  {when}{time}", icon::CALENDAR_BLANK, e.title)).size(13.5));
+                            if e.note.is_none() && e.date == today_s && ui.link(RichText::new(format!("{} Tomar notas", icon::NOTE_PENCIL)).size(12.0)).clicked() {
+                                act_l = Some(Action::StartMeetingNamed(e.title.clone()));
+                            }
+                        });
                     }
                     for t in soon.iter().take(6) {
                         if let Some(a) = task_row(ui, t, &today_s, &root) {

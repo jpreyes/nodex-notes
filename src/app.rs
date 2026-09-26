@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 mod ask_view;
+mod calendars_ui;
 mod doubts_ui;
 mod editor;
 mod followup;
@@ -132,6 +133,12 @@ enum Action {
     AddTask(String),
     OpenExternal(PathBuf),
     OpenSettings(Section),
+    /// Calendarios agregados (enlace ICS).
+    AddCalendar(String, String),
+    RemoveCalendar(usize),
+    RefreshCalendars,
+    /// Tomar notas de un evento: una reunión con ese título.
+    StartMeetingNamed(String),
     /// Pestañas.
     OpenNewTab(PathBuf),
     ShowTab(View),
@@ -198,6 +205,9 @@ pub struct NotesApp {
     /// Borrador del correo de seguimiento de una reunión.
     followup: followup::FollowUp,
     tabs: tabs::Tabs,
+    /// Calendarios agregados: lo descargado y el formulario para agregar uno.
+    cals: crate::calendars::Calendars,
+    cal_form: Option<(String, String)>,
     /// Campos de Inicio: anotar y preguntar rápido.
     home_capture: String,
     home_question: String,
@@ -358,6 +368,8 @@ impl NotesApp {
             week_seen: estado_semana,
             followup: followup::FollowUp::default(),
             tabs: tabs::Tabs::default(),
+            cals: crate::calendars::Calendars::load(),
+            cal_form: None,
             home_capture: String::new(),
             home_question: String::new(),
         };
@@ -635,26 +647,39 @@ impl NotesApp {
     // ---------- Reuniones ----------
 
     fn start_meeting(&mut self) {
+        self.start_meeting_as(None);
+    }
+
+    /// Nueva reunión; con título (al tomar notas de un evento del calendario) no pide el nombre.
+    fn start_meeting_as(&mut self, title: Option<String>) {
         self.close_meeting(Local::now());
         self.save();
         let now = Local::now();
-        let path = self.vault.unique_path(&self.ws, &format!("Reunión {}", now.format("%Y-%m-%d %H.%M")));
+        let named = title.as_deref().map(vault::sanitize).filter(|t| !t.is_empty());
+        let file = named.clone().unwrap_or_else(|| format!("Reunión {}", now.format("%Y-%m-%d %H.%M")));
+        let path = self.vault.unique_path(&self.ws, &file);
         self.note = OpenNote::load(path.clone());
-        self.note.text = format!("## Reunión · {}\n- {} ", now.format("%Y-%m-%d %H:%M"), now.format("%H:%M"));
+        let header = named.clone().unwrap_or_else(|| "Reunión".into());
+        self.note.text = format!("## {header} · {}\n- {} ", now.format("%Y-%m-%d %H:%M"), now.format("%H:%M"));
         self.note.dirty = true;
         self.save();
         self.meeting = Some(Meeting {
             path,
-            title: "Reunión".into(),
+            title: header,
             started: now,
             last_activity: Instant::now(),
             last_time: now,
         });
         self.view = View::Editor;
         self.search.clear();
-        self.focus_title = true;
         self.pending_cursor = Some(usize::MAX);
-        self.msg("Reunión iniciada: escribe su nombre y Enter; cada línea lleva su hora. Esc la cierra.");
+        if named.is_some() {
+            self.focus_editor = true;
+            self.msg("Reunión iniciada: cada línea lleva su hora. Esc la cierra.");
+        } else {
+            self.focus_title = true;
+            self.msg("Reunión iniciada: escribe su nombre y Enter; cada línea lleva su hora. Esc la cierra.");
+        }
     }
 
     /// Agrega "## fin · hora" a la reunión abierta.
@@ -1245,6 +1270,10 @@ impl NotesApp {
             }
             Action::OpenExternal(p) => open_external(&p),
             Action::OpenSettings(section) => self.open_settings(section),
+            Action::AddCalendar(name, url) => self.add_calendar(name, url),
+            Action::RemoveCalendar(i) => self.remove_calendar(i),
+            Action::RefreshCalendars => self.cals.last = None,
+            Action::StartMeetingNamed(title) => self.start_meeting_as(Some(title)),
             Action::OpenNewTab(p) => self.new_tab(tabs::Tab::Note(p)),
             Action::ShowTab(v) => self.show_in_tab(v),
             Action::NewTab => self.new_tab(tabs::Tab::View(View::Home)),
@@ -1779,12 +1808,14 @@ impl NotesApp {
         let today = today();
         let tomorrow = (Local::now() + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
 
-        // (fecha, hora, texto, espacio, nota, es_tarea)
-        let mut items: Vec<(String, String, String, String, Option<String>, bool)> = self
-            .agenda
-            .events()
+        // (fecha, hora, texto, espacio o calendario, nota, es_tarea, es de un calendario agregado)
+        let mut items: Vec<(String, String, String, String, Option<String>, bool, bool)> = self
+            .all_events()
             .into_iter()
-            .map(|e| (e.date, e.time.unwrap_or_default(), e.title, e.project, e.note, false))
+            .map(|e| {
+                let ext = self.is_external(&e);
+                (e.date, e.time.unwrap_or_default(), e.title, e.project, e.note, false, ext)
+            })
             .collect();
         let tasks = self.agenda.tasks();
         let overdue: Vec<_> = tasks
@@ -1794,17 +1825,22 @@ impl NotesApp {
             .collect();
         items.extend(tasks.into_iter().filter(|t| !t.done).filter_map(|t| {
             let d = t.due.filter(|d| agenda::is_date(d))?;
-            Some((d, String::new(), t.text, t.project, t.note, true))
+            Some((d, String::new(), t.text, t.project, t.note, true, false))
         }));
         items.retain(|i| i.0 >= today);
         items.sort();
 
         let root = self.vault.root.clone();
         Self::column(ui, "agenda", |ui, _| {
-            let subtitle = format!("Eventos y tareas con fecha · {} se actualiza solo", agenda::ICS_FILE);
+            let subtitle = "Tus calendarios, los eventos de tus notas y las tareas con fecha".to_string();
             if view_header(ui, "Agenda", &subtitle) {
                 action = Some(Action::CloseResults);
             }
+            let subs = self.cfg.calendarios.clone();
+            if let Some(a) = calendars_ui::calendars_panel(ui, &subs, &self.cals, &mut self.cal_form) {
+                action = Some(a);
+            }
+            ui.add_space(14.0);
             if !overdue.is_empty() {
                 ui.label(RichText::new("Atrasadas").font(theme::bold(15.0)).color(RED));
                 ui.add_space(4.0);
@@ -1819,7 +1855,7 @@ impl NotesApp {
                 ui.label(RichText::new("Nada agendado. La IA agrega aquí las fechas que menciones en tus notas.").color(MUTED));
             }
             let mut current = String::new();
-            for (date, time, text, project, note, is_task) in &items {
+            for (date, time, text, project, note, is_task, external) in &items {
                 if *date != current {
                     current = date.clone();
                     let label = if *date == today {
@@ -1834,18 +1870,30 @@ impl NotesApp {
                     ui.add_space(2.0);
                 }
                 let mut job = LayoutJob::default();
+                if *external {
+                    job.append("● ", 0.0, fmt(FontId::proportional(13.0), theme::tag_colors(project).dot));
+                }
                 let lead = if *is_task { format!("{}  ", icon::CHECK_SQUARE) } else if time.is_empty() { format!("{}  ", icon::CALENDAR_BLANK) } else { format!("{time}  ") };
                 job.append(&lead, 0.0, fmt(FontId::proportional(14.0), MUTED));
                 job.append(text, 0.0, fmt(FontId::proportional(14.5), TEXT));
                 if !project.is_empty() {
                     job.append(&format!("   {project}"), 0.0, fmt(FontId::proportional(12.5), MUTED));
                 }
-                let r = clickable_line(ui, job);
-                if let Some(n) = note {
-                    if r.clicked() {
-                        action = Some(Action::Open(root.join(format!("{n}.md")), None));
+                ui.horizontal(|ui| {
+                    let r = clickable_line(ui, job);
+                    if let Some(n) = note {
+                        if r.clicked() {
+                            action = Some(Action::Open(root.join(format!("{n}.md")), None));
+                        }
                     }
-                }
+                    // Tomar notas de un evento de hoy: abre una reunión con su nombre.
+                    if *external && *date == today {
+                        ui.add_space(8.0);
+                        if ui.link(RichText::new(format!("{} Tomar notas", icon::NOTE_PENCIL)).size(12.5)).clicked() {
+                            action = Some(Action::StartMeetingNamed(text.clone()));
+                        }
+                    }
+                });
             }
             ui.add_space(24.0);
             ui.separator();
@@ -1891,6 +1939,7 @@ impl eframe::App for NotesApp {
         }
         self.handle_ai_results();
         self.handle_gcal();
+        self.handle_calendars();
         self.poll_ask();
 
         egui::Panel::bottom("status")

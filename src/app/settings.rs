@@ -34,6 +34,8 @@ pub(super) struct Settings {
     model: String,
     client_id: String,
     client_secret: String,
+    /// Formulario para agregar un calendario (nombre, enlace).
+    cal_form: Option<(String, String)>,
     test: Option<Receiver<Result<u128, String>>>,
     test_result: Option<Result<u128, String>>,
     update: Option<Receiver<Result<Option<String>, String>>>,
@@ -55,6 +57,7 @@ impl Settings {
             model: cfg.modelo.clone(),
             client_id: cfg.google_client_id.clone(),
             client_secret: cfg.google_client_secret.clone(),
+            cal_form: None,
             test: None,
             test_result: None,
             update: None,
@@ -477,7 +480,25 @@ impl NotesApp {
     }
 
     fn section_calendar(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {
-        heading(ui, "Calendar", "Envía la agenda (eventos y tareas pendientes con fecha) a tu calendario.");
+        heading(ui, "Calendar", "Agrega tus calendarios con su enlace y verás sus eventos en la Agenda, Hoy e Inicio.");
+        ui.add_space(12.0);
+        Frame::new()
+            .stroke(Stroke::new(1.0, theme::BORDER))
+            .corner_radius(10)
+            .inner_margin(Margin::same(16))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new(format!("{}  Tus calendarios", icon::CALENDAR_BLANK)).font(theme::bold(15.0)));
+                ui.label(
+                    RichText::new("Google Calendar, Outlook, iCloud o cualquier calendario con enlace ICS. Solo se leen; se actualizan cada 15 minutos.")
+                        .size(12.5)
+                        .color(MUTED),
+                );
+                ui.add_space(8.0);
+                if let Some(a) = super::calendars_ui::calendars_panel(ui, &self.cfg.calendarios, &self.cals, &mut s.cal_form) {
+                    changes.push(Change::Do(a));
+                }
+            });
         ui.add_space(12.0);
         Frame::new()
             .stroke(Stroke::new(1.0, theme::BORDER))
@@ -486,7 +507,7 @@ impl NotesApp {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("{}  Google Calendar", icon::GOOGLE_LOGO)).font(theme::bold(15.0)));
+                    ui.label(RichText::new(format!("{}  Enviar tu agenda a Google Calendar (avanzado)", icon::GOOGLE_LOGO)).font(theme::bold(15.0)));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| match &self.gcal {
                         None => {
                             ui.label(RichText::new("Falta el ID de cliente").size(12.5).color(MUTED));

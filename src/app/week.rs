@@ -83,7 +83,7 @@ impl NotesApp {
         let undated: Vec<&agenda::Task> = pending.iter().copied().filter(|t| dated(t).is_none()).collect();
         let mut coming: Vec<&agenda::Task> = pending.iter().copied().filter(|t| dated(t).is_some_and(|d| d >= to && d <= next)).collect();
         coming.sort_by(|a, b| a.due.cmp(&b.due));
-        let events: Vec<agenda::Event> = self.agenda.events().into_iter().filter(|e| e.date >= to && e.date <= next).collect();
+        let events: Vec<agenda::Event> = self.all_events().into_iter().filter(|e| e.date >= to && e.date <= next).collect();
         let notes: Vec<(PathBuf, String, String, bool)> = self
             .vault
             .all_notes()

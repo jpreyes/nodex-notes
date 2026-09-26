@@ -18,6 +18,8 @@ pub struct Config {
     /// Credenciales OAuth "App de escritorio" de Google Cloud (ver README).
     pub google_client_id: String,
     pub google_client_secret: String,
+    /// Calendarios que se ven en la Agenda (enlace ICS de Google, Outlook, iCloud…).
+    pub calendarios: Vec<crate::calendars::Subscription>,
 }
 
 impl Default for Config {
@@ -31,6 +33,7 @@ impl Default for Config {
             ia_automatica: true,
             google_client_id: String::new(),
             google_client_secret: String::new(),
+            calendarios: Vec::new(),
         }
     }
 }
@@ -77,7 +80,14 @@ pub fn load() -> (Config, Option<String>) {
 
 fn render(c: &Config) -> String {
     let q = |s: &str| toml::Value::String(s.to_string()).to_string();
-    format!(
+    let mut calendars = String::new();
+    if !c.calendarios.is_empty() {
+        calendars += "\n# Calendarios que se ven en la Agenda (enlace ICS de Google, Outlook, iCloud…)\n";
+        for cal in &c.calendarios {
+            calendars += &format!("[[calendarios]]\nnombre = {}\nurl = {}\n", q(&cal.nombre), q(&cal.url));
+        }
+    }
+    let main = format!(
         "# Configuración de Notas (se cambia desde la app: botón ⚙ o Ctrl+,)\n\
          \n\
          # Carpeta de notas (una subcarpeta por espacio de trabajo)\n\
@@ -102,7 +112,8 @@ fn render(c: &Config) -> String {
         c.ia_automatica,
         q(&c.google_client_id),
         q(&c.google_client_secret),
-    )
+    );
+    main + &calendars
 }
 
 /// Escribe config.toml completo, con comentarios, para que siga siendo legible a mano.
@@ -188,6 +199,7 @@ mod tests {
             clave_api: "sk-'abc'\"x".into(),
             ia_automatica: false,
             google_client_secret: "GOCSPX-1".into(),
+            calendarios: vec![crate::calendars::Subscription { nombre: "Trabajo \"x\"".into(), url: "webcal://ejemplo.com/a.ics?x=1&y=2".into() }],
             ..Config::default()
         };
         let back: Config = toml::from_str(&render(&c)).unwrap();
