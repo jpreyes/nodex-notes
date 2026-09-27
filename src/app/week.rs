@@ -36,7 +36,7 @@ fn metric(ui: &mut Ui, value: usize, label: &str, color: Color32) {
     Frame::new().fill(BG_SIDE).corner_radius(8).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
         ui.vertical(|ui| {
             ui.label(RichText::new(value.to_string()).font(theme::bold(20.0)).color(color));
-            ui.label(RichText::new(label).size(12.0).color(MUTED));
+            ui.label(RichText::new(label).size(12.5).color(MUTED));
         });
     });
 }
@@ -102,9 +102,7 @@ impl NotesApp {
         let mut save = false;
 
         Self::column(ui, "week", |ui, _| {
-            if view_header(ui, "Revisión semanal", &format!("Últimos 7 días ({}) y los próximos 7", range_label(&from, &to))) {
-                action = Some(Action::CloseResults);
-            }
+            view_header(ui, "Revisión semanal", &format!("Últimos 7 días ({}) y los próximos 7", range_label(&from, &to)));
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
                 metric(ui, notes.len(), "notas escritas", TEXT);

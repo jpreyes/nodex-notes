@@ -156,7 +156,7 @@ fn row(ui: &mut Ui, title: &str, hint: &str, control: impl FnOnce(&mut Ui)) {
         ui.with_layout(Layout::top_down(Align::Min), |ui| {
             ui.label(RichText::new(title).size(14.0).color(TEXT));
             if !hint.is_empty() {
-                ui.label(RichText::new(hint).size(12.0).color(MUTED));
+                ui.label(RichText::new(hint).size(12.5).color(MUTED));
             }
         });
     });
@@ -493,7 +493,7 @@ impl NotesApp {
             ui.add_space(6.0);
             ui.label(
                 RichText::new("OpenCode Zen cobra por uso desde tu saldo; OpenCode Go es una suscripción mensual con límite de uso. Ambos usan la misma clave.")
-                    .size(12.0)
+                    .size(12.5)
                     .color(MUTED),
             );
         }

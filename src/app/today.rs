@@ -65,9 +65,7 @@ impl NotesApp {
                 }
                 s
             };
-            if view_header(ui, "Hoy", &subtitle) {
-                action = Some(Action::CloseResults);
-            }
+            view_header(ui, "Hoy", &subtitle);
             if self.week_pending() {
                 Frame::new()
                     .fill(BG_SIDE)

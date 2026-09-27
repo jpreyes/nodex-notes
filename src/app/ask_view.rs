@@ -326,8 +326,8 @@ impl NotesApp {
                     if !self.ask.turns.is_empty() {
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("La IA lee tus notas para responder.").size(12.0).color(MUTED));
-                            if !busy && ui.link(RichText::new("Nueva conversación").size(12.0)).clicked() {
+                            ui.label(RichText::new("La IA lee tus notas para responder.").size(12.5).color(MUTED));
+                            if !busy && ui.link(RichText::new("Nueva conversación").size(12.5)).clicked() {
                                 self.ask.turns.clear();
                                 self.ask.focus = true;
                             }
@@ -450,7 +450,7 @@ impl NotesApp {
                 for (i, (k, line)) in numbers.iter().enumerate() {
                     let Some(src) = turn.sources.get(k) else { continue };
                     let text = format!("{}  {}", i + 1, src.label);
-                    let b = egui::Button::new(RichText::new(text).size(12.0).color(ACCENT)).corner_radius(6);
+                    let b = egui::Button::new(RichText::new(text).size(12.5).color(ACCENT)).corner_radius(6);
                     if ui.add(b).on_hover_text("Abrir la nota").clicked() {
                         action = Some(self.open_at_line(&src.path, *line));
                     }

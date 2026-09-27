@@ -53,6 +53,127 @@ pub fn is_time(s: &str) -> bool {
     b.len() == 5 && b[2] == b':' && [0, 1, 3, 4].iter().all(|&i| b[i].is_ascii_digit())
 }
 
+/// Minúsculas y sin tildes, para reconocer palabras escritas de cualquier forma.
+fn plain_word(w: &str) -> String {
+    w.to_lowercase()
+        .chars()
+        .map(|c| match c {
+            'á' => 'a',
+            'é' => 'e',
+            'í' => 'i',
+            'ó' => 'o',
+            'ú' | 'ü' => 'u',
+            'ñ' => 'n',
+            c => c,
+        })
+        .filter(|c| !matches!(c, ',' | '.' | ';'))
+        .collect()
+}
+
+const WEEKDAYS: [&str; 7] = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"];
+const MONTHS: [&str; 12] = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+/// Un día escrito como se dice: "hoy", "mañana", "pasado mañana", "viernes", "30 sep",
+/// "30 de septiembre", "30/9", "30/09/2026", "2026-09-30".
+fn parse_day(words: &[String], today: chrono::NaiveDate) -> Option<chrono::NaiveDate> {
+    use chrono::{Datelike, Duration, NaiveDate};
+    let joined = words.join(" ");
+    match joined.as_str() {
+        "hoy" => return Some(today),
+        "manana" => return Some(today + Duration::days(1)),
+        "pasado manana" => return Some(today + Duration::days(2)),
+        _ => {}
+    }
+    if words.len() == 1 {
+        let w = &words[0];
+        if let Some(i) = WEEKDAYS.iter().position(|d| d == w) {
+            let now = today.weekday().num_days_from_monday() as i64;
+            let ahead = (i as i64 - now + 7) % 7;
+            return Some(today + Duration::days(if ahead == 0 { 7 } else { ahead }));
+        }
+        if is_date(w) {
+            return NaiveDate::parse_from_str(w, "%Y-%m-%d").ok();
+        }
+        // 30/9, 30-09, 30/09/2026
+        let parts: Vec<&str> = w.split(['/', '-']).collect();
+        if (2..=3).contains(&parts.len()) && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())) {
+            let d: u32 = parts[0].parse().ok()?;
+            let m: u32 = parts[1].parse().ok()?;
+            let y: i32 = match parts.get(2) {
+                Some(y) if y.len() == 2 => 2000 + y.parse::<i32>().ok()?,
+                Some(y) => y.parse().ok()?,
+                None => today.year(),
+            };
+            let date = NaiveDate::from_ymd_opt(y, m, d)?;
+            return Some(if parts.len() == 2 && date < today { NaiveDate::from_ymd_opt(y + 1, m, d)? } else { date });
+        }
+        return None;
+    }
+    // "30 sep", "30 de septiembre"
+    let (day, month) = match words {
+        [d, m] => (d, m),
+        [d, de, m] if de == "de" => (d, m),
+        _ => return None,
+    };
+    let d: u32 = day.parse().ok()?;
+    let m = MONTHS.iter().position(|x| month.starts_with(x) && month.len() >= 3)? as u32 + 1;
+    let date = NaiveDate::from_ymd_opt(today.year(), m, d)?;
+    Some(if date < today { NaiveDate::from_ymd_opt(today.year() + 1, m, d)? } else { date })
+}
+
+/// Separa una fecha escrita al final de una tarea: "Llamar a Pedro el viernes" ->
+/// ("Llamar a Pedro", Some("2026-10-02")). También entiende "due:2026-10-02".
+pub fn parse_when(text: &str, today: chrono::NaiveDate) -> (String, Option<String>) {
+    let text = text.trim();
+    if let Some((t, d)) = text.rsplit_once("due:") {
+        if is_date(d.trim()) {
+            return (t.trim().to_string(), Some(d.trim().to_string()));
+        }
+    }
+    let words: Vec<&str> = text.split_whitespace().collect();
+    for n in (1..=3).rev() {
+        if words.len() <= n {
+            continue;
+        }
+        let tail: Vec<String> = words[words.len() - n..].iter().map(|w| plain_word(w)).collect();
+        let Some(date) = parse_day(&tail, today) else { continue };
+        // Sin las palabras que unen: "para el", "antes del", "este", "próximo"…
+        let mut rest = &words[..words.len() - n];
+        while let Some(last) = rest.last() {
+            if ["para", "el", "antes", "del", "hasta", "este", "proximo", "de", "a", "mas", "tardar"].contains(&plain_word(last).as_str()) && rest.len() > 1 {
+                rest = &rest[..rest.len() - 1];
+            } else {
+                break;
+            }
+        }
+        return (rest.join(" "), Some(date.format("%Y-%m-%d").to_string()));
+    }
+    (text.to_string(), None)
+}
+
+/// Cómo se muestra una tarea: "enviar planos @Juan_Pérez" -> "Juan Pérez: enviar planos".
+pub fn display_text(text: &str) -> String {
+    let mut who = Vec::new();
+    let mut rest = Vec::new();
+    for w in text.split_whitespace() {
+        match w.strip_prefix('@') {
+            Some(name) if !name.is_empty() => who.push(name.replace('_', " ")),
+            _ => rest.push(w),
+        }
+    }
+    let body = rest.join(" ");
+    let body = if who.is_empty() {
+        let mut c = body.chars();
+        match c.next() {
+            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            None => body,
+        }
+    } else {
+        body
+    };
+    if who.is_empty() { body } else { format!("{}: {body}", who.join(", ")) }
+}
+
 pub fn project_token(ws: &str) -> String {
     format!("+{}", ws.replace(' ', "_"))
 }
@@ -407,6 +528,24 @@ impl Agenda {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dates_written_as_said() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 9, 27).unwrap(); // domingo
+        let w = |t: &str| parse_when(t, today);
+        assert_eq!(w("Llamar a Pedro mañana"), ("Llamar a Pedro".into(), Some("2026-09-28".into())));
+        assert_eq!(w("Llamar a Pedro pasado mañana"), ("Llamar a Pedro".into(), Some("2026-09-29".into())));
+        assert_eq!(w("Enviar planos para el viernes"), ("Enviar planos".into(), Some("2026-10-02".into())));
+        assert_eq!(w("Clase el domingo"), ("Clase".into(), Some("2026-10-04".into())), "hoy es domingo: el próximo");
+        assert_eq!(w("Informe 30 sep"), ("Informe".into(), Some("2026-09-30".into())));
+        assert_eq!(w("Informe antes del 3 de octubre"), ("Informe".into(), Some("2026-10-03".into())));
+        assert_eq!(w("Informe 5/1"), ("Informe".into(), Some("2027-01-05".into())), "ya pasó: el próximo año");
+        assert_eq!(w("Informe due:2026-10-09"), ("Informe".into(), Some("2026-10-09".into())));
+        assert_eq!(w("Comprar pan"), ("Comprar pan".into(), None));
+        assert_eq!(w("mañana"), ("mañana".into(), None), "sin texto no se separa");
+        assert_eq!(display_text("enviar planos corregidos @Juan_Pérez"), "Juan Pérez: enviar planos corregidos");
+        assert_eq!(display_text("revisar cubicación"), "Revisar cubicación");
+    }
 
     #[test]
     fn roundtrip_task() {

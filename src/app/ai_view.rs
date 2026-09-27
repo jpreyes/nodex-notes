@@ -93,10 +93,6 @@ impl NotesApp {
                     ui.label(RichText::new(icon::SPARKLE).size(24.0).color(ACCENT));
                     ui.label(RichText::new("IA").font(theme::bold(26.0)));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let b = egui::Button::new(RichText::new(icon::X).size(18.0)).frame(false);
-                        if ui.add(b).on_hover_text("Volver a la nota (Esc)").clicked() {
-                            action = Some(Action::CloseResults);
-                        }
                         let b = egui::Button::new(RichText::new(icon::GEAR).size(16.0).color(MUTED)).frame(false);
                         if ui.add(b).on_hover_text("Configurar la IA").clicked() {
                             action = Some(Action::OpenSettings(Section::Ai));

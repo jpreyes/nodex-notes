@@ -84,7 +84,7 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
         ui.horizontal(|ui| {
             ui.label(RichText::new(format!("{}  {}", icon::ENVELOPE_SIMPLE, a.correo)).size(14.0));
             let (host, _) = mail::server_for(a);
-            ui.label(RichText::new(host).size(12.0).color(MUTED));
+            ui.label(RichText::new(host).size(12.5).color(MUTED));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui.button("Quitar").clicked() {
                     action = Some(Action::RemoveMailAccount(i));
@@ -131,7 +131,7 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
                     }
                 });
                 ui.add_space(4.0);
-                ui.label(RichText::new("¿Qué es la contraseña de aplicación? Una contraseña especial que se crea en tu cuenta y sirve solo para esta app; se puede borrar cuando quieras.").size(12.0).color(MUTED));
+                ui.label(RichText::new("¿Qué es la contraseña de aplicación? Una contraseña especial que se crea en tu cuenta y sirve solo para esta app; se puede borrar cuando quieras.").size(12.5).color(MUTED));
                 for (service, steps, url) in HELP {
                     ui.horizontal_wrapped(|ui| {
                         ui.label(RichText::new(service).size(12.5).strong());
@@ -463,9 +463,7 @@ impl NotesApp {
         let mut toggle_open: Option<String> = None;
         let mut toggle_bulk = false;
         Self::column(ui, "correos", |ui, _| {
-            if view_header(ui, "Correos", "Lo que la IA encontró en tu bandeja de entrada y en tus enviados") {
-                action = Some(Action::CloseResults);
-            }
+            view_header(ui, "Correos", "Lo que la IA encontró en tu bandeja de entrada y en tus enviados");
             if accounts.is_empty() {
                 ui.label(RichText::new("Agrega tu correo y la IA revisará tus correos para no perder compromisos ni fechas.").color(MUTED));
                 ui.add_space(6.0);
@@ -547,7 +545,7 @@ impl NotesApp {
                                 ui.label(RichText::new(&who).size(14.0).strong().color(color));
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     let time = m.date.get(11..).unwrap_or("");
-                                    ui.label(RichText::new(if m.sent { format!("{time} · enviado") } else { time.to_string() }).size(12.0).color(MUTED));
+                                    ui.label(RichText::new(if m.sent { format!("{time} · enviado") } else { time.to_string() }).size(12.5).color(MUTED));
                                 });
                             });
                             ui.label(RichText::new(&m.subject).size(14.0));
@@ -557,19 +555,19 @@ impl NotesApp {
                     if !m.summary.is_empty() {
                         ui.label(RichText::new(&m.summary).size(12.5).color(MUTED));
                     } else if !m.analyzed {
-                        ui.label(RichText::new("La IA todavía no lo lee…").size(12.0).color(MUTED));
+                        ui.label(RichText::new("La IA todavía no lo lee…").size(12.5).color(MUTED));
                     }
                     if !m.items.is_empty() || !m.workspace.is_empty() {
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);
                             for it in &m.items {
                                 let c = theme::tag_colors(it.split(':').next().unwrap_or(it));
-                                ui.label(RichText::new(format!("{} {it}", icon::CHECK_SQUARE)).size(12.0).color(c.text).background_color(c.bg));
+                                ui.label(RichText::new(format!("{} {it}", icon::CHECK_SQUARE)).size(12.5).color(c.text).background_color(c.bg));
                             }
                             if !m.noted.is_empty() {
-                                ui.label(RichText::new(format!("→ anotado en {}", m.noted.replace('/', " / "))).size(12.0).color(MUTED));
+                                ui.label(RichText::new(format!("→ anotado en {}", m.noted.replace('/', " / "))).size(12.5).color(MUTED));
                             } else if !m.workspace.is_empty() {
-                                ui.label(RichText::new(format!("→ {}", m.workspace)).size(12.0).color(MUTED));
+                                ui.label(RichText::new(format!("→ {}", m.workspace)).size(12.5).color(MUTED));
                             }
                         });
                     }
@@ -577,7 +575,7 @@ impl NotesApp {
                         ui.add_space(6.0);
                         Frame::new().fill(BG_SIDE).corner_radius(8).inner_margin(Margin::symmetric(10, 8)).show(ui, |ui| {
                             ui.set_width(ui.available_width());
-                            ui.label(RichText::new(format!("De: {}\nPara: {}", m.from, m.to)).size(12.0).color(MUTED));
+                            ui.label(RichText::new(format!("De: {}\nPara: {}", m.from, m.to)).size(12.5).color(MUTED));
                             ui.add_space(4.0);
                             ui.label(RichText::new(m.body.chars().take(3000).collect::<String>()).size(13.0));
                         });

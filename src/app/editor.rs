@@ -115,6 +115,27 @@ fn due_label(date: &str, done: bool) -> (String, Color32, Color32) {
     (format!("{} {text}", icon::CALENDAR_BLANK), fg, bg)
 }
 
+/// "## Reunión CIC · 2026-09-24 10:00" -> "Reunión · mié 24 sep · 10:00" (en la primera línea el
+/// título ya está arriba); "## fin · 10:40" -> "Fin · 10:40". Otras líneas "##": `None`.
+fn meeting_label(line: &str, first: bool) -> Option<String> {
+    const DIAS_CORTOS: [&str; 7] = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
+    let body = line.trim().trim_start_matches('#').trim();
+    if lines::is_block_end(line) {
+        let time = body.rsplit_once('·').map(|(_, t)| t.trim()).filter(|t| agenda::is_time(t));
+        return Some(match time {
+            Some(t) => format!("{} Fin · {t}", icon::FLAG_CHECKERED),
+            None => format!("{} Fin de la reunión", icon::FLAG_CHECKERED),
+        });
+    }
+    let (title, when) = body.rsplit_once(" · ")?;
+    let (date, time) = when.trim().split_once(' ').unwrap_or((when.trim(), ""));
+    let d = NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?;
+    let day = format!("{} {} {}", DIAS_CORTOS[d.weekday().num_days_from_monday() as usize], d.day(), MESES[d.month0() as usize]);
+    let name = if first { "Reunión".to_string() } else { title.trim().to_string() };
+    let time = if agenda::is_time(time.trim()) { format!(" · {}", time.trim()) } else { String::new() };
+    Some(format!("{} {name} · {day}{time}", icon::USERS))
+}
+
 /// Enlaces de cada línea, guardados para no buscar en disco en cada cuadro.
 #[derive(Default)]
 pub(super) struct LinkCache {
@@ -161,7 +182,29 @@ fn build(
 
         if lines::is_heading(line) || lines::is_block_start(line) || lines::is_block_end(line) {
             let hsize = if line.trim_start().starts_with("# ") { 23.0 } else if line.trim_start().starts_with("## ") { 19.0 } else { 17.0 };
-            job.append(full, 0.0, fmt(theme::bold(hsize), TEXT));
+            let bold = fmt(theme::bold(hsize), TEXT);
+            if is_active {
+                job.append(full, 0.0, bold);
+            } else if let Some(label) = meeting_label(line, li == 0) {
+                // Inicio y fin de una reunión: una etiqueta con la fecha y la hora.
+                let w = measure(&label) + 16.0;
+                let mut f = hidden.clone();
+                f.line_height = Some(28.0);
+                job.append(line, w, f);
+                let (fg, bg) = (Color32::from_rgb(85, 84, 80), Color32::from_rgb(241, 239, 232));
+                decos.push(Deco { kind: Kind::Date { label, fg, bg }, chars: ci..ci + n_chars(0, line.len()), line: li, lead: w });
+                job.append(ending, 0.0, fmt(FontId::proportional(size), TEXT));
+            } else {
+                // Los "#" del título no se ven (salvo en la línea que se edita).
+                let t = line.trim_start();
+                let mut marker = line.len() - t.len() + t.chars().take_while(|c| *c == '#').count();
+                if line[marker..].starts_with(' ') {
+                    marker += 1;
+                }
+                job.append(&line[..marker], 0.0, hidden.clone());
+                job.append(&line[marker..], 0.0, bold.clone());
+                job.append(ending, 0.0, bold);
+            }
             ci += full.chars().count();
             continue;
         }
@@ -583,7 +626,7 @@ impl NotesApp {
                             Target::Path(p) => format!("Abrir {}", p.display()),
                         };
                         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("link-tip"), egui::PopupAnchor::Pointer)
-                            .show(|ui| ui.label(RichText::new(tip).size(12.0)));
+                            .show(|ui| ui.label(RichText::new(tip).size(12.5)));
                         if out.response.clicked() {
                             clicked = Some((d.line, Some(target.clone())));
                         }
@@ -817,6 +860,31 @@ mod tests {
         let sec = job.sections.iter().find(|s| s.byte_range.start.0 == hash).unwrap();
         assert_ne!(sec.format.color, Color32::TRANSPARENT);
         assert!(!decos.iter().any(|d| matches!(d.kind, Kind::Pill(_))));
+    }
+
+    #[test]
+    fn headings_hide_their_marks_and_meetings_become_labels() {
+        let text = "## Reunión CIC · 2026-09-24 10:00\n- 10:02 hola\n## fin · 10:40\n### Resumen\n";
+        let mut cache = LinkCache::default();
+        let (job, decos) = build(text, None, &mut cache, &|s| s.chars().count() as f32 * 7.0);
+        assert_eq!(job.text, text);
+        let labels: Vec<String> = decos
+            .iter()
+            .filter_map(|d| match &d.kind {
+                Kind::Date { label, .. } => Some(label.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(labels, vec![format!("{} Reunión · jue 24 sep · 10:00", icon::USERS), format!("{} Fin · 10:40", icon::FLAG_CHECKERED)]);
+        let hashes = text.find("### ").unwrap();
+        let sec = job.sections.iter().find(|s| s.byte_range.start.0 == hashes).unwrap();
+        assert_eq!(sec.format.color, Color32::TRANSPARENT, "los ### no se ven");
+        assert_eq!(meeting_label("## Visita · 2026-09-24 15:00", false).unwrap(), format!("{} Visita · jue 24 sep · 15:00", icon::USERS));
+        assert!(meeting_label("## Ideas para el curso", false).is_none());
+        // En la línea que se edita, tal cual.
+        let (job, _) = build(text, Some(3), &mut cache, &|_| 10.0);
+        let sec = job.sections.iter().find(|s| s.byte_range.start.0 == hashes).unwrap();
+        assert_ne!(sec.format.color, Color32::TRANSPARENT);
     }
 
     /// Teclas de verdad en un editor sin ventana: Tab, Enter, Shift+Tab y Retroceso.

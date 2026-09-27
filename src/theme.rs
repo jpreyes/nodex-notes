@@ -9,7 +9,7 @@ pub const BG_RAIL: Color32 = Color32::from_rgb(240, 240, 237);
 pub const BG_SIDE: Color32 = Color32::from_rgb(248, 248, 246);
 pub const BG_EDITOR: Color32 = Color32::WHITE;
 pub const TEXT: Color32 = Color32::from_rgb(38, 38, 36);
-pub const MUTED: Color32 = Color32::from_rgb(135, 135, 130);
+pub const MUTED: Color32 = Color32::from_rgb(110, 110, 105);
 pub const BORDER: Color32 = Color32::from_rgb(226, 226, 221);
 pub const ACCENT: Color32 = Color32::from_rgb(40, 104, 214);
 pub const ACCENT_BG: Color32 = Color32::from_rgb(228, 238, 252);
@@ -60,7 +60,7 @@ pub fn setup(ctx: &egui::Context) {
     ctx.all_styles_mut(|s| {
         s.text_styles.insert(TextStyle::Body, FontId::proportional(14.0));
         s.text_styles.insert(TextStyle::Button, FontId::proportional(14.0));
-        s.text_styles.insert(TextStyle::Small, FontId::proportional(12.0));
+        s.text_styles.insert(TextStyle::Small, FontId::proportional(12.5));
         s.text_styles.insert(TextStyle::Heading, bold(20.0));
         s.spacing.item_spacing = egui::vec2(6.0, 4.0);
         s.spacing.button_padding = egui::vec2(8.0, 4.0);

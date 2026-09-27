@@ -69,7 +69,7 @@ pub(super) fn calendars_panel(ui: &mut Ui, subs: &[Subscription], cals: &Calenda
                 u.starts_with("https://") || u.starts_with("http://") || u.starts_with("webcal://")
             };
             if !url.trim().is_empty() && !valid {
-                ui.label(RichText::new("El enlace debe empezar con https:// o webcal://").size(12.0).color(RED));
+                ui.label(RichText::new("El enlace debe empezar con https:// o webcal://").size(12.5).color(RED));
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
@@ -88,7 +88,7 @@ pub(super) fn calendars_panel(ui: &mut Ui, subs: &[Subscription], cals: &Calenda
                     ui.label(RichText::new(steps).size(12.5).color(MUTED));
                     ui.add_space(4.0);
                 }
-                ui.label(RichText::new("Solo se lee: la app no cambia esos calendarios. Se actualizan al abrir la app y cada 15 minutos.").size(12.0).color(MUTED));
+                ui.label(RichText::new("Solo se lee: la app no cambia esos calendarios. Se actualizan al abrir la app y cada 15 minutos.").size(12.5).color(MUTED));
             });
         });
     }

@@ -166,7 +166,7 @@ impl NotesApp {
                         let time = e.time.clone().map(|t| format!(" {t}")).unwrap_or_default();
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(format!("{}  {}  ·  {when}{time}", icon::CALENDAR_BLANK, e.title)).size(13.5));
-                            if e.note.is_none() && e.date == today_s && ui.link(RichText::new(format!("{} Tomar notas", icon::NOTE_PENCIL)).size(12.0)).clicked() {
+                            if e.note.is_none() && e.date == today_s && ui.link(RichText::new(format!("{} Tomar notas", icon::NOTE_PENCIL)).size(12.5)).clicked() {
                                 act_l = Some(Action::StartMeetingNamed(e.title.clone()));
                             }
                         });
@@ -188,7 +188,11 @@ impl NotesApp {
                         ui.label(RichText::new("Todavía no hay reuniones.").color(MUTED));
                     }
                     for (p, title, m, open) in &meetings {
-                        let right = if *open > 0 { format!("{} abiertos · {}", open, short_date(*m)) } else { short_date(*m) };
+                        let right = match *open {
+                            0 => short_date(*m),
+                            1 => format!("1 acuerdo abierto · {}", short_date(*m)),
+                            n => format!("{n} acuerdos abiertos · {}", short_date(*m)),
+                        };
                         if let Some(a) = note_row(ui, icon::USERS, title, &right, p) {
                             act_l = Some(a);
                         }
@@ -204,7 +208,7 @@ impl NotesApp {
                             act_l = Some(a);
                         }
                     }
-                    ui.label(RichText::new("Ctrl+clic: abrir en otra pestaña").size(11.5).color(MUTED));
+                    ui.label(RichText::new("Ctrl+clic: abrir en otra pestaña").size(12.0).color(MUTED));
                 });
             };
             let mut right = |ui: &mut Ui| {
@@ -257,7 +261,9 @@ impl NotesApp {
                     }
                 });
                 card(ui, icon::CALENDAR_CHECK, "Esta semana", |ui| {
-                    ui.label(RichText::new(format!("{} escritas  ·  {} hechas", plural(written, "nota"), plural(done_week, "tarea"))).size(13.5));
+                    let done = if done_week == 1 { "1 tarea hecha".to_string() } else { format!("{done_week} tareas hechas") };
+                    let written = if written == 1 { "1 nota escrita".to_string() } else { format!("{written} notas escritas") };
+                    ui.label(RichText::new(format!("{written}  ·  {done}")).size(13.5));
                     if ui.link(RichText::new("Revisión semanal").size(12.5)).clicked() {
                         act_r = Some(Action::ShowTab(View::Week));
                     }
