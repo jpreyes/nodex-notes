@@ -19,6 +19,7 @@ mod mail_ai;
 mod organize;
 mod spaces;
 mod tags;
+mod todo;
 mod theme;
 mod vault;
 

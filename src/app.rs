@@ -34,6 +34,7 @@ mod settings;
 mod spaces_ui;
 mod tabs;
 mod today;
+mod todo_ui;
 mod week;
 use settings::Section;
 
@@ -138,6 +139,10 @@ enum Action {
     GoogleConnect,
     GoogleSync,
     GoogleDisconnect,
+    /// Microsoft To Do.
+    TodoConnect,
+    TodoSync,
+    TodoDisconnect,
     ToggleTask(String),
     AddTask(String),
     OpenExternal(PathBuf),
@@ -201,6 +206,10 @@ pub struct NotesApp {
     in_flight: Option<PathBuf>,
     undo: Option<Undo>,
     gcal: Option<GCal>,
+    /// Microsoft To Do: el hilo, cuándo se sincronizó y cómo estaba tareas.txt entonces.
+    todo: Option<crate::todo::ToDo>,
+    todo_last: Instant,
+    todo_hash: u64,
     /// La agenda cambió y hay que sincronizar con Google.
     gcal_dirty: bool,
     gcal_last_try: Instant,
@@ -414,7 +423,7 @@ impl NotesApp {
         let estado_tab = estado.pestana;
         let mut app = NotesApp {
             cfg,
-            ctx,
+            ctx: ctx.clone(),
             settings: None,
             vault,
             agenda,
@@ -441,6 +450,9 @@ impl NotesApp {
             in_flight: None,
             undo: None,
             gcal,
+            todo: crate::todo::ToDo::start(cfg_root.clone(), ctx.clone()),
+            todo_last: long_ago(),
+            todo_hash: 0,
             gcal_dirty: true,
             gcal_last_try: long_ago(),
             links: editor::LinkCache::new(&cfg_root),
@@ -588,6 +600,8 @@ impl NotesApp {
         self.in_flight = None;
         self.undo = None;
         self.restart_gcal();
+        self.todo = crate::todo::ToDo::start(self.vault.root.clone(), self.ctx.clone());
+        self.todo_hash = 0;
         let ws = self.vault.workspaces.first().cloned().unwrap_or_else(|| vault::DEFAULT_WORKSPACE.into());
         self.note.dirty = false;
         self.select_workspace(ws);
@@ -1361,14 +1375,16 @@ impl NotesApp {
 
     /// Deja la casilla de la línea "^id" de una nota como hecha o pendiente.
     fn sync_task_line(&mut self, note_rel: &str, id: &str, done: bool) {
+        self.edit_task_line(note_rel, id, |line| lines::parse(line).check.is_some_and(|d| d != done).then(|| lines::toggle_check(line)));
+    }
+
+    /// Cambia la línea "^id" de una nota (`edit` devuelve la línea nueva, o `None` si no cambia).
+    fn edit_task_line(&mut self, note_rel: &str, id: &str, edit: impl Fn(&str) -> Option<String>) {
         let path = self.vault.root.join(format!("{note_rel}.md"));
         let fix = |text: &str| -> Option<String> {
             let (idx, line) = text.split('\n').enumerate().find(|(_, l)| lines::id_of(l).as_deref() == Some(id))?;
             let line = line.trim_end_matches('\r');
-            lines::parse(line)
-                .check
-                .is_some_and(|d| d != done)
-                .then(|| editor::replace_line(text, idx, &lines::toggle_check(line)))
+            edit(line).map(|new| editor::replace_line(text, idx, &new))
         };
         let open = path == self.note.path;
         let old = if open { self.note.text.clone() } else { vault::read_text(&path).unwrap_or_default() };
@@ -1514,6 +1530,18 @@ impl NotesApp {
             Action::GoogleDisconnect => {
                 if let Some(g) = &mut self.gcal {
                     g.disconnect();
+                }
+            }
+            Action::TodoConnect => {
+                if let Some(t) = &mut self.todo {
+                    t.connect();
+                    self.msg("Se abrió el navegador: entra con tu cuenta Microsoft y acepta el permiso");
+                }
+            }
+            Action::TodoSync => self.todo_last = long_ago(),
+            Action::TodoDisconnect => {
+                if let Some(t) = &mut self.todo {
+                    t.disconnect();
                 }
             }
             Action::ToggleTask(raw) => {
@@ -2032,6 +2060,10 @@ impl NotesApp {
         let mut typing = false;
         Self::column(ui, "tasks", |ui, _| {
             view_header(ui, "Tareas", &subtitle);
+            if let Some(a) = self.todo_panel(ui) {
+                action = Some(a);
+            }
+            ui.add_space(10.0);
             let r = ui.add(
                 egui::TextEdit::singleline(&mut self.new_task)
                     .hint_text(format!("{}  Nueva tarea en {}: «Enviar planos el viernes», «Llamar a Pedro mañana»…", icon::PLUS, self.ws))
@@ -2265,9 +2297,11 @@ impl eframe::App for NotesApp {
                 }
             }
             self.queue_ai();
+            self.maybe_sync_todo();
         }
         self.handle_ai_results();
         self.handle_gcal();
+        self.handle_todo();
         self.handle_calendars();
         self.handle_mail();
         self.poll_ask();

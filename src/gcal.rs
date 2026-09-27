@@ -137,13 +137,13 @@ pub fn query_params(request_line: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn random_token(bytes: usize) -> Result<String, String> {
+pub fn random_token(bytes: usize) -> Result<String, String> {
     let mut buf = vec![0u8; bytes];
     getrandom::fill(&mut buf).map_err(|e| e.to_string())?;
     Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(buf))
 }
 
-fn pkce_challenge(verifier: &str) -> String {
+pub fn pkce_challenge(verifier: &str) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
@@ -384,7 +384,7 @@ impl Worker {
         } else {
             open_browser(&url);
         }
-        let code = wait_for_code(&listener, &state)?;
+        let code = wait_for_code(&[listener], &state, "tu Google Calendar")?;
 
         let form = [
             ("code", code.as_str()),
@@ -533,12 +533,20 @@ pub fn open_browser(url: &str) {
     let _ = result;
 }
 
-/// Espera la redirección de Google en el servidor local y devuelve el código.
-fn wait_for_code(listener: &TcpListener, state: &str) -> Result<String, String> {
-    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+/// Espera la redirección (de Google o Microsoft) en el servidor local y devuelve el código.
+/// `service` es a qué quedó conectada la app ("tu Google Calendar").
+pub fn wait_for_code(listeners: &[TcpListener], state: &str, service: &str) -> Result<String, String> {
+    for l in listeners {
+        l.set_nonblocking(true).map_err(|e| e.to_string())?;
+    }
     let deadline = Instant::now() + CONNECT_TIMEOUT;
     loop {
-        match listener.accept() {
+        let accepted = listeners
+            .iter()
+            .map(|l| l.accept())
+            .find(|r| !matches!(r, Err(e) if e.kind() == std::io::ErrorKind::WouldBlock))
+            .unwrap_or_else(|| Err(std::io::ErrorKind::WouldBlock.into()));
+        match accepted {
             Ok((mut stream, _)) => {
                 let _ = stream.set_nonblocking(false);
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
@@ -548,9 +556,9 @@ fn wait_for_code(listener: &TcpListener, state: &str) -> Result<String, String> 
                 let params = query_params(request.lines().next().unwrap_or(""));
                 let (ok, page) = match (params.get("code"), params.get("error")) {
                     (Some(_), _) if params.get("state").map(String::as_str) == Some(state) => {
-                        (true, "Listo: Notas quedó conectada a tu Google Calendar. Ya puedes cerrar esta pestaña.")
+                        (true, format!("Listo: Notas quedó conectada a {service}. Ya puedes cerrar esta pestaña."))
                     }
-                    (_, Some(_)) => (false, "No se dio el permiso. Puedes cerrar esta pestaña e intentarlo de nuevo."),
+                    (_, Some(_)) => (false, "No se dio el permiso. Puedes cerrar esta pestaña e intentarlo de nuevo.".to_string()),
                     _ => {
                         // Otra petición del navegador (p. ej. favicon): se ignora.
                         let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");

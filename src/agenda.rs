@@ -433,6 +433,43 @@ impl Agenda {
         self.write_ics()
     }
 
+    /// Da un identificador a cada tarea pendiente que no tenga (para reconocerla en To Do).
+    /// Devuelve si cambió algo.
+    pub fn ensure_ids(&self, mut next: impl FnMut() -> String) -> io::Result<bool> {
+        let mut changed = false;
+        let lines: Vec<String> = self
+            .read_lines(TASKS_FILE)
+            .into_iter()
+            .map(|l| match parse_task(&l) {
+                Some(t) if !t.done && t.id.is_none() => {
+                    changed = true;
+                    format!("{l} id:{}", next())
+                }
+                _ => l,
+            })
+            .collect();
+        if changed {
+            self.write_lines(TASKS_FILE, &lines)?;
+        }
+        Ok(changed)
+    }
+
+    /// Quita la fecha de la tarea con ese identificador.
+    pub fn clear_due_by_id(&self, id: &str) -> io::Result<()> {
+        let lines: Vec<String> = self
+            .read_lines(TASKS_FILE)
+            .into_iter()
+            .map(|l| {
+                if parse_task(&l).and_then(|t| t.id).as_deref() != Some(id) {
+                    return l;
+                }
+                l.split_whitespace().filter(|w| !w.starts_with("due:")).collect::<Vec<_>>().join(" ")
+            })
+            .collect();
+        self.write_lines(TASKS_FILE, &lines)?;
+        self.write_ics()
+    }
+
     /// Cambia (o pone) la fecha de la tarea con ese identificador. Devuelve si la encontró.
     pub fn set_due_by_id(&self, id: &str, date: &str) -> io::Result<bool> {
         let mut found = false;
