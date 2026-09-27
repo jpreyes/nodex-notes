@@ -53,6 +53,9 @@ const EDITOR_SIZE: f32 = 15.5;
 const COLUMN_MAX: f32 = 780.0;
 const MESES: [&str; 12] = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 const DIAS: [&str; 7] = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+const DIAS_CORTOS: [&str; 7] = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
+/// Primera nota de una carpeta nueva: cómo se usa la app.
+const WELCOME: &str = "Escribe una idea por línea: cada línea es una nota distinta, y la IA la lleva después a su espacio.\n  Con Tab al comienzo, la línea se une a la nota de arriba, como un detalle\n  - con Tab dos veces se vuelve un ítem de lista\nPon #etiquetas donde quieras: se ven como píldoras de color #ejemplo\nEscribe tareas como las dirías, por ejemplo «enviar el informe el viernes»: la IA les pone casilla y fecha\nCtrl+R empieza una reunión: cada línea lleva su hora y Esc la cierra con un resumen\nCtrl+K abre la IA: pregúntale lo que quieras sobre tus notas\nCuando ya no la necesites, borra esta nota con el tacho que aparece al pasar el mouse en la barra lateral\n";
 const RED: Color32 = Color32::from_rgb(198, 40, 40);
 
 struct OpenNote {
@@ -106,7 +109,6 @@ enum View {
     Editor,
     Home,
     Mail,
-    Today,
     Week,
     Ai,
     Tag(String),
@@ -231,6 +233,8 @@ pub struct NotesApp {
     /// Campos de Inicio: anotar y preguntar rápido.
     home_capture: String,
     home_question: String,
+    /// "Diario" (las notas de días anteriores) abierto en la barra lateral.
+    diary_open: bool,
     /// Ventana de la IA: sección abierta, lo que hizo y cuál de sus cambios se puede deshacer.
     ai_tab: ai_view::AiTab,
     activity: crate::activity::Log,
@@ -283,6 +287,48 @@ fn long_date(date: &str) -> String {
         ),
         Err(_) => date.to_string(),
     }
+}
+
+/// Nombre para mostrar de una nota: las del día ("2026-09-27") son "Hoy", "Ayer", "Mañana" o
+/// "Vie 25 sep"; las demás, su título.
+fn display_title(title: &str) -> String {
+    let Some(d) = Some(title).filter(|t| agenda::is_date(t)).and_then(|t| NaiveDate::parse_from_str(t, "%Y-%m-%d").ok()) else {
+        return title.to_string();
+    };
+    let today = Local::now().date_naive();
+    match (d - today).num_days() {
+        0 => "Hoy".into(),
+        -1 => "Ayer".into(),
+        1 => "Mañana".into(),
+        _ => {
+            let year = if d.year() != today.year() { format!(" {}", d.year()) } else { String::new() };
+            let day = DIAS_CORTOS[d.weekday().num_days_from_monday() as usize];
+            let mut s = format!("{day} {} {}{year}", d.day(), MESES[d.month0() as usize]);
+            if let Some(f) = s.get_mut(0..1) {
+                f.make_ascii_uppercase();
+            }
+            s
+        }
+    }
+}
+
+/// Título grande de una nota del día: "Hoy, domingo 27 sep"; `None` si no es una nota del día.
+fn day_heading(title: &str) -> Option<String> {
+    let d = NaiveDate::parse_from_str(title, "%Y-%m-%d").ok().filter(|_| agenda::is_date(title))?;
+    let long = format!("{} {} {}", DIAS[d.weekday().num_days_from_monday() as usize], d.day(), MESES[d.month0() as usize]);
+    Some(match display_title(title).as_str() {
+        s @ ("Hoy" | "Ayer" | "Mañana") => format!("{s}, {long}"),
+        _ => {
+            let mut s = long;
+            if let Some(f) = s.get_mut(0..1) {
+                f.make_ascii_uppercase();
+            }
+            if d.year() != Local::now().year() {
+                s += &format!(" {}", d.year());
+            }
+            s
+        }
+    })
 }
 
 fn open_external(path: &Path) {
@@ -348,7 +394,18 @@ impl NotesApp {
         let last = vault.root.join(&estado.nota);
         let path = if !estado.nota.is_empty() && last.is_file() { last } else { vault.note_path(&ws, &today()) };
         let ws = workspace_of(&path).unwrap_or(ws);
-        let analyzed = load_analyzed(&vault.root);
+        let mut analyzed = load_analyzed(&vault.root);
+        let mut vault = vault;
+        let welcome = if vault.all_notes().is_empty() {
+            let path = vault.note_path(vault::DEFAULT_WORKSPACE, "Bienvenida");
+            let _ = fs::create_dir_all(path.parent().unwrap_or(&vault.root));
+            let ok = fs::write(&path, WELCOME).is_ok();
+            analyzed.insert(ai::fnv(WELCOME)); // no hay nada que organizar
+            vault.scan();
+            ok.then_some(path)
+        } else {
+            None
+        };
         let estado_hoy = estado.hoy.clone();
         let estado_semana = estado.semana.clone();
         let estado_tabs = estado.pestanas.clone();
@@ -400,6 +457,7 @@ impl NotesApp {
             confirm_ws: None,
             home_capture: String::new(),
             home_question: String::new(),
+            diary_open: false,
             ai_tab: ai_view::AiTab::default(),
             activity: crate::activity::Log::load(&cfg_root),
             undo_entry: None,
@@ -433,6 +491,11 @@ impl NotesApp {
                     app.tabs.active = 0;
                 }
             }
+        }
+        // Primera vez: se abre la bienvenida.
+        if let Some(p) = welcome {
+            app.save_analyzed();
+            app.tabs = tabs::Tabs { list: vec![tabs::Tab::View(View::Home), tabs::Tab::Note(p)], active: 1 };
         }
         let active = app.tabs.active;
         app.activate_tab(active);
@@ -603,7 +666,7 @@ impl NotesApp {
         }
         self.note = OpenNote::load(path.clone());
         if from_view {
-            // Desde Inicio, Hoy o la IA: en una pestaña nueva.
+            // Desde Inicio o la IA: en una pestaña nueva.
             self.new_tab(tabs::Tab::Note(path));
         }
         self.view = View::Editor;
@@ -1546,7 +1609,7 @@ impl NotesApp {
             return Some(Action::FocusSearch);
         }
         if pressed(Key::H) {
-            return Some(Action::ShowTab(View::Today));
+            return Some(Action::ShowTab(View::Home));
         }
         if pressed(Key::K) {
             return Some(Action::ShowAi(ai_view::AiTab::Chat));
@@ -1571,50 +1634,32 @@ impl NotesApp {
 
     fn rail(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
-        let is_today = vault::stem(&self.note.path) == today() && self.view == View::Editor;
         ui.vertical_centered(|ui| {
-            ui.spacing_mut().item_spacing.y = 6.0;
-            if rail_button(ui, icon::HOUSE, "Inicio: un resumen de todo", self.view == View::Home, TEXT).clicked() {
+            ui.spacing_mut().item_spacing.y = 4.0;
+            if rail_item(ui, icon::HOUSE, "Inicio", "Inicio: tu día y un resumen de todo (Ctrl+H)", self.view == View::Home, TEXT).clicked() {
                 action = Some(Action::ShowTab(View::Home));
             }
-            if rail_button(ui, icon::NOTE_PENCIL, "Nueva nota (Ctrl+N)", false, TEXT).clicked() {
-                action = Some(Action::NewNote);
-            }
-            if rail_button(ui, icon::SUN, "Nota de hoy (Ctrl+D)", is_today, TEXT).clicked() {
-                action = Some(Action::Today);
-            }
-            if rail_button(ui, icon::MAGNIFYING_GLASS, "Buscar (Ctrl+F)", false, TEXT).clicked() {
-                action = Some(Action::FocusSearch);
-            }
-            ui.add_space(4.0);
-            ui.separator();
-            ui.add_space(4.0);
             let (tip, color) = match &self.meeting {
                 Some(m) => (format!("Cerrar reunión «{}» (Esc)", m.title), SUCCESS),
                 None => ("Nueva reunión (Ctrl+R)".to_string(), TEXT),
             };
-            if rail_button(ui, icon::USERS, &tip, self.meeting.is_some(), color).clicked() {
+            if rail_item(ui, icon::USERS, "Reunión", &tip, self.meeting.is_some(), color).clicked() {
                 action = Some(if self.meeting.is_some() { Action::CloseMeeting } else { Action::StartMeeting });
             }
-            if rail_button(ui, icon::TRAY, "Hoy: lo atrasado, lo de hoy y la semana (Ctrl+H)", self.view == View::Today, TEXT).clicked() {
-                action = Some(Action::ShowTab(View::Today));
-            }
-            if rail_button(ui, icon::CHECK_SQUARE, "Tareas", self.view == View::Tasks, TEXT).clicked() {
+            if rail_item(ui, icon::CHECK_SQUARE, "Tareas", "Todas las tareas", self.view == View::Tasks, TEXT).clicked() {
                 action = Some(Action::ShowTab(View::Tasks));
             }
-            if rail_button(ui, icon::CALENDAR_BLANK, "Agenda", self.view == View::Agenda, TEXT).clicked() {
+            if rail_item(ui, icon::CALENDAR_BLANK, "Agenda", "Tus calendarios, eventos y tareas con fecha", self.view == View::Agenda, TEXT).clicked() {
                 action = Some(Action::ShowTab(View::Agenda));
             }
             let checks = self.mail.open_checks().len();
             let color = if self.mail.busy() { ACCENT } else { TEXT };
-            let r = rail_button(ui, icon::ENVELOPE_SIMPLE, "Correos: compromisos y fechas de tu correo", self.view == View::Mail, color);
+            let r = rail_item(ui, icon::ENVELOPE_SIMPLE, "Correo", "Compromisos y fechas de tu correo", self.view == View::Mail, color);
             if r.clicked() {
                 action = Some(Action::ShowTab(View::Mail));
             }
             if checks > 0 {
-                let c = r.rect.right_top() + egui::vec2(-7.0, 7.0);
-                ui.painter().circle_filled(c, 7.5, SUCCESS);
-                ui.painter().text(c, Align2::CENTER_CENTER, checks.min(9).to_string(), FontId::proportional(10.5), Color32::WHITE);
+                rail_badge(ui, &r, checks, SUCCESS);
             }
             // La IA: conversar, sus preguntas y lo que hizo, en una sola ventana.
             let asks = self.pending_asks();
@@ -1625,21 +1670,19 @@ impl NotesApp {
                 Ok(_) => "IA: conversar con tus notas, sus preguntas y lo que hizo (Ctrl+K)".to_string(),
                 Err(e) => format!("IA no disponible: {e}"),
             };
-            let r = rail_button(ui, icon::SPARKLE, &tip, self.view == View::Ai, color);
+            let r = rail_item(ui, icon::SPARKLE, "IA", &tip, self.view == View::Ai, color);
             if r.clicked() {
                 let tab = if asks > 0 && self.view != View::Ai { ai_view::AiTab::Asks } else { self.ai_tab };
                 action = Some(Action::ShowAi(tab));
             }
             if asks > 0 {
-                let c = r.rect.right_top() + egui::vec2(-7.0, 7.0);
-                ui.painter().circle_filled(c, 7.5, ACCENT);
-                ui.painter().text(c, Align2::CENTER_CENTER, asks.min(9).to_string(), FontId::proportional(10.5), Color32::WHITE);
+                rail_badge(ui, &r, asks, ACCENT);
             }
             ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
-                if rail_button(ui, icon::GEAR, "Configuración (Ctrl+,)", self.settings.is_some(), TEXT).clicked() {
+                if rail_item(ui, icon::GEAR, "Ajustes", "Configuración (Ctrl+,)", self.settings.is_some(), TEXT).clicked() {
                     action = Some(Action::OpenSettings(Section::General));
                 }
-                if rail_button(ui, icon::FOLDER_OPEN, "Abrir carpeta de notas", false, TEXT).clicked() {
+                if rail_item(ui, icon::FOLDER_OPEN, "Carpeta", "Abrir la carpeta de notas", false, TEXT).clicked() {
                     action = Some(Action::OpenExternal(self.vault.root.clone()));
                 }
             });
@@ -1711,35 +1754,79 @@ impl NotesApp {
                 .iter()
                 .map(|n| (n.path.clone(), n.title.clone(), n.modified, is_meeting(&n.text)))
                 .collect();
+            let editing = self.view == View::Editor;
+            // Clic abre; Ctrl+clic o la rueda, en otra pestaña; el tacho la manda a la papelera.
+            let row_action = |ui: &Ui, r: &Response, path: &PathBuf| -> Option<Action> {
+                if row_trash_button(ui, r, "Mover a la papelera (se puede deshacer)") {
+                    return Some(Action::Trash(path.clone()));
+                }
+                let mut act = None;
+                if r.middle_clicked() || (r.clicked() && ui.input(|i| i.modifiers.command)) {
+                    act = Some(Action::OpenNewTab(path.clone()));
+                } else if r.clicked() {
+                    act = Some(Action::Open(path.clone(), None));
+                }
+                r.context_menu(|ui| {
+                    if ui.button(format!("{}  Mover a la papelera", icon::TRASH)).clicked() {
+                        act = Some(Action::Trash(path.clone()));
+                        ui.close();
+                    }
+                });
+                act
+            };
+
+            // Hoy, siempre arriba: la nota del día de este espacio (se crea al escribir).
+            let today_path = self.vault.note_path(&self.ws, &today());
+            let today_exists = notes.iter().any(|n| n.0 == today_path);
+            let r = list_row(ui, icon::SUN, "Hoy", if today_exists { "" } else { "vacía" }, today_path == self.note.path && editing);
+            let r = r.on_hover_text("La nota de hoy de este espacio: escribe aquí lo que vaya surgiendo (Ctrl+D)");
+            if today_exists {
+                if let Some(a) = row_action(ui, &r, &today_path) {
+                    action = Some(a);
+                }
+            } else if r.clicked() {
+                action = Some(Action::Today);
+            }
+
             let open_is_new = self.note.disk_mtime.is_none();
-            if open_is_new && workspace_of(&self.note.path).as_deref() == Some(self.ws.as_str()) {
-                let r = list_row(ui, icon::FILE_TEXT, &self.note.title, "nueva", self.view == View::Editor);
+            if open_is_new && self.note.path != today_path && workspace_of(&self.note.path).as_deref() == Some(self.ws.as_str()) {
+                let r = list_row(ui, icon::FILE_TEXT, &self.note.title, "nueva", editing);
                 if row_trash_button(ui, &r, "Descartar la nota nueva") {
                     action = Some(Action::Trash(self.note.path.clone()));
                 }
             }
             let live = self.meeting.as_ref().map(|m| m.path.clone());
-            for (path, title, modified, meeting) in notes {
-                let selected = path == self.note.path && self.view == View::Editor;
+            let (mut diary, others): (Vec<_>, Vec<_>) = notes.into_iter().filter(|n| n.0 != today_path).partition(|n| agenda::is_date(&n.1));
+            for (path, title, modified, meeting) in others {
                 let glyph = if meeting { icon::USERS } else { icon::FILE_TEXT };
                 let right = if live.as_ref() == Some(&path) { "en curso".to_string() } else { short_date(modified) };
-                let r = list_row(ui, glyph, &title, &right, selected);
-                if row_trash_button(ui, &r, "Mover a la papelera (se puede deshacer)") {
-                    action = Some(Action::Trash(path.clone()));
-                } else if r.middle_clicked() || (r.clicked() && ui.input(|i| i.modifiers.command)) {
-                    action = Some(Action::OpenNewTab(path.clone()));
-                } else if r.clicked() {
-                    action = Some(Action::Open(path.clone(), None));
+                let r = list_row(ui, glyph, &title, &right, path == self.note.path && editing);
+                if let Some(a) = row_action(ui, &r, &path) {
+                    action = Some(a);
                 }
-                r.context_menu(|ui| {
-                    if ui.button(format!("{}  Mover a la papelera", icon::TRASH)).clicked() {
-                        action = Some(Action::Trash(path.clone()));
-                        ui.close();
-                    }
-                });
             }
-            if self.vault.notes_in(&self.ws).is_empty() && !open_is_new {
-                ui.label(RichText::new("Escribe algo para crear la primera nota.").color(MUTED).size(12.5));
+            // Diario: las notas de días anteriores, de la más nueva a la más vieja.
+            if !diary.is_empty() {
+                diary.sort_by(|a, b| b.1.cmp(&a.1));
+                let open = self.diary_open || diary.iter().any(|n| n.0 == self.note.path);
+                let caret = if open { icon::CARET_DOWN } else { icon::CARET_RIGHT };
+                let r = list_row(ui, caret, "Diario", &diary.len().to_string(), false)
+                    .on_hover_text("Las notas de días anteriores");
+                if r.clicked() {
+                    self.diary_open = !open;
+                }
+                if open {
+                    for (path, title, _, meeting) in diary {
+                        let glyph = if meeting { icon::USERS } else { icon::CALENDAR_BLANK };
+                        let r = ui.horizontal(|ui| {
+                            ui.add_space(14.0);
+                            list_row(ui, glyph, &display_title(&title), "", path == self.note.path && editing)
+                        });
+                        if let Some(a) = row_action(ui, &r.inner, &path) {
+                            action = Some(a);
+                        }
+                    }
+                }
             }
             ui.add_space(14.0);
 
@@ -2180,7 +2267,7 @@ impl eframe::App for NotesApp {
             .frame(Frame::new().fill(BG_SIDE).inner_margin(Margin::symmetric(12, 0)))
             .show(ui, |ui| actions.extend(self.status_bar(ui)));
         egui::Panel::left("rail")
-            .exact_size(52.0)
+            .exact_size(64.0)
             .resizable(false)
             .frame(Frame::new().fill(BG_RAIL).inner_margin(Margin::symmetric(0, 12)))
             .show(ui, |ui| actions.extend(self.rail(ui)));
@@ -2208,7 +2295,6 @@ impl eframe::App for NotesApp {
                     View::Editor => self.editor(ui),
                     View::Home => actions.extend(self.home_view(ui)),
                     View::Mail => actions.extend(self.mail_view(ui)),
-                    View::Today => actions.extend(self.today_view(ui)),
                     View::Week => actions.extend(self.week_view(ui)),
                     View::Ai => actions.extend(self.ai_view(ui)),
                     View::Tag(_) => actions.extend(self.results(ui)),
@@ -2235,7 +2321,7 @@ impl eframe::App for NotesApp {
             self.save_estado();
         }
 
-        let title = format!("{} — Notas", self.note.title);
+        let title = format!("{} — Notas", display_title(&self.note.title));
         if title != self.window_title {
             ctx.send_viewport_cmd(ViewportCommand::Title(title.clone()));
             self.window_title = title;
@@ -2252,11 +2338,27 @@ impl eframe::App for NotesApp {
 
 // ---------- Widgets ----------
 
-fn rail_button(ui: &mut Ui, glyph: &str, tip: &str, selected: bool, color: Color32) -> Response {
-    let b = egui::Button::selectable(selected, RichText::new(glyph).size(20.0).color(color))
-        .min_size(egui::vec2(36.0, 36.0))
-        .corner_radius(8);
-    ui.add(b).on_hover_text(tip)
+/// Un acceso de la barra izquierda: ícono con su nombre debajo.
+fn rail_item(ui: &mut Ui, glyph: &str, label: &str, tip: &str, selected: bool, color: Color32) -> Response {
+    let (rect, r) = ui.allocate_exact_size(egui::vec2(56.0, 50.0), Sense::click());
+    let p = ui.painter();
+    if selected {
+        p.rect_filled(rect, 8, ACCENT_BG);
+    } else if r.hovered() {
+        p.rect_filled(rect, 8, HOVER);
+    }
+    let color = if selected && color == TEXT { ACCENT } else { color };
+    p.text(egui::pos2(rect.center().x, rect.top() + 18.0), Align2::CENTER_CENTER, glyph, FontId::proportional(20.0), color);
+    let label_color = if selected { ACCENT } else { MUTED };
+    p.text(egui::pos2(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_CENTER, label, FontId::proportional(11.0), label_color);
+    r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tip)
+}
+
+/// Número sobre un acceso de la barra izquierda.
+fn rail_badge(ui: &Ui, r: &Response, n: usize, color: Color32) {
+    let c = egui::pos2(r.rect.center().x + 13.0, r.rect.top() + 9.0);
+    ui.painter().circle_filled(c, 7.5, color);
+    ui.painter().text(c, Align2::CENTER_CENTER, n.min(9).to_string(), FontId::proportional(10.5), Color32::WHITE);
 }
 
 /// Encabezado de sección; devuelve true si se presionó su botón "+".
@@ -2474,6 +2576,39 @@ fn highlight_line(line: &str, size: f32) -> LayoutJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn daily_notes_show_friendly_names() {
+        let day = |n: i64| (Local::now() + chrono::Duration::days(n)).format("%Y-%m-%d").to_string();
+        assert_eq!(display_title(&day(0)), "Hoy");
+        assert_eq!(display_title(&day(-1)), "Ayer");
+        assert_eq!(display_title("Reunión CIC"), "Reunión CIC");
+        assert!(day_heading(&day(0)).unwrap().starts_with("Hoy, "));
+        assert!(day_heading("Sin título").is_none());
+        let old = day(-10);
+        let d = NaiveDate::parse_from_str(&old, "%Y-%m-%d").unwrap();
+        assert!(display_title(&old).contains(&format!("{} {}", d.day(), MESES[d.month0() as usize])), "{}", display_title(&old));
+    }
+
+    /// Una carpeta vacía recibe la nota de bienvenida, abierta, y la IA no la organiza.
+    #[test]
+    fn empty_folder_gets_a_welcome_note() {
+        let dir = std::env::temp_dir().join(format!("nodex-bienvenida-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let app = NotesApp::new(cfg.clone(), None, egui::Context::default());
+        let path = dir.join(vault::DEFAULT_WORKSPACE).join("Bienvenida.md");
+        assert_eq!(fs::read_to_string(&path).unwrap(), WELCOME);
+        assert_eq!((app.note.path.clone(), app.view.clone()), (path.clone(), View::Editor));
+        assert!(app.unorganized().is_empty());
+        // La segunda vez ya no (la carpeta tiene notas).
+        fs::remove_file(&path).unwrap();
+        fs::write(dir.join(vault::DEFAULT_WORKSPACE).join("Otra.md"), "hola").unwrap();
+        let _ = NotesApp::new(cfg, None, egui::Context::default());
+        assert!(!path.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn meeting_helpers() {

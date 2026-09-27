@@ -373,7 +373,7 @@ impl NotesApp {
         self.log_ai(crate::activity::Kind::Duplicado, &note, format!("Unió dos notas repetidas en «{}»", vault::stem(&keep_path)), details, true);
     }
 
-    /// La tarjeta de una pregunta. `note_label` = mostrar de qué nota es (en la vista Hoy).
+    /// La tarjeta de una pregunta. `note_label` = mostrar de qué nota es (en la ventana de la IA).
     pub(super) fn doubt_card(&mut self, ui: &mut Ui, d: &Doubt, number: usize, note_label: Option<String>) -> Option<Reply> {
         let mut reply = None;
         Frame::new()

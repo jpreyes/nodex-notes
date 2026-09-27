@@ -1,4 +1,4 @@
-//! Sugerencias de espacios nuevos: la tarjeta en Hoy y crear el espacio (moviendo sus notas).
+//! Sugerencias de espacios nuevos: la tarjeta en la ventana de la IA y crear el espacio (moviendo sus notas).
 
 use super::*;
 use crate::spaces::{Idea, Ref};

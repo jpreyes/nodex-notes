@@ -1,5 +1,5 @@
-//! Inicio: un resumen de todo en una página. Anotar y preguntar rápido, lo de hoy, lo que la
-//! IA tiene pendiente, las reuniones recientes con sus acuerdos abiertos, las notas recientes,
+//! Inicio: un resumen de todo en una página. Anotar y preguntar rápido, tu día (lo atrasado,
+//! hoy, mañana y la semana), lo que la IA tiene pendiente, las reuniones recientes con sus acuerdos abiertos, las notas recientes,
 //! los espacios y la semana.
 
 
@@ -80,12 +80,11 @@ impl NotesApp {
         let overdue = pending.iter().filter(|t| due(t).is_some_and(|d| d < today_s)).count();
         let mut soon: Vec<&agenda::Task> = pending.iter().copied().filter(|t| due(t).is_some_and(|d| d <= tomorrow)).collect();
         soon.sort_by(|a, b| a.due.cmp(&b.due));
-        let events: Vec<agenda::Event> = self.all_events().into_iter().filter(|e| e.date == today_s || e.date == tomorrow).collect();
         let asks = self.doubts.pending.len();
         let ideas = self.ideas.ready().count();
         let notes = self.vault.all_notes();
         let recent: Vec<(PathBuf, String, String, SystemTime)> =
-            notes.iter().take(8).map(|n| (n.path.clone(), n.title.clone(), n.workspace.clone(), n.modified)).collect();
+            notes.iter().take(8).map(|n| (n.path.clone(), display_title(&n.title), n.workspace.clone(), n.modified)).collect();
         let meetings: Vec<(PathBuf, String, SystemTime, usize)> = notes
             .iter()
             .filter(|n| is_meeting(&n.text))
@@ -114,7 +113,6 @@ impl NotesApp {
             })
             .count();
         let done_week = tasks.iter().filter(|t| t.done && t.done_on.as_deref().is_some_and(|d| d >= week_ago.as_str())).count();
-        let root = self.vault.root.clone();
         let mut capture: Option<String> = None;
         let mut question: Option<String> = None;
 
@@ -153,36 +151,34 @@ impl NotesApp {
             }
             ui.add_space(16.0);
 
+            if self.week_pending() {
+                Frame::new()
+                    .fill(BG_SIDE)
+                    .stroke(Stroke::new(1.0, theme::BORDER))
+                    .corner_radius(10)
+                    .inner_margin(Margin::symmetric(14, 10))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(RichText::new(format!("{} ¿Hacemos la revisión de la semana?", icon::CALENDAR_CHECK)).size(14.5).color(TEXT));
+                            ui.label(RichText::new("Lo hecho, lo atrasado, lo que viene y un resumen de la IA.").size(13.0).color(MUTED));
+                            if ui.button("Abrir revisión").clicked() {
+                                action = Some(Action::ShowTab(View::Week));
+                            }
+                        });
+                    });
+                ui.add_space(12.0);
+            }
+            // Tu día: lo atrasado, hoy, mañana y la semana (antes era la vista Hoy).
+            let day = card(ui, icon::SUN, "Tu día", |ui| self.day_sections(ui));
+            if day.is_some() {
+                action = day;
+            }
+
             let two = col_w > 620.0;
             let mut act_l = None;
             let mut act_r = None;
             let mut left = |ui: &mut Ui| {
-                card(ui, icon::TRAY, "Hoy", |ui| {
-                    if soon.is_empty() && events.is_empty() {
-                        ui.label(RichText::new("Nada para hoy ni mañana.").color(MUTED));
-                    }
-                    for e in &events {
-                        let when = if e.date == today_s { "hoy" } else { "mañana" };
-                        let time = e.time.clone().map(|t| format!(" {t}")).unwrap_or_default();
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(format!("{}  {}  ·  {when}{time}", icon::CALENDAR_BLANK, e.title)).size(13.5));
-                            if e.note.is_none() && e.date == today_s && ui.link(RichText::new(format!("{} Tomar notas", icon::NOTE_PENCIL)).size(12.5)).clicked() {
-                                act_l = Some(Action::StartMeetingNamed(e.title.clone()));
-                            }
-                        });
-                    }
-                    for t in soon.iter().take(6) {
-                        if let Some(a) = task_row(ui, t, &today_s, &root) {
-                            act_l = Some(a);
-                        }
-                    }
-                    if overdue > 0 {
-                        ui.label(RichText::new(format!("{} {overdue} atrasada{}", icon::WARNING_CIRCLE, if overdue == 1 { "" } else { "s" })).size(13.0).color(RED));
-                    }
-                    if ui.link(RichText::new("Ver Hoy").size(12.5)).clicked() {
-                        act_l = Some(Action::ShowTab(View::Today));
-                    }
-                });
                 card(ui, icon::USERS, "Reuniones recientes", |ui| {
                     if meetings.is_empty() {
                         ui.label(RichText::new("Todavía no hay reuniones.").color(MUTED));

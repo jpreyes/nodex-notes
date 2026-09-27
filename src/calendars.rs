@@ -1,5 +1,5 @@
 //! Calendarios agregados con su enlace ICS (Google, Outlook, iCloud…): se descargan en un hilo
-//! aparte al abrir y cada 15 minutos, y sus eventos se muestran en Agenda, Hoy, Inicio y Semana.
+//! aparte al abrir y cada 15 minutos, y sus eventos se muestran en Agenda, Inicio y Semana.
 //! Los enlaces quedan en config.toml (solo en este equipo); la última copia de cada calendario,
 //! junto a él, para verlos sin internet.
 

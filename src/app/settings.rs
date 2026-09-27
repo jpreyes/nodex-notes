@@ -547,7 +547,7 @@ impl NotesApp {
     }
 
     fn section_calendar(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {
-        heading(ui, "Calendar", "Agrega tus calendarios con su enlace y verás sus eventos en la Agenda, Hoy e Inicio.");
+        heading(ui, "Calendar", "Agrega tus calendarios con su enlace y verás sus eventos en la Agenda y en Inicio.");
         ui.add_space(12.0);
         Frame::new()
             .stroke(Stroke::new(1.0, theme::BORDER))
@@ -673,7 +673,7 @@ fn section_shortcuts(ui: &mut Ui) {
     let keys = [
         ("Ctrl + N", "Nueva nota"),
         ("Ctrl + D", "Nota de hoy"),
-        ("Ctrl + H", "Hoy: atrasado, hoy y esta semana"),
+        ("Ctrl + H", "Inicio: tu día y un resumen de todo"),
         ("Ctrl + K", "La IA: conversar con tus notas"),
         ("Ctrl + T / Ctrl + W", "Nueva pestaña / cerrar pestaña"),
         ("Ctrl + Tab", "Pestaña siguiente (con Shift, la anterior); Ctrl + 1…9 salta a una"),

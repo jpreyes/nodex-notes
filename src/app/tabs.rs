@@ -1,5 +1,5 @@
-//! Pestañas, como en un navegador: cada una muestra una nota o una vista (Inicio, Hoy,
-//! Preguntar…). La pestaña activa sigue lo que se está viendo; cambiar de pestaña vuelve
+//! Pestañas, como en un navegador: cada una muestra una nota o una vista (Inicio, IA,
+//! Tareas…). La pestaña activa sigue lo que se está viendo; cambiar de pestaña vuelve
 //! a lo que mostraba. Se recuerdan entre sesiones (estado.toml).
 
 use super::*;
@@ -33,7 +33,6 @@ pub(super) fn encode(tab: &Tab, root: &Path) -> String {
             match v {
                 View::Home => "inicio".to_string(),
                 View::Mail => "correos".into(),
-                View::Today => "hoy".into(),
                 View::Ai => "ia".into(),
                 View::Week => "semana".into(),
                 View::Tasks => "tareas".into(),
@@ -52,7 +51,7 @@ pub(super) fn decode(s: &str, root: &Path) -> Option<Tab> {
     let v = match s.strip_prefix("vista:")? {
         "inicio" => View::Home,
         "correos" => View::Mail,
-        "hoy" => View::Today,
+        "hoy" => View::Home, // la vista Hoy ahora es parte de Inicio
         "ia" | "preguntar" => View::Ai,
         "semana" => View::Week,
         "tareas" => View::Tasks,
@@ -66,7 +65,6 @@ fn view_label(v: &View) -> (&'static str, String) {
     match v {
         View::Home | View::Editor => (icon::HOUSE, "Inicio".into()),
         View::Mail => (icon::ENVELOPE_SIMPLE, "Correos".into()),
-        View::Today => (icon::TRAY, "Hoy".into()),
         View::Ai => (icon::SPARKLE, "IA".into()),
         View::Week => (icon::CALENDAR_CHECK, "Semana".into()),
         View::Tasks => (icon::CHECK_SQUARE, "Tareas".into()),
@@ -114,7 +112,7 @@ impl NotesApp {
     }
 
     /// Abre una nota como en un navegador: si ya tiene pestaña, va a esa; si se está viendo una
-    /// vista (Inicio, Hoy, IA…), la abre en una pestaña nueva; si no, la muestra en la pestaña activa.
+    /// vista (Inicio, Tareas, IA…), la abre en una pestaña nueva; si no, la muestra en la pestaña activa.
     pub(super) fn open_in_tab(&mut self, path: PathBuf, cursor: Option<usize>) {
         self.sync_tab();
         let tab = Tab::Note(path.clone());
@@ -208,7 +206,8 @@ impl NotesApp {
             Tab::Note(p) => {
                 let meeting = self.vault.get(p).is_some_and(|n| is_meeting(&n.text));
                 let title = if *p == self.note.path { self.note.title.clone() } else { vault::stem(p) };
-                (if meeting { icon::USERS } else { icon::FILE_TEXT }, title)
+                let glyph = if meeting { icon::USERS } else if agenda::is_date(&title) { icon::SUN } else { icon::FILE_TEXT };
+                (glyph, display_title(&title))
             }
             Tab::View(v) => view_label(v),
         }

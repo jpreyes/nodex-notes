@@ -355,27 +355,31 @@ impl NotesApp {
         let mut reply = None;
         let mut followup = false;
         Self::column(ui, "editor", |ui, col_w| {
-            // Título = nombre del archivo
-            let title = ui.add(
-                egui::TextEdit::singleline(&mut self.note.title)
-                    .id(Id::new("title"))
-                    .font(theme::bold(26.0))
-                    .frame(Frame::NONE)
-                    .hint_text("Sin título")
-                    .desired_width(f32::INFINITY),
-            );
-            if std::mem::take(&mut self.focus_title) {
-                title.request_focus();
-                if let Some(mut st) = TextEditState::load(&ctx, title.id) {
-                    let n = self.note.title.chars().count();
-                    st.cursor.set_char_range(Some(CCursorRange::two(CCursor::new(0), CCursor::new(n))));
-                    st.store(&ctx, title.id);
+            // Título = nombre del archivo; las notas del día muestran su fecha ("Hoy, domingo 27 sep").
+            if let Some(h) = day_heading(&vault::stem(&self.note.path)) {
+                ui.label(RichText::new(h).font(theme::bold(26.0)));
+            } else {
+                let title = ui.add(
+                    egui::TextEdit::singleline(&mut self.note.title)
+                        .id(Id::new("title"))
+                        .font(theme::bold(26.0))
+                        .frame(Frame::NONE)
+                        .hint_text("Sin título")
+                        .desired_width(f32::INFINITY),
+                );
+                if std::mem::take(&mut self.focus_title) {
+                    title.request_focus();
+                    if let Some(mut st) = TextEditState::load(&ctx, title.id) {
+                        let n = self.note.title.chars().count();
+                        st.cursor.set_char_range(Some(CCursorRange::two(CCursor::new(0), CCursor::new(n))));
+                        st.store(&ctx, title.id);
+                    }
                 }
-            }
-            if title.lost_focus() {
-                self.commit_title();
-                if ui.input(|i| i.key_pressed(Key::Enter)) {
-                    self.focus_editor = true;
+                if title.lost_focus() {
+                    self.commit_title();
+                    if ui.input(|i| i.key_pressed(Key::Enter)) {
+                        self.focus_editor = true;
+                    }
                 }
             }
 
@@ -446,7 +450,7 @@ impl NotesApp {
             let hint = if in_meeting {
                 "Escribe lo que se va diciendo; cada Enter agrega la hora…"
             } else {
-                "Empieza a escribir…  Cada línea es una nota · Tab la une a la de arriba · #etiqueta"
+                "Escribe una idea por línea…  Tab la une a la de arriba · #etiqueta · «el viernes» le pone fecha · Ctrl+R reunión"
             };
             let under = ui.painter().add(egui::Shape::Noop);
             let out = egui::TextEdit::multiline(&mut self.note.text)
