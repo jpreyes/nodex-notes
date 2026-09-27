@@ -184,7 +184,7 @@ impl NotesApp {
                 action = Some(a);
             }
             if !events.is_empty() {
-                ui.label(RichText::new("Agenda de la próxima semana").font(theme::bold(15.0)));
+                ui.label(RichText::new("Agenda de los próximos 7 días").font(theme::bold(15.0)));
                 ui.add_space(4.0);
                 for e in &events {
                     let time = e.time.clone().unwrap_or_default();

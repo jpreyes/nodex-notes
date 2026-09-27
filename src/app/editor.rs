@@ -4,6 +4,7 @@
 //! - las etiquetas son píldoras de color sin el '#';
 //! - la sangría y las listas se dibujan con viñetas; las tareas, con casilla;
 //! - "due:2026-09-26" se ve como una fecha ("mañana") y "^k3f9a" no se ve;
+//! - en las reuniones, la hora de cada línea, el inicio y el fin se ven como etiquetas;
 //! - las rutas y direcciones web se abren con un clic.
 //!
 //! En la línea donde está el cursor se ve el texto tal cual, para poder editarlo.
@@ -228,9 +229,17 @@ fn build(
                 lead: w,
             });
             pos = info.prefix;
-        } else if line.len() >= 8 && line.starts_with("- ") && agenda::is_time(&line[2..7]) {
-            // "- 15:03 " de las reuniones, en gris.
-            job.append(&line[..8], 0.0, fmt(FontId::proportional(size), MUTED));
+        } else if line.len() >= 8 && line.starts_with("- ") && agenda::is_time(&line[2..7]) && line[7..].starts_with(' ') {
+            // "- 15:03 " de las reuniones: una etiqueta con la hora (tal cual en la línea que se edita).
+            if is_active {
+                job.append(&line[..8], 0.0, fmt(FontId::proportional(size), MUTED));
+            } else {
+                let label = line[2..7].to_string();
+                let w = measure(&label) + 16.0;
+                job.append(&line[..8], w, hidden.clone());
+                let (fg, bg) = (Color32::from_rgb(95, 94, 90), Color32::from_rgb(241, 239, 232));
+                decos.push(Deco { kind: Kind::Date { label, fg, bg }, chars: ci..ci + 8, line: li, lead: w });
+            }
             pos = 8;
         }
 
@@ -879,7 +888,10 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(labels, vec![format!("{} Reunión · jue 24 sep · 10:00", icon::USERS), format!("{} Fin · 10:40", icon::FLAG_CHECKERED)]);
+        assert_eq!(
+            labels,
+            vec![format!("{} Reunión · jue 24 sep · 10:00", icon::USERS), "10:02".to_string(), format!("{} Fin · 10:40", icon::FLAG_CHECKERED)]
+        );
         let hashes = text.find("### ").unwrap();
         let sec = job.sections.iter().find(|s| s.byte_range.start.0 == hashes).unwrap();
         assert_eq!(sec.format.color, Color32::TRANSPARENT, "los ### no se ven");

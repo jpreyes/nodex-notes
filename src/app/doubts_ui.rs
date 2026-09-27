@@ -497,6 +497,7 @@ mod tests {
         assert!(e.details.iter().any(|d| d.starts_with("Tarea: Entregar el LaVet")), "{:?}", e.details);
         assert!(e.details.iter().any(|d| d == "Pregunta: ¿De qué proyecto es el LaVet?"), "{:?}", e.details);
         assert_eq!(app.undo_entry.as_deref(), Some(e.id.as_str()));
+        assert!(app.toast.is_some(), "se avisa lo que hizo la IA");
 
         // Elegir "Docencia": la línea se va a Docencia/LaVet con la fecha nueva, y su tarea también.
         let id = app.doubts.pending[0].id.clone();

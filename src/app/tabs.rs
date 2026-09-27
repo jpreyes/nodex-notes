@@ -221,6 +221,8 @@ impl NotesApp {
             Close(usize),
             CloseOthers(usize),
             New,
+            NewNote,
+            NewMeeting,
         }
         let mut todo = None;
         let n = self.tabs.list.len();
@@ -282,10 +284,22 @@ impl NotesApp {
                         }
                     });
                 }
-                let plus = egui::Button::new(RichText::new(icon::PLUS).size(15.0).color(MUTED)).frame(false).min_size(egui::vec2(28.0, 28.0));
-                if ui.add(plus).on_hover_text("Nueva pestaña (Ctrl+T)").clicked() {
-                    todo = Some(Do::New);
-                }
+                let ws = self.ws.clone();
+                let plus = ui.menu_button(RichText::new(icon::PLUS).size(15.0).color(MUTED), |ui| {
+                    if ui.button(format!("{}  Nota nueva en {ws}   Ctrl+N", icon::NOTE_PENCIL)).clicked() {
+                        todo = Some(Do::NewNote);
+                        ui.close();
+                    }
+                    if ui.button(format!("{}  Reunión nueva   Ctrl+R", icon::USERS)).clicked() {
+                        todo = Some(Do::NewMeeting);
+                        ui.close();
+                    }
+                    if ui.button(format!("{}  Inicio   Ctrl+T", icon::HOUSE)).clicked() {
+                        todo = Some(Do::New);
+                        ui.close();
+                    }
+                });
+                plus.response.on_hover_text("Nueva pestaña");
             });
         });
         match todo {
@@ -293,6 +307,17 @@ impl NotesApp {
             Some(Do::Close(i)) => self.close_tab(i),
             Some(Do::CloseOthers(i)) => self.close_others(i),
             Some(Do::New) => self.new_tab(Tab::View(View::Home)),
+            Some(Do::NewNote) => {
+                // Siempre en una pestaña nueva.
+                self.sync_tab();
+                self.save();
+                let path = self.vault.unique_path(&self.ws, "Sin título");
+                self.note = OpenNote::load(path.clone());
+                self.new_tab(Tab::Note(path));
+                self.search.clear();
+                self.focus_title = true;
+            }
+            Some(Do::NewMeeting) => self.start_meeting(),
             _ => {}
         }
     }

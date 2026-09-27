@@ -14,6 +14,18 @@ pub(super) enum AiTab {
     Log,
 }
 
+/// Cuánto se ve el aviso de un cambio de la IA (no se va mientras el mouse está encima).
+const TOAST_FOR: Duration = Duration::from_secs(15);
+
+/// Aviso de lo que la IA acaba de hacer sola (organizar una nota, anotar correos).
+pub(super) struct Toast {
+    kind: Kind,
+    entry: String,
+    text: String,
+    details: Vec<String>,
+    at: Instant,
+}
+
 fn kind_icon(k: Kind) -> (&'static str, Color32) {
     match k {
         Kind::Organizar => (icon::SPARKLE, ACCENT),
@@ -53,11 +65,91 @@ impl NotesApp {
             details,
             undone: false,
         };
+        let (text, details) = (entry.text.clone(), entry.details.clone());
         let id = self.activity.add(entry);
         if undoable {
-            self.undo_entry = Some(id);
+            self.undo_entry = Some(id.clone());
         }
         let _ = self.activity.save(&self.vault.root);
+        // Lo que hizo sola se avisa a la vista; lo que respondiste tú, no hace falta.
+        if matches!(kind, Kind::Organizar | Kind::Correo | Kind::Error) {
+            self.toast = Some(Toast { kind, entry: id, text, details, at: Instant::now() });
+        }
+    }
+
+    /// El aviso, arriba a la derecha: qué hizo, a dónde fue cada cosa, Ver y Deshacer.
+    pub(super) fn toast_ui(&mut self, ctx: &egui::Context) -> Option<Action> {
+        let t = self.toast.as_ref()?;
+        if t.at.elapsed() > TOAST_FOR {
+            self.toast = None;
+            return None;
+        }
+        let mut action = None;
+        let mut close = false;
+        let can_undo = self.undo.as_ref().is_some_and(|u| u.at.elapsed() < UNDO_WINDOW) && self.undo_entry.as_deref() == Some(t.entry.as_str());
+        let (glyph, color) = kind_icon(t.kind);
+        let title = match t.kind {
+            Kind::Correo => "La IA anotó correos en tu nota de hoy",
+            Kind::Error => "La IA no pudo terminar",
+            _ => "La IA ordenó tu nota",
+        };
+        let r = egui::Area::new(Id::new("ia-aviso"))
+            .anchor(Align2::RIGHT_TOP, egui::vec2(-18.0, 44.0))
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                Frame::new()
+                    .fill(Color32::WHITE)
+                    .stroke(Stroke::new(1.0, theme::BORDER))
+                    .corner_radius(12)
+                    .shadow(egui::epaint::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(28) })
+                    .inner_margin(Margin::symmetric(14, 12))
+                    .show(ui, |ui| {
+                        ui.set_width(340.0);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(glyph).size(16.0).color(color));
+                            ui.label(RichText::new(title).font(theme::bold(14.0)).color(TEXT));
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                let b = egui::Button::new(RichText::new(icon::X).size(13.0).color(MUTED)).frame(false);
+                                if ui.add(b).on_hover_text("Cerrar").clicked() {
+                                    close = true;
+                                }
+                            });
+                        });
+                        ui.label(RichText::new(&t.text).size(13.0).color(TEXT));
+                        for d in t.details.iter().take(4) {
+                            ui.label(RichText::new(format!("·  {d}")).size(12.5).color(MUTED));
+                        }
+                        if t.details.len() > 4 {
+                            ui.label(RichText::new(format!("·  y {} más", t.details.len() - 4)).size(12.5).color(MUTED));
+                        }
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            if ui.link(RichText::new("Ver lo que hizo").size(13.0)).clicked() {
+                                action = Some(Action::ShowAi(AiTab::Log));
+                                close = true;
+                            }
+                            if can_undo {
+                                ui.add_space(8.0);
+                                let b = egui::Button::new(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(13.0));
+                                if ui.add(b).clicked() {
+                                    action = Some(Action::Undo);
+                                    close = true;
+                                }
+                            }
+                        });
+                    });
+            });
+        // Mientras se lee (mouse encima), no se va.
+        if r.response.contains_pointer() {
+            if let Some(t) = &mut self.toast {
+                t.at = Instant::now();
+            }
+        }
+        if close {
+            self.toast = None;
+        }
+        ctx.request_repaint_after(Duration::from_millis(500));
+        action
     }
 
     /// Notas que la IA todavía no organizó.

@@ -241,6 +241,8 @@ pub struct NotesApp {
     undo_entry: Option<String>,
     /// Último error de la IA al organizar (se muestra en su ventana).
     ai_error: Option<String>,
+    /// Aviso de lo que la IA acaba de hacer sola.
+    toast: Option<ai_view::Toast>,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -462,6 +464,7 @@ impl NotesApp {
             activity: crate::activity::Log::load(&cfg_root),
             undo_entry: None,
             ai_error: None,
+            toast: None,
         };
         // Pestañas de la sesión anterior (o la nota que estaba abierta).
         let decoded: Vec<tabs::Tab> = estado_tabs.iter().filter_map(|t| tabs::decode(t, &app.vault.root)).collect();
@@ -514,6 +517,12 @@ impl NotesApp {
                 _ => ai_view::AiTab::Chat,
             };
             app.view = View::Ai;
+        }
+        #[cfg(debug_assertions)]
+        if std::env::var("NODEX_DEMO_TOAST").is_ok() {
+            let details = vec!["→ Consorcio/Trincheras".to_string(), "Etiquetas: planos".into(), "Tarea: Enviar planos corregidos · martes 29 sep".into()];
+            let text = "Organizó «2026-09-27»: 1 etiqueta · 1 nota → Consorcio/Trincheras · 1 tarea".to_string();
+            app.log_ai(crate::activity::Kind::Organizar, "Consorcio/Trincheras", text, details, false);
         }
         #[cfg(debug_assertions)]
         if std::env::var("NODEX_DEMO_WEEK").is_ok() {
@@ -1382,6 +1391,7 @@ impl NotesApp {
 
     fn undo_ai(&mut self) {
         let Some(u) = self.undo.take() else { return };
+        self.toast = None;
         if let Some(id) = self.undo_entry.take() {
             if self.activity.mark_undone(&id) {
                 let _ = self.activity.save(&self.vault.root);
@@ -1745,7 +1755,7 @@ impl NotesApp {
             ui.add_space(14.0);
 
             // Notas del espacio (las reuniones con su ícono)
-            if section(ui, "Notas", Some("Nueva nota (Ctrl+N)")) {
+            if section(ui, "Notas", Some(&format!("Nueva nota en {} (Ctrl+N)", self.ws))) {
                 action = Some(Action::NewNote);
             }
             let notes: Vec<(PathBuf, String, SystemTime, bool)> = self
@@ -2303,6 +2313,7 @@ impl eframe::App for NotesApp {
                 }
             }
         });
+        actions.extend(self.toast_ui(&ctx));
 
         for a in actions {
             self.apply(a);
