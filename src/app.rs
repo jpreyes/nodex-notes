@@ -531,6 +531,10 @@ impl NotesApp {
             app.view = View::Ai;
         }
         #[cfg(debug_assertions)]
+        if std::env::var("NODEX_DEMO_SETTINGS").is_ok() {
+            app.open_settings(Section::Tasks);
+        }
+        #[cfg(debug_assertions)]
         if std::env::var("NODEX_DEMO_TOAST").is_ok() {
             let details = vec!["→ Consorcio/Trincheras".to_string(), "Etiquetas: planos".into(), "Tarea: Enviar planos corregidos · martes 29 sep".into()];
             let text = "Organizó «2026-09-27»: 1 etiqueta · 1 nota → Consorcio/Trincheras · 1 tarea".to_string();

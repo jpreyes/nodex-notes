@@ -133,6 +133,9 @@ impl NotesApp {
                 if ui.link(RichText::new("Conectar").size(13.0)).clicked() {
                     action = Some(Action::TodoConnect);
                 }
+                if ui.link(RichText::new("Más detalles").size(13.0)).clicked() {
+                    action = Some(Action::OpenSettings(Section::Tasks));
+                }
                 if let Some(e) = &t.last_error {
                     ui.label(RichText::new(e).size(13.0).color(RED));
                 }

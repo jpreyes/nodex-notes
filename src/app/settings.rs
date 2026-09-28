@@ -9,15 +9,17 @@ pub(super) enum Section {
     General,
     Ai,
     Calendar,
+    Tasks,
     Mail,
     Shortcuts,
     About,
 }
 
-const SECTIONS: [(Section, &str, &str); 6] = [
+const SECTIONS: [(Section, &str, &str); 7] = [
     (Section::General, icon::FOLDER_SIMPLE, "General"),
     (Section::Ai, icon::SPARKLE, "Inteligencia artificial"),
     (Section::Calendar, icon::CALENDAR_BLANK, "Calendar"),
+    (Section::Tasks, icon::CHECK_SQUARE, "Tareas"),
     (Section::Mail, icon::ENVELOPE_SIMPLE, "Correo"),
     (Section::Shortcuts, icon::KEYBOARD, "Atajos"),
     (Section::About, icon::INFO, "Acerca de"),
@@ -262,6 +264,7 @@ impl NotesApp {
                                 Section::General => self.section_general(ui, &mut changes),
                                 Section::Ai => self.section_ai(ui, &mut s, &mut changes),
                                 Section::Calendar => self.section_calendar(ui, &mut s, &mut changes),
+                                Section::Tasks => self.section_tasks(ui, &mut changes),
                                 Section::Mail => self.section_mail(ui, &mut s, &mut changes),
                                 Section::Shortcuts => section_shortcuts(ui),
                                 Section::About => section_about(ui, &mut s, &mut changes),
@@ -541,6 +544,67 @@ impl NotesApp {
         ui.add_space(4.0);
         ui.label(
             RichText::new("Privacidad: la contraseña de aplicación queda en config.toml, solo en este equipo; los correos, en correos.json junto a él. Para entenderlos, su texto se envía al modelo de IA configurado.")
+                .size(12.5)
+                .color(MUTED),
+        );
+    }
+
+    fn section_tasks(&self, ui: &mut Ui, changes: &mut Vec<Change>) {
+        heading(ui, "Tareas", "Las tareas que la IA encuentra en tus notas, también en otras apps.");
+        ui.add_space(12.0);
+        Frame::new().stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(10).inner_margin(Margin::same(16)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(RichText::new(format!("{}  Microsoft To Do", icon::CHECK_SQUARE_OFFSET)).font(theme::bold(15.0)));
+            ui.label(
+                RichText::new("Tus tareas quedan en una lista «Notas» de To Do, en los dos sentidos: lo que marcas hecho o cambias de fecha en un lado pasa al otro, y lo que agregas a esa lista desde To Do (por ejemplo, desde el celular) llega a Tareas.")
+                    .size(12.5)
+                    .color(MUTED),
+            );
+            ui.add_space(8.0);
+            let Some(t) = &self.todo else {
+                chip(ui, "No se pudo iniciar la conexión con To Do", false);
+                return;
+            };
+            if t.connecting {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new("Esperando tu permiso en el navegador…").color(ACCENT));
+                });
+            } else if !t.connected {
+                if ui.button(format!("{}  Conectar Microsoft To Do", icon::LINK)).clicked() {
+                    changes.push(Change::Do(Action::TodoConnect));
+                }
+                ui.label(RichText::new("Se abre el navegador: entra con tu cuenta Microsoft (personal, o del trabajo si tu organización lo permite) y acepta el permiso.").size(12.5).color(MUTED));
+                if let Some(e) = &t.last_error {
+                    chip(ui, e, false);
+                }
+            } else {
+                let status = if t.busy {
+                    "Conectado · sincronizando…".to_string()
+                } else if let Some(s) = t.last_sync {
+                    format!("Conectado · sincronizado a las {}", s.format("%H:%M"))
+                } else {
+                    "Conectado".to_string()
+                };
+                match &t.last_error {
+                    Some(e) => chip(ui, e, false),
+                    None => chip(ui, &status, true),
+                }
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.button(format!("{}  Sincronizar ahora", icon::ARROWS_CLOCKWISE)).clicked() {
+                        changes.push(Change::Do(Action::TodoSync));
+                    }
+                    if ui.button("Desconectar").clicked() {
+                        changes.push(Change::Do(Action::TodoDisconnect));
+                    }
+                });
+                ui.label(RichText::new("Se sincroniza al cambiar algo y cada 2 minutos.").size(12.5).color(MUTED));
+            }
+        });
+        ui.add_space(10.0);
+        ui.label(
+            RichText::new("Privacidad: el permiso queda solo en este equipo (microsoft_token.json, junto a config.toml). La app solo usa tus tareas de To Do; no lee tu correo ni tus archivos. También puedes conectarlo desde Tareas.")
                 .size(12.5)
                 .color(MUTED),
         );
