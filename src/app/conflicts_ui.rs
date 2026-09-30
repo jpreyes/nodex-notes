@@ -14,6 +14,8 @@ const SETTLE: Duration = Duration::from_secs(45);
 const ORPHAN: Duration = Duration::from_secs(600);
 /// Cada cuánto se buscan copias aunque no haya cambiado ninguna nota (las de tareas.txt).
 const LOOK_EVERY: Duration = Duration::from_secs(30);
+/// Datos internos (`.nodex/`) cuyas copias en conflicto se saben juntar.
+const INTERNAL: [&str; 6] = ["dudas.json", "espacios.json", "actividad.json", "analizadas.txt", "todo.json", "google.json"];
 
 impl NotesApp {
     /// Busca copias en conflicto y junta las que ya llevan un rato. Se llama cada segundo;
@@ -38,6 +40,13 @@ impl NotesApp {
                     found.push(e.path());
                 }
             }
+            // Los datos internos (.nodex/) también.
+            for e in fs::read_dir(self.vault.root.join(".nodex")).into_iter().flatten().flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if conflicts::original_of(&name).is_some_and(|o| INTERNAL.contains(&o.as_str())) {
+                    found.push(e.path());
+                }
+            }
             self.conflict_seen.retain(|p, _| found.contains(p));
             for p in found {
                 self.conflict_seen.entry(p).or_insert_with(Instant::now);
@@ -57,6 +66,9 @@ impl NotesApp {
         let Some(name) = copy.file_name().map(|f| f.to_string_lossy().into_owned()) else { return true };
         let Some(original) = conflicts::original_of(&name) else { return true };
         let main = copy.with_file_name(&original);
+        if copy.parent() == Some(self.vault.root.join(".nodex").as_path()) {
+            return self.merge_internal_copy(copy, &main, &original);
+        }
         let is_note = copy.parent() != Some(self.vault.root.as_path());
         if main == self.note.path || copy == self.note.path {
             self.save();
@@ -122,9 +134,139 @@ impl NotesApp {
     }
 }
 
+impl NotesApp {
+    /// Copia en conflicto de un archivo de `.nodex/`: se suma lo que falta y la copia va a la papelera.
+    fn merge_internal_copy(&mut self, copy: &Path, main: &Path, original: &str) -> bool {
+        let Ok(text) = vault::read_text(copy) else { return true };
+        let root = self.vault.root.clone();
+        match original {
+            "dudas.json" => {
+                if let Ok(other) = serde_json::from_str::<doubts::Store>(&text) {
+                    self.doubts.absorb(&other);
+                    let _ = self.doubts.save(&root);
+                }
+            }
+            "espacios.json" => {
+                if let Ok(other) = serde_json::from_str::<crate::spaces::Ideas>(&text) {
+                    self.ideas.absorb(&other);
+                    let _ = self.ideas.save(&root);
+                }
+            }
+            "actividad.json" => {
+                if let Ok(other) = serde_json::from_str::<crate::activity::Log>(&text) {
+                    self.activity.absorb(&other);
+                    let _ = self.activity.save(&root);
+                }
+            }
+            "analizadas.txt" => {
+                self.analyzed.extend(text.lines().filter_map(|l| u64::from_str_radix(l.trim(), 16).ok()));
+                self.save_analyzed();
+            }
+            // Qué evento de Google o tarea de To Do corresponde a cada cosa: se suman las parejas que falten.
+            _ => {
+                let (Ok(mut a), Ok(b)) = (
+                    serde_json::from_str::<serde_json::Value>(&vault::read_text(main).unwrap_or_else(|_| "{}".into())),
+                    serde_json::from_str::<serde_json::Value>(&text),
+                ) else {
+                    return true;
+                };
+                if let (Some(a), Some(b)) = (a.as_object_mut(), b.as_object()) {
+                    for (k, vb) in b {
+                        match (a.get_mut(k).and_then(|v| v.as_object_mut()), vb.as_object()) {
+                            (Some(ma), Some(mb)) => {
+                                for (kk, vv) in mb {
+                                    ma.entry(kk.clone()).or_insert_with(|| vv.clone());
+                                }
+                            }
+                            _ => {
+                                a.entry(k.clone()).or_insert_with(|| vb.clone());
+                            }
+                        }
+                    }
+                }
+                let _ = fs::write(main, serde_json::to_string_pretty(&a).unwrap_or_default());
+            }
+        }
+        self.vault.trash(copy).is_ok()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Dos equipos con la app abierta sobre la misma carpeta: lo que guarda uno no borra lo
+    /// del otro, y lo que uno quita no reaparece.
+    #[test]
+    fn two_devices_do_not_overwrite_shared_data() {
+        let dir = std::env::temp_dir().join(format!("nodex-dos-equipos-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("General")).unwrap();
+        fs::write(dir.join("General").join("A.md"), "Entregar el LaVet\nLlamar a Pedro\n").unwrap();
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut pc1 = NotesApp::new(cfg.clone(), None, egui::Context::default());
+        let mut pc2 = NotesApp::new(cfg, None, egui::Context::default());
+        let doubt = |id: &str, unit: &str| doubts::Doubt { id: id.into(), note: "General/A".into(), unit: unit.into(), question: "¿?".into(), ..Default::default() };
+
+        // Cada equipo agrega lo suyo; el segundo en guardar no borra lo del primero.
+        pc1.doubts.pending.push(doubt("d1", "Entregar el LaVet"));
+        pc1.doubts.save(&dir).unwrap();
+        pc1.log_ai(Kind::Organizar, "General/A", "en el PC 1".into(), vec![], false);
+        pc1.analyzed.insert(1);
+        pc1.save_analyzed();
+        pc2.doubts.pending.push(doubt("d2", "Llamar a Pedro"));
+        pc2.doubts.save(&dir).unwrap();
+        pc2.log_ai(Kind::Organizar, "General/A", "en el PC 2".into(), vec![], false);
+        pc2.analyzed.insert(2);
+        pc2.save_analyzed();
+        let ids = |s: &doubts::Store| {
+            let mut v: Vec<String> = s.pending.iter().map(|d| d.id.clone()).collect();
+            v.sort();
+            v
+        };
+        let on_disk = doubts::Store::load(&dir);
+        assert_eq!(ids(&on_disk), ["d1", "d2"]);
+        assert_eq!(crate::activity::Log::load(&dir).entries.len(), 2);
+        assert_eq!(load_analyzed(&dir), HashSet::from([1, 2]));
+
+        // El PC 1 se entera de lo que hizo el PC 2.
+        pc1.sync_stores();
+        assert_eq!(pc1.doubts.pending.len(), 2);
+        assert_eq!(pc1.activity.entries.len(), 2);
+        assert!(pc1.analyzed.contains(&2));
+
+        // El PC 1 responde una pregunta y manda una nota a analizarse de nuevo: en el PC 2
+        // desaparecen, y cuando el PC 2 guarda algo suyo no reaparecen.
+        pc1.doubts.resolve("d1");
+        pc1.doubts.save(&dir).unwrap();
+        pc1.analyzed.remove(&1);
+        pc1.save_analyzed();
+        pc2.sync_stores();
+        assert_eq!(ids(&pc2.doubts), ["d2"]);
+        assert!(!pc2.analyzed.contains(&1));
+        pc2.doubts.pending.push(doubt("d3", "Otra"));
+        pc2.doubts.save(&dir).unwrap();
+        let on_disk = doubts::Store::load(&dir);
+        assert_eq!(ids(&on_disk), ["d2", "d3"]);
+        assert!(on_disk.is_resolved("Entregar el LaVet"));
+
+        // Un archivo a medio escribir (no se entiende) no borra nada de lo que hay en memoria.
+        fs::write(dir.join(".nodex").join("dudas.json"), "{ \"pending\": [").unwrap();
+        pc2.sync_stores();
+        assert_eq!(pc2.doubts.pending.len(), 2);
+
+        // Una copia en conflicto de los datos internos se suma y va a la papelera.
+        pc2.doubts.save(&dir).unwrap();
+        let copy = dir.join(".nodex").join("dudas (copia en conflicto de JP 2026-09-30).json");
+        let mut other = doubts::Store::default();
+        other.pending.push(doubt("d9", "De la copia"));
+        fs::write(&copy, serde_json::to_string(&other).unwrap()).unwrap();
+        pc2.resolve_conflicts(true);
+        assert!(!copy.exists());
+        assert!(pc2.doubts.pending.iter().any(|d| d.id == "d9"));
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     /// Las copias en conflicto de Dropbox se juntan con su original sin perder líneas, la copia
     /// va a la papelera y se puede deshacer.

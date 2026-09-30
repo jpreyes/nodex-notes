@@ -60,20 +60,65 @@ pub struct Store {
     pub resolved: Vec<u64>,
     /// Pares que la persona dijo que no son duplicados (ver `dups::pair`).
     pub not_dups: Vec<u64>,
+    /// Cómo estaba el archivo la última vez que este equipo lo leyó o escribió (ver `shared`).
+    #[serde(skip)]
+    pub(crate) base: Option<Box<Store>>,
 }
 
 impl Store {
-    pub fn load(root: &Path) -> Store {
-        crate::vault::read_text(&root.join(".nodex").join(STORE_FILE))
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default()
+    /// Lo que hay en disco; `None` si el archivo no existe o no se entiende (p. ej. a medio
+    /// escribir): en ese caso no se saca ninguna conclusión.
+    fn read(root: &Path) -> Option<Store> {
+        serde_json::from_str(&crate::vault::read_text(&root.join(".nodex").join(STORE_FILE)).ok()?).ok()
     }
 
-    pub fn save(&self, root: &Path) -> io::Result<()> {
+    fn remember(&mut self) {
+        self.base = Some(Box::new(Store { pending: self.pending.clone(), resolved: self.resolved.clone(), not_dups: self.not_dups.clone(), base: None }));
+    }
+
+    pub fn load(root: &Path) -> Store {
+        let mut s = Self::read(root).unwrap_or_default();
+        s.remember();
+        s
+    }
+
+    /// Trae lo que otro equipo cambió en disco desde la última vez (sin escribir nada).
+    /// Devuelve si cambió algo aquí.
+    pub fn sync(&mut self, root: &Path) -> bool {
+        let Some(disk) = Self::read(root) else { return false };
+        let base = self.base.take().map(|b| *b).unwrap_or_default();
+        let mut changed = crate::shared::merge_list(&mut self.pending, &base.pending, &disk.pending, |d| d.id.clone());
+        changed |= crate::shared::merge_list(&mut self.resolved, &base.resolved, &disk.resolved, |h| *h);
+        changed |= crate::shared::merge_list(&mut self.not_dups, &base.not_dups, &disk.not_dups, |h| *h);
+        changed |= self.drop_resolved();
+        self.base = Some(Box::new(disk));
+        changed
+    }
+
+    /// Una pregunta que ya se respondió (aquí o en otro equipo) no queda pendiente.
+    fn drop_resolved(&mut self) -> bool {
+        let before = self.pending.len();
+        let resolved = &self.resolved;
+        self.pending.retain(|d| !resolved.contains(&crate::ai::fnv(&d.unit)));
+        self.pending.len() != before
+    }
+
+    /// Guarda, juntando antes con lo que otro equipo haya escrito.
+    pub fn save(&mut self, root: &Path) -> io::Result<()> {
+        self.sync(root);
         let dir = root.join(".nodex");
         fs::create_dir_all(&dir)?;
-        fs::write(dir.join(STORE_FILE), serde_json::to_string_pretty(self).unwrap_or_default())
+        fs::write(dir.join(STORE_FILE), serde_json::to_string_pretty(self).unwrap_or_default())?;
+        self.remember();
+        Ok(())
+    }
+
+    /// Suma lo de una copia en conflicto (sin base: solo se agrega lo que falta).
+    pub fn absorb(&mut self, other: &Store) {
+        crate::shared::absorb_list(&mut self.pending, &other.pending, |d| d.id.clone());
+        crate::shared::absorb_list(&mut self.resolved, &other.resolved, |h| *h);
+        crate::shared::absorb_list(&mut self.not_dups, &other.not_dups, |h| *h);
+        self.drop_resolved();
     }
 
     pub fn is_resolved(&self, unit: &str) -> bool {
@@ -229,7 +274,7 @@ mod tests {
         learn(&dir, "LaVet es de Docencia").unwrap();
         learn(&dir, "lavet es de docencia").unwrap();
         assert_eq!(learned(&dir), vec!["LaVet es de Docencia"]);
-        let s = Store { pending: d, ..Store::default() };
+        let mut s = Store { pending: d, ..Store::default() };
         s.save(&dir).unwrap();
         let mut s = Store::load(&dir);
         assert_eq!(s.resolve("d1").unwrap().unit, "Debo entregar el LaVet");

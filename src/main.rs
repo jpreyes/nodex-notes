@@ -19,6 +19,7 @@ mod mail;
 mod mail_ai;
 mod merge;
 mod organize;
+mod shared;
 mod spaces;
 mod tags;
 mod todo;

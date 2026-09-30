@@ -352,6 +352,10 @@ pub struct NotesApp {
     ai_auto: bool,
     /// Hashes de contenidos ya analizados (se guarda en .nodex/analizadas.txt).
     analyzed: HashSet<u64>,
+    /// Cómo estaba ese archivo la última vez que se leyó o escribió, y cuándo se revisaron
+    /// los datos internos por cambios de otro equipo.
+    analyzed_base: HashSet<u64>,
+    stores_at: Instant,
     /// Notas escritas en esta sesión, candidatas al análisis automático.
     touched: HashSet<PathBuf>,
     /// Cola del botón Organizar.
@@ -610,7 +614,9 @@ impl NotesApp {
             meeting: None,
             ai,
             ai_auto,
+            analyzed_base: analyzed.clone(),
             analyzed,
+            stores_at: Instant::now(),
             touched: HashSet::new(),
             backlog: VecDeque::new(),
             backlog_total: 0,
@@ -775,6 +781,7 @@ impl NotesApp {
         self.activity = crate::activity::Log::load(&self.vault.root);
         self.undo_entry = None;
         self.analyzed = load_analyzed(&self.vault.root);
+        self.analyzed_base = self.analyzed.clone();
         self.touched.clear();
         self.backlog.clear();
         self.in_flight = None;
@@ -863,12 +870,41 @@ impl NotesApp {
         }
     }
 
-    fn save_analyzed(&self) {
+    /// Trae las notas que otro equipo marcó (o desmarcó) como analizadas desde la última vez.
+    fn sync_analyzed(&mut self) {
+        let file = self.vault.root.join(".nodex").join("analizadas.txt");
+        if !file.is_file() {
+            return;
+        }
+        let disk = load_analyzed(&self.vault.root);
+        for h in self.analyzed_base.difference(&disk) {
+            self.analyzed.remove(h); // el otro la quitó (para volver a analizarla)
+        }
+        for h in disk.difference(&self.analyzed_base) {
+            self.analyzed.insert(*h); // el otro la analizó
+        }
+        self.analyzed_base = disk;
+    }
+
+    fn save_analyzed(&mut self) {
+        self.sync_analyzed();
         let dir = self.vault.root.join(".nodex");
         let _ = fs::create_dir_all(&dir);
         let mut lines: Vec<String> = self.analyzed.iter().map(|h| format!("{h:016x}")).collect();
         lines.sort();
-        let _ = fs::write(dir.join("analizadas.txt"), lines.join("\n") + "\n");
+        if fs::write(dir.join("analizadas.txt"), lines.join("\n") + "\n").is_ok() {
+            self.analyzed_base = self.analyzed.clone();
+        }
+    }
+
+    /// Los datos internos que comparten los equipos (`.nodex/`): trae lo que cambió otro.
+    fn sync_stores(&mut self) {
+        self.stores_at = Instant::now();
+        let root = self.vault.root.clone();
+        self.doubts.sync(&root);
+        self.ideas.sync(&root);
+        self.activity.sync(&root);
+        self.sync_analyzed();
     }
 
     fn open(&mut self, path: PathBuf, cursor: Option<usize>) {
@@ -1057,6 +1093,10 @@ impl NotesApp {
     fn poll(&mut self) {
         self.vault.refresh();
         self.vault.maybe_save_cache();
+        // Otro equipo cambió los datos internos (o pasó un rato): se traen sus cambios.
+        if self.vault.take_internal_changed() || self.stores_at.elapsed() >= Duration::from_secs(60) {
+            self.sync_stores();
+        }
         self.resolve_conflicts(false);
         let m = vault::modified(&self.note.path);
         if m.is_none() || m == self.note.disk_mtime {

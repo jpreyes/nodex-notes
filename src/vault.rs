@@ -195,6 +195,8 @@ pub struct Vault {
     pub full_scans: usize,
     /// Sube cada vez que cambia alguna nota (para saber si hay que volver a buscar).
     pub generation: u64,
+    /// Cambió algo en `.nodex/` (datos que comparten los equipos) desde la última consulta.
+    internal_changed: bool,
     pub reads: usize,
     /// La copia local cambió desde que se guardó, y cuándo se guardó por última vez.
     cache_dirty: bool,
@@ -241,6 +243,7 @@ impl Vault {
             last_full: Instant::now(),
             full_scans: 0,
             generation: 0,
+            internal_changed: false,
             reads: 0,
             cache_dirty: false,
             cache_saved: Instant::now(),
@@ -320,6 +323,11 @@ impl Vault {
         }
     }
 
+    /// ¿Cambió algo en `.nodex/` desde la última vez que se preguntó?
+    pub fn take_internal_changed(&mut self) -> bool {
+        std::mem::take(&mut self.internal_changed)
+    }
+
     /// ¿Llegan los avisos del sistema?
     pub fn watching(&self) -> bool {
         self.watcher.is_some()
@@ -360,6 +368,7 @@ impl Vault {
             let parts: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
             // .nodex, .papelera y otros ocultos no son notas.
             if parts.first().is_none_or(|c| c.starts_with('.')) {
+                self.internal_changed |= parts.first().is_some_and(|c| c == ".nodex");
                 continue;
             }
             match parts.len() {

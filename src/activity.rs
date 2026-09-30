@@ -46,20 +46,59 @@ pub struct Entry {
 #[serde(default)]
 pub struct Log {
     pub entries: Vec<Entry>,
+    /// Cómo estaba el archivo la última vez que este equipo lo leyó o escribió (ver `shared`).
+    #[serde(skip)]
+    base: Vec<Entry>,
 }
 
 impl Log {
-    pub fn load(root: &Path) -> Log {
-        crate::vault::read_text(&root.join(".nodex").join(FILE))
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default()
+    /// Lo que hay en disco; `None` si no existe o no se entiende.
+    fn read(root: &Path) -> Option<Log> {
+        serde_json::from_str(&crate::vault::read_text(&root.join(".nodex").join(FILE)).ok()?).ok()
     }
 
-    pub fn save(&self, root: &Path) -> io::Result<()> {
+    pub fn load(root: &Path) -> Log {
+        let mut log = Self::read(root).unwrap_or_default();
+        log.base = log.entries.clone();
+        log
+    }
+
+    /// Trae lo que otro equipo anotó desde la última vez. Devuelve si cambió algo aquí.
+    pub fn sync(&mut self, root: &Path) -> bool {
+        let Some(disk) = Self::read(root) else { return false };
+        let base = std::mem::take(&mut self.base);
+        let changed = crate::shared::merge_list(&mut self.entries, &base, &disk.entries, |e| e.id.clone());
+        if changed {
+            self.order();
+        }
+        self.base = disk.entries;
+        changed
+    }
+
+    /// Por fecha y hora, y solo las últimas `MAX`.
+    fn order(&mut self) {
+        self.entries.sort_by(|a, b| a.at.cmp(&b.at));
+        if self.entries.len() > MAX {
+            let extra = self.entries.len() - MAX;
+            self.entries.drain(..extra);
+        }
+    }
+
+    /// Guarda, juntando antes con lo que otro equipo haya anotado.
+    pub fn save(&mut self, root: &Path) -> io::Result<()> {
+        self.sync(root);
         let dir = root.join(".nodex");
         fs::create_dir_all(&dir)?;
-        fs::write(dir.join(FILE), serde_json::to_string_pretty(self).unwrap_or_default())
+        fs::write(dir.join(FILE), serde_json::to_string_pretty(self).unwrap_or_default())?;
+        self.base = self.entries.clone();
+        Ok(())
+    }
+
+    /// Suma lo de una copia en conflicto (solo se agrega lo que falta).
+    pub fn absorb(&mut self, other: &Log) {
+        if crate::shared::absorb_list(&mut self.entries, &other.entries, |e| e.id.clone()) {
+            self.order();
+        }
     }
 
     /// Agrega una entrada (la más nueva al final) y devuelve su id.

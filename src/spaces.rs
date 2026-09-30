@@ -41,6 +41,9 @@ pub struct Ideas {
     pub ideas: Vec<Idea>,
     /// Nombres descartados ("No"): no se vuelven a sugerir.
     pub rejected: Vec<String>,
+    /// Cómo estaba el archivo la última vez que este equipo lo leyó o escribió (ver `shared`).
+    #[serde(skip)]
+    base: Option<Box<Ideas>>,
 }
 
 fn key(name: &str) -> String {
@@ -48,14 +51,77 @@ fn key(name: &str) -> String {
 }
 
 impl Ideas {
-    pub fn load(root: &Path) -> Ideas {
-        vault::read_text(&root.join(".nodex").join(FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    /// Lo que hay en disco; `None` si no existe o no se entiende.
+    fn read(root: &Path) -> Option<Ideas> {
+        serde_json::from_str(&vault::read_text(&root.join(".nodex").join(FILE)).ok()?).ok()
     }
 
-    pub fn save(&self, root: &Path) -> io::Result<()> {
+    fn remember(&mut self) {
+        self.base = Some(Box::new(Ideas { ideas: self.ideas.clone(), rejected: self.rejected.clone(), base: None }));
+    }
+
+    pub fn load(root: &Path) -> Ideas {
+        let mut s = Self::read(root).unwrap_or_default();
+        s.remember();
+        s
+    }
+
+    /// Trae lo que otro equipo cambió en disco desde la última vez. Devuelve si cambió algo aquí.
+    pub fn sync(&mut self, root: &Path) -> bool {
+        let Some(disk) = Self::read(root) else { return false };
+        let base = self.base.take().map(|b| *b).unwrap_or_default();
+        let mut changed = crate::shared::merge_list(&mut self.ideas, &base.ideas, &disk.ideas, |i| key(&i.name));
+        // El mismo tema creció en los dos equipos: se suman las notas que agregó el otro.
+        for d in &disk.ideas {
+            let Some(m) = self.ideas.iter_mut().find(|i| key(&i.name) == key(&d.name)) else { continue };
+            let old = base.ideas.iter().find(|i| key(&i.name) == key(&d.name));
+            for r in &d.refs {
+                if !old.is_some_and(|o| o.refs.contains(r)) && !m.refs.contains(r) {
+                    m.refs.push(r.clone());
+                    changed = true;
+                }
+            }
+            m.snoozed_at = m.snoozed_at.max(d.snoozed_at);
+        }
+        changed |= crate::shared::merge_list(&mut self.rejected, &base.rejected, &disk.rejected, |n| key(n));
+        changed |= self.drop_rejected();
+        self.base = Some(Box::new(disk));
+        changed
+    }
+
+    fn drop_rejected(&mut self) -> bool {
+        let before = self.ideas.len();
+        let rejected = &self.rejected;
+        self.ideas.retain(|i| !rejected.iter().any(|x| key(x) == key(&i.name)));
+        self.ideas.len() != before
+    }
+
+    /// Guarda, juntando antes con lo que otro equipo haya escrito.
+    pub fn save(&mut self, root: &Path) -> io::Result<()> {
+        self.sync(root);
         let dir = root.join(".nodex");
         fs::create_dir_all(&dir)?;
-        fs::write(dir.join(FILE), serde_json::to_string_pretty(self).unwrap_or_default())
+        fs::write(dir.join(FILE), serde_json::to_string_pretty(self).unwrap_or_default())?;
+        self.remember();
+        Ok(())
+    }
+
+    /// Suma lo de una copia en conflicto (solo se agrega lo que falta).
+    pub fn absorb(&mut self, other: &Ideas) {
+        for o in &other.ideas {
+            match self.ideas.iter_mut().find(|i| key(&i.name) == key(&o.name)) {
+                Some(m) => {
+                    for r in &o.refs {
+                        if !m.refs.contains(r) {
+                            m.refs.push(r.clone());
+                        }
+                    }
+                }
+                None => self.ideas.push(o.clone()),
+            }
+        }
+        crate::shared::absorb_list(&mut self.rejected, &other.rejected, |n| key(n));
+        self.drop_rejected();
     }
 
     /// Suma una nota a un tema (salvo que ya exista ese espacio o se haya descartado).
