@@ -27,6 +27,8 @@ pub struct Task {
     pub id: Option<String>,
     /// Día en que se marcó como hecha ("x 2026-09-25 …").
     pub done_on: Option<String>,
+    /// Día en que se creó (la fecha al comienzo de la línea).
+    pub created: Option<String>,
     /// Correo de donde salió ("correo:cuenta:carpeta:uid").
     pub mail: Option<String>,
     pub raw: String,
@@ -228,13 +230,14 @@ pub fn parse_task(line: &str) -> Option<Task> {
     if done {
         words.remove(0);
     }
-    let done_on = words.first().filter(|w| done && is_date(w)).map(|w| w.to_string());
-    // Fechas de término y de creación al inicio.
+    // Fechas de término (si está hecha) y de creación al inicio.
+    let mut dates = Vec::new();
     while words.first().is_some_and(|w| is_date(w)) {
-        words.remove(0);
+        dates.push(words.remove(0).to_string());
     }
+    let (done_on, created) = if done { (dates.first().cloned(), dates.get(1).cloned()) } else { (None, dates.first().cloned()) };
     let Meta { text, project, due, note, id, mail } = split_meta(&words);
-    Some(Task { done, text, project, due, note, id, done_on, mail, raw: line.to_string() })
+    Some(Task { done, text, project, due, note, id, done_on, created, mail, raw: line.to_string() })
 }
 
 pub fn parse_event(line: &str) -> Option<Event> {

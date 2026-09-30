@@ -1,12 +1,14 @@
 [package]
 name = "nodex-notes"
-version = "0.22.3"
+version = "0.22.4"
 edition = "2024"
 description = "Notas rápidas estilo Notepad con espacios de trabajo, reuniones e IA que organiza sola"
 license = "MIT"
 repository = "https://github.com/jpreyes/nodex-notes"
 
 [dependencies]
+# Pegar capturas de pantalla (imagen del portapapeles) y guardarlas como PNG.
+arboard = "3.6"
 base64 = "0.22"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 dirs = "7.0.0"
@@ -17,6 +19,7 @@ getrandom = "0.3"
 imap = { version = "3.0.0-alpha.15", default-features = false }
 mail-parser = "0.11"
 notify = "8"
+png = "0.18"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "form"] }
 rfd = "0.17.2"
 rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs", "tls12"] }
@@ -30,6 +33,10 @@ webpki-roots = "1"
 [dev-dependencies]
 # Solo para el banco de pruebas de rendimiento (RAM del proceso).
 memory-stats = "1"
+
+# Saber si se presionó Ctrl+V cuando el portapapeles solo tiene una imagen (egui no lo avisa).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

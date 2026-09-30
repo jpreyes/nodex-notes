@@ -2285,8 +2285,9 @@ dependencies = [
 
 [[package]]
 name = "nodex-notes"
-version = "0.22.3"
+version = "0.22.4"
 dependencies = [
+ "arboard",
  "base64 0.22.1",
  "chrono",
  "dirs",
@@ -2298,6 +2299,7 @@ dependencies = [
  "mail-parser",
  "memory-stats",
  "notify",
+ "png",
  "reqwest",
  "rfd",
  "rustls",
@@ -2307,6 +2309,7 @@ dependencies = [
  "tokio",
  "toml",
  "webpki-roots",
+ "windows-sys 0.60.2",
  "winresource",
 ]
 

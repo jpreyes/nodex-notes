@@ -36,6 +36,8 @@ enum Kind {
     Prefix { level: u8, check: Option<bool> },
     Date { label: String, fg: Color32, bg: Color32 },
     Link(Target),
+    /// Una línea que es una imagen: su ruta (como está escrita), ancho y alto en pantalla.
+    Image(String, f32, f32),
 }
 
 #[derive(Clone)]
@@ -168,6 +170,7 @@ fn build(
     active: Option<usize>,
     cache: &mut LinkCache,
     measure: &dyn Fn(&str) -> f32,
+    image: &dyn Fn(&str) -> Option<(f32, f32)>,
 ) -> (LayoutJob, Vec<Deco>) {
     let size = EDITOR_SIZE;
     let mut job = LayoutJob::default();
@@ -180,6 +183,20 @@ fn build(
         let n_chars = |a: usize, b: usize| line[a..b].chars().count();
         let is_active = active == Some(li);
         let info = lines::parse(line);
+
+        // Una imagen (salvo en la línea que se edita): su línea queda del alto de la imagen.
+        if let Some((w, h)) = lines::image_of(line).filter(|_| !is_active).and_then(|(_, rel)| Some((rel, image(rel)?))).map(|(rel, (w, h))| {
+            decos.push(Deco { kind: Kind::Image(rel.to_string(), w, h), chars: ci..ci + n_chars(0, line.len()), line: li, lead: 0.0 });
+            (w, h)
+        }) {
+            let _ = w;
+            let mut f = hidden.clone();
+            f.line_height = Some(h + 12.0);
+            job.append(line, 0.0, f);
+            job.append(ending, 0.0, fmt(FontId::proportional(size), TEXT));
+            ci += full.chars().count();
+            continue;
+        }
 
         if lines::is_heading(line) || lines::is_block_start(line) || lines::is_block_end(line) {
             let hsize = if line.trim_start().starts_with("# ") { 23.0 } else if line.trim_start().starts_with("## ") { 19.0 } else { 17.0 };
@@ -468,13 +485,27 @@ impl NotesApp {
             let starts = line_starts(&self.note.text);
             let active = before.filter(|_| focused).map(|r| line_at(&starts, r.primary.index.0));
 
+            // Las imágenes de la nota: se cargan una vez; cada una, del ancho de la columna.
+            self.images.prepare(&ctx, &self.note.path, &self.note.text);
+            let image_sizes: HashMap<String, (f32, f32)> = self
+                .note
+                .text
+                .lines()
+                .filter_map(lines::image_of)
+                .filter_map(|(_, rel)| Some((rel.to_string(), self.images.shown_size(&super::images::resolve(&self.note.path, rel), col_w - 8.0)?)))
+                .collect();
+            // Ctrl+V con una imagen en el portapapeles (sin texto: egui no la pega).
+            let ctrl_v = self.images.ctrl_v_pressed(ui) && !ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Paste(_))));
+            if focused && ctrl_v {
+                self.paste_image(active);
+            }
             let decos: RefCell<Vec<Deco>> = RefCell::new(Vec::new());
             let links = &mut self.links;
             let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
                 let measure = |s: &str| {
                     ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), FontId::proportional(LABEL_SIZE), TEXT).size().x)
                 };
-                let (mut job, d) = build(buf.as_str(), active, links, &measure);
+                let (mut job, d) = build(buf.as_str(), active, links, &measure, &|rel| image_sizes.get(rel).copied());
                 *decos.borrow_mut() = d;
                 job.wrap.max_width = wrap;
                 ui.fonts_mut(|f| f.layout_job(job))
@@ -501,7 +532,12 @@ impl NotesApp {
                 self.menu_line = out.response.interact_pointer_pos().map(|p| line_at(&line_starts(&self.note.text), out.galley.cursor_from_pos(p - out.galley_pos).index.0));
             }
             let mut to_task = None;
+            let mut paste_now = false;
             out.response.context_menu(|ui| {
+                if ui.button(format!("{}  Pegar imagen del portapapeles", icon::IMAGE)).clicked() {
+                    paste_now = true;
+                    ui.close();
+                }
                 let Some(l) = self.menu_line else { return };
                 let line = nth_line(&self.note.text, l);
                 if line.trim().is_empty() || lines::is_heading(line) {
@@ -518,6 +554,9 @@ impl NotesApp {
                     ui.close();
                 }
             });
+            if paste_now {
+                self.paste_image(self.menu_line);
+            }
             if let Some(l) = to_task {
                 self.line_to_task(l);
             }
@@ -677,6 +716,21 @@ impl NotesApp {
                         FontId::proportional(LABEL_SIZE),
                         *fg,
                     );
+                }
+                Kind::Image(rel, w, h) => {
+                    let file = super::images::resolve(&self.note.path, rel);
+                    let Some(tex) = self.images.texture(&file) else { continue };
+                    let rect = egui::Rect::from_min_size(egui::pos2(o.x + first.x, o.y + first.row_top + 6.0), egui::vec2(*w, *h));
+                    painter.image(tex, rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+                    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, theme::BORDER), egui::StrokeKind::Outside);
+                    if hover.is_some_and(|p| rect.contains(p)) {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("imagen-tip"), egui::PopupAnchor::Pointer)
+                            .show(|ui| ui.label(RichText::new("Abrir en tamaño real").size(12.5)));
+                        if out.response.clicked() {
+                            clicked = Some((d.line, Some(Target::Path(file))));
+                        }
+                    }
                 }
                 Kind::Link(target) => {
                     let rects: Vec<egui::Rect> = d
@@ -955,11 +1009,24 @@ impl NotesApp {
 mod tests {
     use super::*;
 
+    /// Una línea de imagen se ve como la imagen (su fila, del alto de la imagen), salvo al editarla.
+    #[test]
+    fn image_lines_become_images() {
+        let text = "Antes\n![Captura](../Adjuntos/c.png)\nDespués\n";
+        let mut cache = LinkCache::default();
+        let size = |rel: &str| (rel == "../Adjuntos/c.png").then_some((300.0, 150.0));
+        let (job, decos) = build(text, None, &mut cache, &|_| 10.0, &size);
+        assert_eq!(job.text, text);
+        assert!(decos.iter().any(|d| matches!(&d.kind, Kind::Image(r, w, h) if r == "../Adjuntos/c.png" && *w == 300.0 && *h == 150.0) && d.line == 1));
+        let (_, decos) = build(text, Some(1), &mut cache, &|_| 10.0, &size);
+        assert!(!decos.iter().any(|d| matches!(d.kind, Kind::Image(..))), "en la línea que se edita se ve el texto");
+    }
+
     #[test]
     fn build_hides_hash_due_and_id_except_on_active_line() {
         let text = "- [ ] Entregar #informe due:2026-09-26 ^k3f9a\n  ver /no/existe\n";
         let mut cache = LinkCache::default();
-        let (job, decos) = build(text, None, &mut cache, &|s| s.chars().count() as f32 * 7.0);
+        let (job, decos) = build(text, None, &mut cache, &|s| s.chars().count() as f32 * 7.0, &|_| None);
         assert_eq!(job.text, text, "el texto no cambia, solo su formato");
         let kinds: Vec<&str> = decos
             .iter()
@@ -968,6 +1035,7 @@ mod tests {
                 Kind::Prefix { .. } => "prefix",
                 Kind::Date { .. } => "date",
                 Kind::Link(_) => "link",
+                Kind::Image(..) => "image",
             })
             .collect();
         assert_eq!(kinds, vec!["prefix", "pill", "date", "prefix"]);
@@ -976,7 +1044,7 @@ mod tests {
         let sec = job.sections.iter().find(|s| s.byte_range.start.0 == hash).unwrap();
         assert_eq!(sec.format.color, Color32::TRANSPARENT);
         // En la línea activa sí.
-        let (job, decos) = build(text, Some(0), &mut cache, &|_| 10.0);
+        let (job, decos) = build(text, Some(0), &mut cache, &|_| 10.0, &|_| None);
         let sec = job.sections.iter().find(|s| s.byte_range.start.0 == hash).unwrap();
         assert_ne!(sec.format.color, Color32::TRANSPARENT);
         assert!(!decos.iter().any(|d| matches!(d.kind, Kind::Pill(_))));
@@ -986,7 +1054,7 @@ mod tests {
     fn headings_hide_their_marks_and_meetings_become_labels() {
         let text = "## Reunión CIC · 2026-09-24 10:00\n- 10:02 hola\n## fin · 10:40\n### Resumen\n";
         let mut cache = LinkCache::default();
-        let (job, decos) = build(text, None, &mut cache, &|s| s.chars().count() as f32 * 7.0);
+        let (job, decos) = build(text, None, &mut cache, &|s| s.chars().count() as f32 * 7.0, &|_| None);
         assert_eq!(job.text, text);
         let labels: Vec<String> = decos
             .iter()
@@ -1005,7 +1073,7 @@ mod tests {
         assert_eq!(meeting_label("## Visita · 2026-09-24 15:00", false).unwrap(), format!("{} Visita · jue 24 sep · 15:00", icon::USERS));
         assert!(meeting_label("## Ideas para el curso", false).is_none());
         // En la línea que se edita, tal cual.
-        let (job, _) = build(text, Some(3), &mut cache, &|_| 10.0);
+        let (job, _) = build(text, Some(3), &mut cache, &|_| 10.0, &|_| None);
         let sec = job.sections.iter().find(|s| s.byte_range.start.0 == hashes).unwrap();
         assert_ne!(sec.format.color, Color32::TRANSPARENT);
     }

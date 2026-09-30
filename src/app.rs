@@ -33,6 +33,7 @@ mod editor;
 mod manage;
 mod followup;
 mod home;
+mod images;
 mod mail_ui;
 mod recurring;
 #[cfg(test)]
@@ -400,6 +401,10 @@ pub struct NotesApp {
     chats_wide: bool,
     /// Tarjetas de Inicio minimizadas (por su título).
     home_closed: HashSet<String>,
+    /// Tareas por fecha límite (si no, lo más reciente primero).
+    tasks_by_due: bool,
+    /// Imágenes pegadas en las notas, ya cargadas.
+    images: images::Images,
     /// Último minuto en que se revisaron las recurrentes, y su ventana (abierta si hay formulario).
     recurring_checked: String,
     recurring_form: Option<recurring::Form>,
@@ -673,6 +678,7 @@ impl NotesApp {
         let estado_hoy = estado.hoy.clone();
         let estado_semana = estado.semana.clone();
         let home_closed: HashSet<String> = estado.inicio_cerradas.iter().cloned().collect();
+        let tasks_by_due = estado.tareas_por_fecha;
         let estado_tabs = estado.pestanas.clone();
         let estado_tab = estado.pestana;
         let mut app = NotesApp {
@@ -725,6 +731,8 @@ impl NotesApp {
             week: week::WeekState::default(),
             week_seen: estado_semana,
             home_closed,
+            tasks_by_due,
+            images: images::Images::default(),
             recurring_checked: String::new(),
             recurring_form: None,
             followup: followup::FollowUp::default(),
@@ -968,6 +976,7 @@ impl NotesApp {
                 v.sort();
                 v
             },
+            tareas_por_fecha: self.tasks_by_due,
         });
         if let Err(e) = r {
             self.msg(format!("No se pudo guardar estado.toml: {e}"));
@@ -2632,12 +2641,12 @@ impl NotesApp {
 
     fn tasks_view(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
-        let mut tasks = self.agenda.tasks();
         let today = today();
-        tasks.sort_by(|a, b| {
-            (a.due.is_none(), a.due.clone(), a.text.to_lowercase()).cmp(&(b.due.is_none(), b.due.clone(), b.text.to_lowercase()))
-        });
-        let (pending, done): (Vec<_>, Vec<_>) = tasks.into_iter().partition(|t| !t.done);
+        let tasks = sort_tasks(self.agenda.tasks(), self.tasks_by_due, &today);
+        let (pending, mut done): (Vec<_>, Vec<_>) = tasks.into_iter().partition(|t| !t.done);
+        // Las hechas: la última que se terminó, primero.
+        done.reverse();
+        done.sort_by(|a, b| b.done_on.cmp(&a.done_on));
         let subtitle = format!("{} · marca la casilla cuando la termines", plural(pending.len(), "pendiente"));
         let root = self.vault.root.clone();
         let mut typing = false;
@@ -2658,7 +2667,17 @@ impl NotesApp {
                 action = Some(Action::AddTask(std::mem::take(&mut self.new_task)));
                 r.request_focus();
             }
-            ui.add_space(12.0);
+            ui.add_space(8.0);
+            // Orden: lo más reciente primero (las atrasadas, arriba) o por fecha límite.
+            ui.horizontal(|ui| {
+                let before = self.tasks_by_due;
+                ui.selectable_value(&mut self.tasks_by_due, false, RichText::new("Recientes primero").size(12.5));
+                ui.selectable_value(&mut self.tasks_by_due, true, RichText::new("Por fecha").size(12.5));
+                if self.tasks_by_due != before {
+                    self.save_estado();
+                }
+            });
+            ui.add_space(8.0);
             if pending.is_empty() {
                 ui.label(RichText::new("No hay tareas pendientes. La IA las encuentra en tus notas, o agrégalas arriba.").color(MUTED));
             }
@@ -2672,7 +2691,7 @@ impl NotesApp {
                 egui::CollapsingHeader::new(RichText::new(format!("Hechas ({})", done.len())).color(MUTED))
                     .default_open(false)
                     .show(ui, |ui| {
-                        for t in done.iter().rev().take(50) {
+                        for t in done.iter().take(50) {
                             if let Some(a) = task_row(ui, t, &today, &root) {
                                 action = Some(a);
                             }
@@ -3050,6 +3069,22 @@ fn clickable_line(ui: &mut Ui, job: LayoutJob) -> Response {
     r
 }
 
+/// Orden de Tareas. Por fecha: la fecha límite (sin fecha al final). Recientes primero: las
+/// atrasadas arriba (para que no se pierdan) y después lo último que se agregó.
+fn sort_tasks(tasks: Vec<agenda::Task>, by_due: bool, today: &str) -> Vec<agenda::Task> {
+    // La posición en tareas.txt desempata: lo que está más abajo se agregó después.
+    let mut v: Vec<(usize, agenda::Task)> = tasks.into_iter().enumerate().collect();
+    if by_due {
+        v.sort_by(|(_, a), (_, b)| (a.due.is_none(), a.due.clone(), a.text.to_lowercase()).cmp(&(b.due.is_none(), b.due.clone(), b.text.to_lowercase())));
+    } else {
+        let late = |t: &agenda::Task| !t.done && t.due.as_deref().is_some_and(|d| agenda::is_date(d) && d < today);
+        v.sort_by(|(ia, a), (ib, b)| {
+            late(b).cmp(&late(a)).then_with(|| if late(a) { a.due.cmp(&b.due) } else { std::cmp::Ordering::Equal }).then_with(|| b.created.cmp(&a.created)).then_with(|| ib.cmp(ia))
+        });
+    }
+    v.into_iter().map(|(_, t)| t).collect()
+}
+
 fn task_row(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path) -> Option<Action> {
     let mut action = None;
     ui.horizontal(|ui| {
@@ -3234,6 +3269,22 @@ fn highlight_line(line: &str, size: f32) -> LayoutJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Recientes primero: las atrasadas arriba y después lo último agregado; o por fecha límite.
+    #[test]
+    fn tasks_sort_recent_first_or_by_due() {
+        let lines = [
+            "2026-09-20 Vieja con fecha lejana due:2026-12-01",
+            "2026-09-21 Atrasada due:2026-09-25",
+            "2026-09-29 Nueva sin fecha",
+            "2026-09-29 Nueva con fecha due:2026-10-10",
+        ];
+        let tasks: Vec<agenda::Task> = lines.iter().filter_map(|l| agenda::parse_task(l)).collect();
+        let texts = |v: Vec<agenda::Task>| v.into_iter().map(|t| t.text).collect::<Vec<_>>();
+        assert_eq!(texts(sort_tasks(tasks.clone(), false, "2026-09-30")), ["Atrasada", "Nueva con fecha", "Nueva sin fecha", "Vieja con fecha lejana"]);
+        assert_eq!(texts(sort_tasks(tasks, true, "2026-09-30")), ["Atrasada", "Nueva con fecha", "Vieja con fecha lejana", "Nueva sin fecha"]);
+        assert_eq!(agenda::parse_task("x 2026-09-30 2026-09-20 Hecha").map(|t| (t.done_on, t.created)), Some((Some("2026-09-30".into()), Some("2026-09-20".into()))));
+    }
 
     /// Lo que llega de otro equipo mientras se escribe aquí se junta línea por línea: nada se
     /// pisa, nada se pierde y no quedan copias "(conflicto)".

@@ -161,6 +161,8 @@ pub struct Estado {
     pub pestana: usize,
     /// Tarjetas de Inicio minimizadas (por su título).
     pub inicio_cerradas: Vec<String>,
+    /// Tareas ordenadas por fecha límite (si no, lo más reciente primero).
+    pub tareas_por_fecha: bool,
 }
 
 fn estado_path() -> PathBuf {
@@ -179,12 +181,13 @@ fn render_estado(e: &Estado) -> String {
     let tabs = toml::Value::Array(e.pestanas.iter().map(|t| toml::Value::String(t.clone())).collect()).to_string();
     let closed = toml::Value::Array(e.inicio_cerradas.iter().map(|t| toml::Value::String(t.clone())).collect()).to_string();
     format!(
-        "espacio = {}\nnota = {}\nhoy = {}\nsemana = {}\npestanas = {tabs}\npestana = {}\ninicio_cerradas = {closed}\n",
+        "espacio = {}\nnota = {}\nhoy = {}\nsemana = {}\npestanas = {tabs}\npestana = {}\ninicio_cerradas = {closed}\ntareas_por_fecha = {}\n",
         q(&e.espacio),
         q(&e.nota),
         q(&e.hoy),
         q(&e.semana),
-        e.pestana
+        e.pestana,
+        e.tareas_por_fecha
     )
 }
 
@@ -207,7 +210,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("estado.toml");
-        let e = Estado { espacio: "Obra".into(), nota: r"Obra\Nota.md".into(), hoy: "2026-09-26".into(), semana: "2026-W39".into(), pestanas: vec!["vista:inicio".into()], pestana: 0, inicio_cerradas: Vec::new() };
+        let e = Estado { espacio: "Obra".into(), nota: r"Obra\Nota.md".into(), hoy: "2026-09-26".into(), semana: "2026-W39".into(), pestanas: vec!["vista:inicio".into()], pestana: 0, inicio_cerradas: Vec::new(), tareas_por_fecha: true };
         fs::write(&path, render_estado(&e)).unwrap();
         let back: Estado = toml::from_str(&crate::vault::read_text(&path).unwrap()).unwrap();
         assert_eq!((back.espacio, back.hoy, back.pestanas), (e.espacio, e.hoy, e.pestanas));
@@ -224,9 +227,10 @@ mod tests {
             pestanas: vec!["vista:inicio".into(), "nota:General/Notas \"raras\"".into()],
             pestana: 1,
             inicio_cerradas: vec!["Tu día".into(), "La IA".into()],
+            tareas_por_fecha: true,
         };
         let back: Estado = toml::from_str(&render_estado(&e)).unwrap();
-        assert_eq!(back.inicio_cerradas, e.inicio_cerradas);
+        assert_eq!((back.inicio_cerradas, back.tareas_por_fecha), (e.inicio_cerradas, true));
         assert_eq!((back.espacio, back.nota, back.hoy, back.semana), (e.espacio, e.nota, e.hoy, e.semana));
         assert_eq!((back.pestanas, back.pestana), (e.pestanas, e.pestana));
     }

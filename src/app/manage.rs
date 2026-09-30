@@ -139,8 +139,8 @@ impl NotesApp {
         if new == old || name.trim().is_empty() {
             return;
         }
-        if vault::is_diary_dir(&new) {
-            self.msg(format!("«{}» es la carpeta de las notas del día; elige otro nombre", vault::DIARY));
+        if vault::is_reserved_dir(&new) {
+            self.msg(format!("«{new}» es una carpeta reservada (Diario o Adjuntos); elige otro nombre"));
             return;
         }
         if self.vault.workspaces.iter().any(|w| *w != old && w.eq_ignore_ascii_case(&new)) {

@@ -118,6 +118,16 @@ pub fn make_task(line: &str) -> String {
     format!("{}[ ] {}", &line[..info.prefix], &line[info.prefix..])
 }
 
+/// Una línea que es solo una imagen: "![Captura 30 sep](../Adjuntos/captura.png)" -> (texto, ruta).
+/// Después pueden venir etiquetas o metadatos (los que agrega la IA), pero no más texto.
+pub fn image_of(line: &str) -> Option<(&str, &str)> {
+    let t = line.trim().strip_prefix("![")?;
+    let (alt, rest) = t.split_once("](")?;
+    let (path, after) = rest.split_once(')')?;
+    let meta_only = after.split_whitespace().all(|w| w.starts_with('#') || w.starts_with("due:") || (w.starts_with('^') && w.len() > 3));
+    (meta_only && !path.trim().is_empty() && !path.contains('(')).then_some((alt, path.trim()))
+}
+
 pub fn is_heading(line: &str) -> bool {
     let t = line.trim_start();
     t.starts_with("# ") || t.starts_with("### ") || t.starts_with("#### ")
