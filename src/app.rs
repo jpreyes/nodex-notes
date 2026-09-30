@@ -25,6 +25,7 @@ use std::time::{Duration, Instant, SystemTime};
 mod ai_view;
 mod ask_view;
 mod calendars_ui;
+mod chats;
 mod conflicts_ui;
 mod diary;
 mod doubts_ui;
@@ -392,6 +393,8 @@ pub struct NotesApp {
     renaming_tag: Option<(String, String)>,
     /// La línea del editor donde se hizo clic derecho (para su menú).
     menu_line: Option<usize>,
+    /// Conversar tiene espacio para la lista de conversaciones al lado.
+    chats_wide: bool,
     /// Borrar para siempre: qué, y si se marcó «Entiendo que no se puede recuperar».
     forever: Option<(trash_view::Forever, bool)>,
     new_task: String,
@@ -677,6 +680,7 @@ impl NotesApp {
             renaming_ws: None,
             renaming_tag: None,
             menu_line: None,
+            chats_wide: true,
             forever: None,
             new_task: String::new(),
             message: message.map(|m| (m, Instant::now())),
@@ -1843,6 +1847,7 @@ impl NotesApp {
             self.keep_apart(&u.apart);
         }
         let _ = self.agenda.restore(&u.agenda);
+        self.ask.list = None; // pudo volver una conversación borrada
         self.save_analyzed();
         self.vault.scan();
         let current = self.note.path.clone();

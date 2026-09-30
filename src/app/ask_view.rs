@@ -8,17 +8,17 @@ use std::sync::mpsc::Receiver;
 
 /// A qué apunta una clave de la respuesta.
 #[derive(Clone)]
-struct Source {
-    path: PathBuf,
-    label: String,
+pub(super) struct Source {
+    pub(super) path: PathBuf,
+    pub(super) label: String,
 }
 
 /// Cómo reconocer una tarea aunque cambie su línea en tareas.txt (al marcarla).
 #[derive(Clone)]
-struct TaskKey {
-    id: Option<String>,
-    text: String,
-    note: Option<String>,
+pub(super) struct TaskKey {
+    pub(super) id: Option<String>,
+    pub(super) text: String,
+    pub(super) note: Option<String>,
 }
 
 pub(super) struct Turn {
@@ -26,8 +26,8 @@ pub(super) struct Turn {
     pub(super) answer: Option<Result<String, String>>,
     pub(super) blocks: Vec<Block>,
     pub(super) progress: String,
-    sources: HashMap<String, Source>,
-    tasks: HashMap<String, TaskKey>,
+    pub(super) sources: HashMap<String, Source>,
+    pub(super) tasks: HashMap<String, TaskKey>,
 }
 
 impl Turn {
@@ -52,10 +52,15 @@ impl Turn {
 
 #[derive(Default)]
 pub(super) struct AskState {
-    turns: Vec<Turn>,
+    pub(super) turns: Vec<Turn>,
     input: String,
     rx: Option<Receiver<ask::Msg>>,
     pub(super) focus: bool,
+    /// La conversación guardada que se está viendo (`None` = una nueva, aún sin guardar), y cuándo empezó.
+    pub(super) chat_id: Option<String>,
+    pub(super) created: String,
+    /// Las conversaciones guardadas (se relee al cambiar).
+    pub(super) list: Option<Vec<super::chats::ChatInfo>>,
 }
 
 impl AskState {
@@ -193,6 +198,7 @@ impl NotesApp {
         };
         if finished {
             self.ask.rx = None;
+            self.save_chat();
         }
     }
 
@@ -219,9 +225,26 @@ impl NotesApp {
         self.open(path, Some(0));
     }
 
-    /// La conversación (sección "Conversar" de la ventana de la IA).
+    /// La sección "Conversar" de la ventana de la IA: las conversaciones guardadas a la
+    /// izquierda (si hay espacio) y la conversación abierta.
     pub(super) fn chat_view(&mut self, ui: &mut Ui) -> Option<Action> {
+        self.chats_wide = ui.available_width() >= 620.0;
+        if self.chats_wide {
+            egui::Panel::left("ia-conversaciones")
+                .resizable(false)
+                .exact_size(210.0)
+                .frame(Frame::new().fill(BG_SIDE).inner_margin(Margin::symmetric(12, 0)))
+                .show(ui, |ui| {
+                    self.chats_panel(ui);
+                });
+        }
+        egui::CentralPanel::default().frame(Frame::NONE).show(ui, |ui| self.conversation(ui)).inner
+    }
+
+    /// La conversación abierta.
+    fn conversation(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
+        let mut open_chat: Option<Option<String>> = None;
         let mut save: Option<usize> = None;
         let mut send: Option<String> = None;
         let tasks_now = self.agenda.tasks();
@@ -236,6 +259,26 @@ impl NotesApp {
                 ui.vertical(|ui| {
                     ui.set_width(col_w);
                     ui.add_space(16.0);
+                    // Ventana angosta: las conversaciones guardadas, en un menú.
+                    if !self.chats_wide {
+                        let list = self.chat_list();
+                        if !list.is_empty() {
+                            ui.menu_button(RichText::new(format!("{} Conversaciones ({})", icon::CLOCK_COUNTER_CLOCKWISE, list.len())).size(12.5), |ui| {
+                                if ui.button(format!("{}  Nueva conversación", icon::PLUS)).clicked() {
+                                    open_chat = Some(None);
+                                    ui.close();
+                                }
+                                for c in &list {
+                                    let title: String = c.title.chars().take(48).collect();
+                                    if ui.button(format!("{}  {title}", icon::CHAT_CIRCLE_TEXT)).clicked() {
+                                        open_chat = Some(Some(c.id.clone()));
+                                        ui.close();
+                                    }
+                                }
+                            });
+                            ui.add_space(8.0);
+                        }
+                    }
                     if self.ask.turns.is_empty() {
                         let intro = format!("Pregunta lo que quieras: busca en {}, tus tareas, la agenda y tus correos, y cada dato lleva el número de su nota. Por ejemplo:", plural(n_notes, "nota"));
                         ui.label(RichText::new(intro).color(MUTED));
@@ -338,9 +381,8 @@ impl NotesApp {
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("La IA lee tus notas para responder.").size(12.5).color(MUTED));
-                            if !busy && ui.link(RichText::new("Nueva conversación").size(12.5)).clicked() {
-                                self.ask.turns.clear();
-                                self.ask.focus = true;
+                            if !busy && ui.link(RichText::new("Nueva conversación").size(12.5)).on_hover_text("Esta queda guardada en la lista de conversaciones").clicked() {
+                                self.new_chat();
                             }
                         });
                     }
@@ -348,6 +390,11 @@ impl NotesApp {
                 });
             });
         });
+        match open_chat {
+            Some(Some(id)) if !self.ask.busy() => self.open_chat(&id),
+            Some(None) => self.new_chat(),
+            _ => {}
+        }
         if let Some(q) = send {
             self.ask(q);
         }
