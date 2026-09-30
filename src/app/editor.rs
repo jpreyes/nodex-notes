@@ -363,6 +363,7 @@ impl NotesApp {
         let ctx = ui.ctx().clone();
         let mut reply = None;
         let mut followup = false;
+        let mut move_to: Option<String> = None;
         Self::column(ui, "editor", |ui, col_w| {
             // Título = nombre del archivo; las notas del día muestran su fecha ("Hoy, domingo 27 sep").
             if let Some(h) = day_heading(&vault::stem(&self.note.path)) {
@@ -403,12 +404,29 @@ impl NotesApp {
             let count = lines::units(&self.note.text).len();
             ui.horizontal(|ui| {
                 let notes = if count > 1 { format!("   ·   {}", plural(count, "nota")) } else { String::new() };
-                let place = if vault::in_diary(&self.note.path) {
-                    format!("{} Diario · la IA lleva cada cosa a su espacio", icon::SUN)
+                let gap = ui.spacing().item_spacing.x;
+                ui.spacing_mut().item_spacing.x = 0.0;
+                if vault::in_diary(&self.note.path) {
+                    ui.label(RichText::new(format!("{} Diario · la IA lleva cada cosa a su espacio", icon::SUN)).size(12.5).color(MUTED));
                 } else {
-                    format!("{} {}", icon::FOLDER_SIMPLE, workspace_of(&self.note.path).unwrap_or_else(|| self.ws.clone()))
-                };
-                ui.label(RichText::new(format!("{place}{notes}   ·   {when}")).size(12.5).color(MUTED));
+                    // El espacio de la nota: un clic permite moverla a otro.
+                    let here = workspace_of(&self.note.path).unwrap_or_else(|| self.ws.clone());
+                    let r = ui
+                        .add(egui::Label::new(RichText::new(format!("{} {here} {}", icon::FOLDER_SIMPLE, icon::CARET_DOWN)).size(12.5).color(MUTED)).sense(Sense::click()))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text("Mover la nota a otro espacio");
+                    egui::Popup::menu(&r).show(|ui| {
+                        ui.label(RichText::new("Mover a").size(12.0).color(MUTED));
+                        for w in self.vault.workspaces.iter().filter(|w| **w != here) {
+                            if ui.button(format!("{}  {w}", icon::FOLDER_SIMPLE)).clicked() {
+                                move_to = Some(w.clone());
+                                ui.close();
+                            }
+                        }
+                    });
+                }
+                ui.label(RichText::new(format!("{notes}   ·   {when}")).size(12.5).color(MUTED));
+                ui.spacing_mut().item_spacing.x = gap;
                 if in_meeting {
                     ui.label(RichText::new(format!("  {} Reunión en curso", icon::RECORD)).size(12.5).color(SUCCESS));
                 } else if is_meeting(&self.note.text) && self.ai.is_ok() {
@@ -506,6 +524,10 @@ impl NotesApp {
         });
         if let Some(r) = reply {
             self.handle_reply(r);
+        }
+        if let Some(ws) = move_to {
+            let p = self.note.path.clone();
+            self.move_note(p, ws);
         }
         if followup {
             self.start_followup();

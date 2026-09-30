@@ -531,6 +531,40 @@ impl Agenda {
         self.write_ics()
     }
 
+    /// Un espacio cambió de nombre: sus tareas y eventos pasan al nombre nuevo (el espacio y la
+    /// nota de donde vienen). Devuelve si cambió algo.
+    pub fn rename_space(&self, old: &str, new: &str) -> io::Result<bool> {
+        let fix = |l: &str| -> String {
+            l.split_whitespace()
+                .map(|w| {
+                    if w.strip_prefix('+').is_some_and(|p| p.replace('_', " ") == old) {
+                        project_token(new)
+                    } else if let Some(rest) = w.strip_prefix("nota:").map(decode_note).and_then(|n| n.strip_prefix(old).filter(|r| r.starts_with('/')).map(str::to_string)) {
+                        format!("nota:{}", encode_note(&format!("{new}{rest}")))
+                    } else {
+                        w.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let mut changed = false;
+        for name in [TASKS_FILE, AGENDA_FILE] {
+            let before = self.read_lines(name);
+            let after: Vec<String> = before.iter().map(|l| fix(l)).collect();
+            // Solo se reescriben las líneas que cambian (las demás quedan tal cual, con sus espacios).
+            let after: Vec<String> = before.iter().zip(after).map(|(b, a)| if a.split_whitespace().eq(b.split_whitespace()) { b.clone() } else { a }).collect();
+            if after != before {
+                self.write_lines(name, &after)?;
+                changed = true;
+            }
+        }
+        if changed {
+            self.write_ics()?;
+        }
+        Ok(changed)
+    }
+
     /// agenda.ics: eventos y tareas pendientes con fecha, para importar en un calendario.
     pub fn write_ics(&self) -> io::Result<()> {
         let mut out = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//nodex-notes//ES\r\nCALSCALE:GREGORIAN\r\n");

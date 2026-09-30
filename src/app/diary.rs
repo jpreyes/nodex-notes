@@ -186,7 +186,7 @@ impl NotesApp {
         self.sync_tab();
         self.vault.scan();
         self.days_gen = Some(self.vault.generation);
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved, created_dir: None, apart: merged_rels });
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved, created_dir: None, apart: merged_rels, relinks: Vec::new() });
         let what = format!(
             "Juntó {} de {} en el Diario: ahora hay un solo «Hoy»",
             if n == 1 { "1 nota del día".to_string() } else { format!("{n} notas del día") },

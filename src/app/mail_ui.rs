@@ -427,7 +427,7 @@ impl NotesApp {
             return; // todo estaba anotado ya
         }
         let notes: Vec<String> = files.iter().map(|(p, _)| self.rel(p)).collect();
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new() });
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), relinks: Vec::new() });
         self.msg(format!("Correo · {} en la nota de hoy; la IA los ordena", plural(entries.len(), "correo anotado")));
         let details: Vec<String> = entries.iter().map(|(_, l, _)| l.chars().take(220).collect()).collect();
         let what = format!("Anotó {} en {}", plural(entries.len(), "correo"), notes.join(", "));

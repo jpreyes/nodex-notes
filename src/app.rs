@@ -29,6 +29,7 @@ mod conflicts_ui;
 mod diary;
 mod doubts_ui;
 mod editor;
+mod manage;
 mod followup;
 mod home;
 mod mail_ui;
@@ -287,6 +288,9 @@ struct Undo {
     created_dir: Option<PathBuf>,
     /// Notas del día que se habían juntado en el Diario: al deshacer, quedan aparte para siempre.
     apart: Vec<String>,
+    /// Rutas que cambiaron (nota o espacio movido: antes, después): al deshacer, todo lo que
+    /// apuntaba ahí vuelve a apuntar a la ruta de antes.
+    relinks: Vec<(String, String)>,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -310,6 +314,11 @@ enum Action {
     Trash(PathBuf),
     /// Pedir confirmación para mover un espacio a la papelera.
     AskTrashWorkspace(String),
+    /// Mover una nota a otro espacio.
+    MoveNote(PathBuf, String),
+    /// Cambiar el nombre de un espacio o de una etiqueta (antes, nombre nuevo).
+    RenameWorkspace(String, String),
+    RenameTag(String, String),
     ShowTag(String),
     Show(View),
     /// La ventana de la IA, en una de sus secciones.
@@ -368,6 +377,9 @@ pub struct NotesApp {
     search: String,
     /// Nombre del espacio que se está creando (campo en la barra lateral).
     new_ws: Option<String>,
+    /// Espacio al que se le está cambiando el nombre (nombre actual, campo), y lo mismo para una etiqueta.
+    renaming_ws: Option<(String, String)>,
+    renaming_tag: Option<(String, String)>,
     new_task: String,
     message: Option<(String, Instant)>,
     last_poll: Instant,
@@ -648,6 +660,8 @@ impl NotesApp {
             view: View::Editor,
             search: String::new(),
             new_ws: None,
+            renaming_ws: None,
+            renaming_tag: None,
             new_task: String::new(),
             message: message.map(|m| (m, Instant::now())),
             last_poll: Instant::now(),
@@ -1073,6 +1087,7 @@ impl NotesApp {
                         moved: vec![(path.clone(), dest)],
                         created_dir: None,
                         apart: Vec::new(),
+                        relinks: Vec::new(),
                     });
                     self.undo_entry = None;
                     self.msg(format!("«{}» movida a la papelera", vault::stem(&path)));
@@ -1112,6 +1127,7 @@ impl NotesApp {
                     moved: vec![(self.vault.root.join(&ws), dest)],
                     created_dir: None,
                     apart: Vec::new(),
+                    relinks: Vec::new(),
                 });
                 self.undo_entry = None;
                 self.touched.retain(|p| workspace_of(p).as_deref() != Some(ws.as_str()));
@@ -1724,6 +1740,7 @@ impl NotesApp {
             moved: Vec::new(),
             created_dir: None,
             apart: Vec::new(),
+            relinks: Vec::new(),
         });
         let name = if emptied { String::new() } else { format!(" {}:", vault::stem(&new_path)) };
         self.msg(format!("IA ·{name} {}", done.join(" · ")));
@@ -1777,6 +1794,9 @@ impl NotesApp {
             if self.note.path == *new {
                 self.note.path = orig.clone();
             }
+        }
+        for (before, after) in u.relinks.iter().rev() {
+            self.relink(after, before);
         }
         if let Some((orig, new)) = &u.renamed {
             if let Some(dir) = orig.parent() {
@@ -1846,6 +1866,9 @@ impl NotesApp {
             },
             Action::Trash(p) => self.trash(p),
             Action::AskTrashWorkspace(ws) => self.confirm_ws = Some(ws),
+            Action::MoveNote(p, ws) => self.move_note(p, ws),
+            Action::RenameWorkspace(old, name) => self.rename_space(old, &name),
+            Action::RenameTag(old, name) => self.rename_tag(old, &name),
             Action::ShowTag(t) => {
                 self.save();
                 self.search.clear();
@@ -2111,6 +2134,8 @@ impl NotesApp {
             let summary = self.summary();
             let editing = self.view == View::Editor;
             // Clic abre; Ctrl+clic o la rueda, en otra pestaña; el tacho la manda a la papelera.
+            // Una nota se puede arrastrar a un espacio, o moverla con el clic derecho.
+            let spaces = self.vault.workspaces.clone();
             let row_action = |ui: &Ui, r: &Response, path: &PathBuf| -> Option<Action> {
                 if row_trash_button(ui, r, "Mover a la papelera (se puede deshacer)") {
                     return Some(Action::Trash(path.clone()));
@@ -2121,7 +2146,22 @@ impl NotesApp {
                 } else if r.clicked() {
                     act = Some(Action::Open(path.clone(), None));
                 }
+                let movable = !vault::in_diary(path);
+                if movable {
+                    r.dnd_set_drag_payload(path.clone());
+                }
                 r.context_menu(|ui| {
+                    if movable {
+                        let here = workspace_of(path);
+                        ui.menu_button(format!("{}  Mover a", icon::FOLDER_SIMPLE), |ui| {
+                            for w in spaces.iter().filter(|w| Some(*w) != here.as_ref()) {
+                                if ui.button(w).clicked() {
+                                    act = Some(Action::MoveNote(path.clone(), w.clone()));
+                                    ui.close();
+                                }
+                            }
+                        });
+                    }
                     if ui.button(format!("{}  Mover a la papelera", icon::TRASH)).clicked() {
                         act = Some(Action::Trash(path.clone()));
                         ui.close();
@@ -2178,13 +2218,38 @@ impl NotesApp {
                 self.new_ws = Some(String::new());
             }
             for ws in self.vault.workspaces.clone() {
+                // Cambiando el nombre: un campo en vez de la fila (Enter guarda, Esc o clic afuera cancela).
+                if let Some((_, name)) = self.renaming_ws.as_mut().filter(|(old, _)| *old == ws) {
+                    let r = ui.add(egui::TextEdit::singleline(name).hint_text("Nombre del espacio").desired_width(f32::INFINITY));
+                    if !r.has_focus() && !r.lost_focus() {
+                        r.request_focus();
+                    }
+                    if r.lost_focus() {
+                        let entered = ui.input(|i| i.key_pressed(Key::Enter));
+                        if let Some((old, name)) = self.renaming_ws.take().filter(|_| entered) {
+                            action = Some(Action::RenameWorkspace(old, name));
+                        }
+                    }
+                    continue;
+                }
                 let r = list_row(ui, icon::FOLDER_SIMPLE, &ws, "", ws == self.ws);
-                if row_trash_button(ui, &r, "Mover el espacio a la papelera") {
+                // Soltar aquí una nota arrastrada la mueve a este espacio.
+                let dragged = r.dnd_hover_payload::<PathBuf>().filter(|p| workspace_of(p).as_deref() != Some(ws.as_str()));
+                if dragged.is_some() {
+                    ui.painter().rect_stroke(r.rect, 6, Stroke::new(1.5, ACCENT), egui::StrokeKind::Inside);
+                }
+                if let Some(p) = r.dnd_release_payload::<PathBuf>() {
+                    action = Some(Action::MoveNote((*p).clone(), ws.clone()));
+                } else if row_trash_button(ui, &r, "Mover el espacio a la papelera") {
                     action = Some(Action::AskTrashWorkspace(ws.clone()));
                 } else if r.clicked() {
                     action = Some(Action::SelectWorkspace(ws.clone()));
                 }
                 r.context_menu(|ui| {
+                    if ui.button(format!("{}  Cambiar nombre", icon::PENCIL_SIMPLE)).clicked() {
+                        self.renaming_ws = Some((ws.clone(), ws.clone()));
+                        ui.close();
+                    }
                     if ui.button(format!("{}  Mover el espacio a la papelera", icon::TRASH)).clicked() {
                         action = Some(Action::AskTrashWorkspace(ws.clone()));
                         ui.close();
@@ -2244,12 +2309,34 @@ impl NotesApp {
                 ui.spacing_mut().item_spacing = egui::vec2(5.0, 6.0);
                 for (tag, count) in tags {
                     let selected = self.view == View::Tag(tag.clone());
-                    if tag_pill(ui, &tag, count, selected).on_hover_text(format!("Ver las líneas con #{tag}")).clicked() {
+                    let r = tag_pill(ui, &tag, count, selected).on_hover_text(format!("Ver las líneas con #{tag} (clic derecho: cambiar nombre)"));
+                    r.context_menu(|ui| {
+                        if ui.button(format!("{}  Cambiar nombre", icon::PENCIL_SIMPLE)).clicked() {
+                            self.renaming_tag = Some((tag.clone(), tag.clone()));
+                            ui.close();
+                        }
+                    });
+                    if r.clicked() {
                         action = Some(Action::ShowTag(tag));
                     }
                 }
             });
         });
+        // La nota que se está arrastrando, junto al puntero.
+        if let Some(p) = egui::DragAndDrop::payload::<PathBuf>(ui.ctx()) {
+            if let Some(pos) = ui.ctx().pointer_interact_pos() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                egui::Area::new(Id::new("nota-arrastrada"))
+                    .fixed_pos(pos + egui::vec2(14.0, 10.0))
+                    .order(egui::Order::Tooltip)
+                    .interactable(false)
+                    .show(ui.ctx(), |ui| {
+                        Frame::popup(ui.style()).show(ui, |ui| {
+                            ui.label(RichText::new(format!("{} {} → suéltala en un espacio", icon::FILE_TEXT, vault::stem(&p))).size(13.0));
+                        });
+                    });
+            }
+        }
         action
     }
 
@@ -2808,6 +2895,9 @@ impl NotesApp {
         self.settings_window(&ctx);
         self.followup_window(&ctx);
         self.confirm_window(&ctx);
+        if let Some(a) = self.rename_tag_window(&ctx) {
+            self.apply(a);
+        }
 
         if self.note.dirty && self.note.last_edit.elapsed() >= AUTOSAVE {
             self.save();
@@ -2963,7 +3053,7 @@ fn row_trash_button(ui: &Ui, r: &Response, tip: &str) -> bool {
 
 /// Fila de lista a todo el ancho: ícono + texto recortado a la izquierda, dato a la derecha.
 fn list_row(ui: &mut Ui, glyph: &str, text: &str, right: &str, selected: bool) -> Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), Sense::click_and_drag());
     let bg = if selected {
         ACCENT_BG
     } else if resp.hovered() {

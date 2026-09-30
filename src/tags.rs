@@ -35,9 +35,36 @@ pub fn line_tags(line: &str) -> Vec<String> {
     out
 }
 
+/// El texto con la etiqueta `old` (sin '#', en minúsculas) cambiada por `new` en todas sus
+/// líneas; `None` si no la tenía.
+pub fn rename(text: &str, old: &str, new: &str) -> Option<String> {
+    let mut changed = false;
+    let out: Vec<String> = text
+        .split('\n')
+        .map(|line| {
+            let mut l = line.to_string();
+            for (a, b) in tag_spans(line).into_iter().rev() {
+                if line[a + 1..b].to_lowercase() == old {
+                    l.replace_range(a..b, &format!("#{new}"));
+                    changed = true;
+                }
+            }
+            l
+        })
+        .collect();
+    changed.then(|| out.join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renames_a_tag_everywhere() {
+        let t = "revisar #Vigas y #vigas-eje\r\nsin nada\n#vigas al inicio";
+        assert_eq!(rename(t, "vigas", "losas").unwrap(), "revisar #losas y #vigas-eje\r\nsin nada\n#losas al inicio");
+        assert!(rename(t, "obra", "x").is_none());
+    }
 
     #[test]
     fn finds_tags() {

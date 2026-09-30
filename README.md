@@ -30,6 +30,7 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 - **Escribir:** se escribe directo en el editor y se guarda solo.
 - **Cada línea es una nota** y lleva su número a la izquierda. Con **Tab** la línea pasa a ser parte de la nota de arriba; con **Tab Tab**, un ítem de lista de esa nota (Tab Tab Tab, un subítem). **Shift+Tab** quita un nivel y **Enter** sigue la lista (en un ítem vacío, sale de ella). En el archivo queda como Markdown normal: `  texto`, `  - ítem`, `    - subítem`.
 - **Borrar:** al pasar el mouse por una nota o un espacio de la barra lateral aparece un tacho (también con clic derecho). La nota va a la carpeta `.papelera` y se puede deshacer desde la barra inferior; un espacio pide confirmación y también se puede deshacer.
+- **Mover y cambiar nombres:** arrastra una nota de la barra lateral a un espacio para moverla ahí, o usa el clic derecho → **Mover a**, o el nombre del espacio bajo el título de la nota. Se lleva sus tareas y eventos. Con clic derecho en un espacio, **Cambiar nombre** (sus notas, tareas y eventos siguen con él); con clic derecho en una etiqueta, **Cambiar nombre** la cambia en todas las notas (si ya existía la nueva, se juntan). Todo se puede deshacer desde la barra inferior.
 - **Etiquetas:** `#palabra` es una etiqueta. Se ve como una píldora de color, sin el `#`, y cada etiqueta tiene siempre el mismo color. Haz clic en ella en la barra lateral para ver todas sus líneas. En la línea donde está el cursor se ve el texto tal cual, para poder editarlo.
 - **Tareas en la nota:** `- [ ] tarea` se ve con una casilla. Un clic la marca como hecha, también en Tareas y en Google Calendar. `due:2026-09-26` se ve como una fecha ("mañana", "vie 26") y en rojo si venció.
 - **Rutas y webs:** las direcciones web y las rutas de carpetas se abren con un clic. Una ruta escrita a mano, como `/workspace/proyectos/consorcio/04 Trincheras`, se busca dentro de Dropbox aunque tenga mayúsculas distintas o un error de tipeo.
@@ -213,7 +214,8 @@ Para abrir rápido aunque haya miles de notas, la app guarda una copia de todas 
 | `src/vault.rs` | Carpeta de notas: espacios, notas `.md`, cambios en disco, papelera. |
 | `src/config.rs` | `config.toml` y `estado.toml` (última nota abierta). |
 | `src/theme.rs` | Colores del tema claro, fuentes e íconos. |
-| `src/tags.rs` | Reconoce las etiquetas `#palabra`. |
+| `src/tags.rs` | Reconoce las etiquetas `#palabra` (y les cambia el nombre). |
+| `src/app/manage.rs` | Corregir a mano: mover una nota a otro espacio, cambiar el nombre de un espacio o de una etiqueta. |
 | `src/app/rendimiento.rs` | Banco de pruebas de rendimiento: genera carpetas de 1.000 a 50.000 notas y mide la app sin ventana. |
 | `tools/medir-ventana.ps1` | Mide la app real con ventana (Windows), con las mismas carpetas. |
 | `.github/workflows/release.yml` | Compila y publica los ejecutables al subir una etiqueta `vX.Y.Z`. |

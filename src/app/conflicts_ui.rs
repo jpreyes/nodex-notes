@@ -116,7 +116,7 @@ impl NotesApp {
             let _ = self.agenda.write_ics();
             self.gcal_dirty = true;
         }
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: vec![(copy.to_path_buf(), trashed)], created_dir: None, apart: Vec::new() });
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: vec![(copy.to_path_buf(), trashed)], created_dir: None, apart: Vec::new(), relinks: Vec::new() });
         let what = if is_note { format!("«{}»", display_title(&vault::stem(&main))) } else { original.clone() };
         let detail = match added {
             0 => "No había nada nuevo en la copia".to_string(),
