@@ -54,6 +54,10 @@ const AI_IDLE: Duration = Duration::from_secs(45);
 const CURSOR_REST: Duration = Duration::from_secs(10);
 /// Cuántas líneas de resultados se muestran de una vez al buscar.
 const FOUND_PAGE: usize = 300;
+/// Cuánto vale la marca «este equipo está organizando esta nota» (segundos), y cuánto se
+/// espera para volver a intentar una nota que tiene otro equipo.
+const CLAIM_TTL: u64 = 180;
+const CLAIM_RETRY: Duration = Duration::from_secs(60);
 /// Tiempo durante el que se ofrece deshacer lo que hizo la IA.
 const UNDO_WINDOW: Duration = Duration::from_secs(120);
 /// Sincronización periódica con Google Calendar aunque no haya cambios.
@@ -402,6 +406,9 @@ pub struct NotesApp {
     home_question: String,
     /// "Diario" (las notas de días anteriores) abierto en la barra lateral.
     diary_open: bool,
+    /// Identificador de este equipo, y las notas que otro equipo está organizando (se reintentan después).
+    machine: String,
+    claim_wait: HashMap<PathBuf, Instant>,
     /// Copias en conflicto de Dropbox vistas (y desde cuándo), y cuándo se buscaron.
     conflict_seen: HashMap<PathBuf, Instant>,
     conflicts_gen: u64,
@@ -645,6 +652,8 @@ impl NotesApp {
             home_capture: String::new(),
             home_question: String::new(),
             diary_open: false,
+            machine: crate::claims::machine_id(),
+            claim_wait: HashMap::new(),
             conflict_seen: HashMap::new(),
             conflicts_gen: u64::MAX,
             conflicts_at: Instant::now(),
@@ -1222,6 +1231,9 @@ impl NotesApp {
             if Some(p) == meeting.as_ref() {
                 return None;
             }
+            if app.claim_wait.get(p).is_some_and(|t| t.elapsed() < CLAIM_RETRY) {
+                return None; // la está organizando otro equipo
+            }
             if *p == app.note.path && (app.note.dirty || (!manual && app.note.last_edit.elapsed() < AI_IDLE)) {
                 return None;
             }
@@ -1258,6 +1270,11 @@ impl NotesApp {
             }
         }
         let Some((path, hash)) = pick else { return };
+        // Un solo equipo organiza cada nota a la vez: si otro la tiene, se reintenta después.
+        if !crate::claims::take_note(&self.vault.root, &self.rel(&path), &self.machine, CLAIM_TTL) {
+            self.claim_wait.insert(path, Instant::now());
+            return;
+        }
         let Some(note) = self.vault.get(&path) else { return };
 
         let infos: Vec<ai::WorkspaceInfo> = self
@@ -1307,6 +1324,8 @@ impl NotesApp {
                 ai.busy = false;
             }
             self.in_flight = None;
+            let claimed = self.rel(&r.path);
+            let root = self.vault.root.clone();
             match r.result {
                 Ok(a) => {
                     self.ai_error = None;
@@ -1325,6 +1344,7 @@ impl NotesApp {
                     self.ai_error = Some(e);
                 }
             }
+            crate::claims::release_note(&root, &claimed, &self.machine);
         }
     }
 
@@ -1341,6 +1361,9 @@ impl NotesApp {
         }
         if is_open && vault::modified(&path) != self.note.disk_mtime {
             return; // llegó un cambio de otro equipo: primero se junta, después se vuelve a analizar
+        }
+        if !crate::claims::note_is_mine(&self.vault.root, &self.rel(&path), &self.machine) {
+            return; // otro equipo la tomó al mismo tiempo y le toca a él
         }
         let text = if is_open { self.note.text.clone() } else { vault::read_text(&path).unwrap_or_default() };
         if ai::fnv(&text) != hash {

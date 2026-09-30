@@ -156,6 +156,8 @@ Si Dropbox deja una «copia en conflicto» (pasa cuando dos equipos cambian el m
 
 Los datos internos que comparten los equipos (las preguntas de la IA, las sugerencias de espacios, «Lo que hizo» y la lista de notas ya analizadas, en `.nodex/`) tampoco se pisan: cada equipo recuerda cómo estaba el archivo la última vez que lo leyó o escribió y, antes de guardar o cuando cambia por fuera, aplica solo lo que agregó, quitó o modificó el otro.
 
+Si tienes la app abierta en dos equipos, cada nota la organiza uno solo a la vez (el equipo deja una marca en `.nodex/organizando/` mientras la IA trabaja) y cada correo lo anota uno solo (`.nodex/correos-anotados.txt`). Las marcas viajan por Dropbox, así que es un mejor esfuerzo: tardan unos segundos en llegar al otro equipo.
+
 Para abrir rápido aunque haya miles de notas, la app guarda una copia de todas en un solo archivo local (`AppData\Local\nodex-notes` en Windows, la carpeta de caché del sistema en Mac y Linux; nunca en Dropbox). Al abrir lee esa copia y solo relee del disco las notas que cambiaron desde la última vez. Si la copia falta o está dañada, simplemente lee todas las notas.
 
 ## Código
@@ -195,6 +197,7 @@ Para abrir rápido aunque haya miles de notas, la app guarda una copia de todas 
 | `src/gcal.rs` | Google Calendar: OAuth con PKCE, calendario "Notas" y sincronización de eventos. |
 | `src/agenda.rs` | `tareas.txt` (todo.txt), `agenda.txt` y `agenda.ics`. |
 | `src/conflicts.rs`, `src/app/conflicts_ui.rs` | Reconoce las «copias en conflicto» de Dropbox y las junta con su original. |
+| `src/claims.rs` | Marcas para que dos equipos no organicen la misma nota ni anoten el mismo correo a la vez. |
 | `src/shared.rs` | Datos internos compartidos entre equipos (`.nodex/`): aplica solo lo que cambió el otro, sin pisar. |
 | `src/merge.rs` | Junta dos versiones de una nota línea por línea (con base común, o conservando todo si no hay base). |
 | `src/vault.rs` | Carpeta de notas: espacios, notas `.md`, cambios en disco, papelera. |

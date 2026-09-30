@@ -151,6 +151,13 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
 }
 
 /// "Juan Pérez <juan@x.cl>" -> "Juan Pérez"
+/// Cómo se reconoce un correo en todos los equipos: su identificador de mensaje, o cuenta,
+/// fecha y asunto si no lo trae.
+fn mail_key(m: &Mail) -> String {
+    let id = m.message_id.trim();
+    if id.is_empty() { format!("{}|{}|{}", m.account, m.date, m.subject.trim()) } else { id.to_string() }
+}
+
 fn short_name(s: &str) -> String {
     let first = s.split(',').next().unwrap_or(s).trim();
     match first.split_once('<') {
@@ -291,6 +298,9 @@ impl NotesApp {
         let facts = self.ai_facts();
         let (system, user) = mail_ai::prompt(&refs, &pending, &self.vault.workspaces, &facts, &today());
         self.mail.batch = batch.iter().enumerate().map(|(i, m)| (format!("c{}", i + 1), m.id.clone())).collect();
+        // Se avisa a los otros equipos que estos correos los está viendo este (para no anotarlos dos veces).
+        let keys: Vec<String> = batch.iter().filter(|m| !m.bulk).map(mail_key).collect();
+        crate::claims::claim_mails(&self.vault.root, &keys, &self.machine);
         self.mail.batch_tasks = pending;
         self.mail.analyzing = true;
         let cfg = self.cfg.clone();
@@ -309,6 +319,10 @@ impl NotesApp {
     fn apply_mail_results(&mut self, results: Vec<mail_ai::MailResult>) {
         let snapshot = self.agenda.snapshot();
         let mut entries: Vec<(String, String, String)> = Vec::new(); // (espacio, línea, id del correo)
+        // Comienzo de cada línea ("Correo de X (26 sep): asunto."), para no repetirla si ya está.
+        let mut prefixes: HashMap<String, String> = HashMap::new();
+        let owners = crate::claims::mail_owners(&self.vault.root);
+        let me = self.machine.clone();
         let batch = std::mem::take(&mut self.mail.batch);
         let pending = std::mem::take(&mut self.mail.batch_tasks);
         for (key, id) in &batch {
@@ -331,6 +345,10 @@ impl NotesApp {
             }
             // Si importa (pide algo, fija una fecha o trae un compromiso), se anota.
             let relevant = m.important || !r.compromisos.is_empty() || !r.eventos.is_empty();
+            // Otro equipo ya tomó este correo: lo anota él.
+            if relevant && m.noted.is_empty() && owners.get(&mail_key(m)).is_some_and(|o| *o != me) {
+                m.noted = "otro equipo".into();
+            }
             if relevant && m.noted.is_empty() && !m.summary.is_empty() {
                 let d = NaiveDate::parse_from_str(m.date.get(..10).unwrap_or(""), "%Y-%m-%d")
                     .map(|d| format!("{} {}", d.day(), MESES[d.month0() as usize]))
@@ -338,6 +356,7 @@ impl NotesApp {
                 let who = if m.sent { format!("Correo a {}", short_name(&m.to)) } else { format!("Correo de {}", short_name(&m.from)) };
                 let subject = m.subject.trim().trim_end_matches('.');
                 let line = format!("{who} ({d}): {subject}. {}", m.summary.replace('\n', " "));
+                prefixes.insert(m.id.clone(), format!("{who} ({d}): {subject}."));
                 entries.push((m.workspace.clone(), line, m.id.clone()));
             }
             for k in &r.cumple {
@@ -361,10 +380,25 @@ impl NotesApp {
         for ws in spaces {
             let path = self.vault.note_path(&ws, &today());
             let lines: Vec<&(String, String, String)> = entries.iter().filter(|(w, _, _)| (if w.is_empty() { &fallback } else { w }) == &ws).collect();
-            let add = lines.iter().map(|(_, l, _)| l.as_str()).collect::<Vec<_>>().join("\n");
             let open = path == self.note.path;
             let before = if open { Some(self.note.text.clone()).filter(|t| !t.is_empty() || self.note.disk_mtime.is_some()) } else { vault::read_text(&path).ok() };
             let base = before.clone().unwrap_or_default();
+            // Si la nota ya tiene esa línea (la anotó otro equipo y llegó por Dropbox), no se repite.
+            let add = lines
+                .iter()
+                .filter(|(_, _, id)| !prefixes.get(id).is_some_and(|p| base.contains(p.as_str())))
+                .map(|(_, l, _)| l.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            if add.is_empty() {
+                let rel = self.rel(&path);
+                for (_, _, id) in lines {
+                    if let Some(m) = self.mail.store.mails.iter_mut().find(|m| m.id == *id) {
+                        m.noted = rel.clone();
+                    }
+                }
+                continue;
+            }
             let text = if base.trim().is_empty() { format!("{add}\n") } else { format!("{}\n{add}\n", base.trim_end()) };
             if open {
                 self.note.text = text.clone();
@@ -393,6 +427,9 @@ impl NotesApp {
             }
         }
         self.mail.store.save();
+        if files.is_empty() {
+            return; // todo estaba anotado ya
+        }
         let notes: Vec<String> = files.iter().map(|(p, _)| self.rel(p)).collect();
         self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
         self.msg(format!("Correo · {} en la nota de hoy; la IA los ordena", plural(entries.len(), "correo anotado")));
@@ -694,6 +731,44 @@ mod tests {
         app.mail_fulfill("jp@gmail.com:INBOX:3", 0, true);
         assert!(app.agenda.tasks().iter().find(|t| t.id.as_deref() == Some("cic01")).unwrap().done);
         assert!(app.mail.open_checks().is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Con el correo configurado en dos equipos, el mismo correo no se anota dos veces.
+    #[test]
+    fn a_mail_is_noted_by_one_device_only() {
+        let dir = std::env::temp_dir().join(format!("nodex-correo-dos-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        fs::create_dir_all(dir.join("General")).unwrap();
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut app = NotesApp::new(cfg, None, egui::Context::default());
+        app.machine = "pc-b".into();
+        let mail = |uid: &str, msg: &str, subject: &str| Mail {
+            id: format!("jp@gmail.com:INBOX:{uid}"),
+            from: "Ana <ana@obra.cl>".into(),
+            subject: subject.into(),
+            date: "2026-09-29 10:00".into(),
+            message_id: msg.into(),
+            ..Mail::default()
+        };
+        app.mail.store.mails = vec![mail("1", "<uno@x>", "Planos"), mail("2", "<dos@x>", "Visita"), mail("3", "<tres@x>", "Acta")];
+        app.mail.batch = (1..=3).map(|i| (format!("c{i}"), format!("jp@gmail.com:INBOX:{i}"))).collect();
+        // El otro equipo (pc-a) ya tomó el primero; el segundo ya está escrito en la nota de hoy
+        // (llegó por Dropbox); el tercero es de este equipo.
+        crate::claims::claim_mails(&dir, &["<uno@x>".into()], "pc-a");
+        let daily = dir.join("General").join(format!("{}.md", today()));
+        fs::write(&daily, "Correo de Ana (29 sep): Visita. Ana propone visitar la obra el jueves\n").unwrap();
+        app.vault.scan();
+        let reply = r#"{"correos": [{"id": "c1", "resumen": "Manda planos", "importante": true},
+            {"id": "c2", "resumen": "Propone una visita", "importante": true},
+            {"id": "c3", "resumen": "Envía el acta", "importante": true}]}"#;
+        app.apply_mail_results(mail_ai::parse_reply(reply).unwrap());
+        let text = fs::read_to_string(&daily).unwrap();
+        assert_eq!(text, "Correo de Ana (29 sep): Visita. Ana propone visitar la obra el jueves\nCorreo de Ana (29 sep): Acta. Envía el acta\n");
+        let noted: Vec<&str> = app.mail.store.mails.iter().map(|m| m.noted.as_str()).collect();
+        assert_eq!(noted[0], "otro equipo");
+        assert!(noted[1].starts_with("General/") && noted[2].starts_with("General/"));
         let _ = fs::remove_dir_all(&dir);
     }
 }

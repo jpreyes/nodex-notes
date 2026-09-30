@@ -15,7 +15,7 @@ const ORPHAN: Duration = Duration::from_secs(600);
 /// Cada cuánto se buscan copias aunque no haya cambiado ninguna nota (las de tareas.txt).
 const LOOK_EVERY: Duration = Duration::from_secs(30);
 /// Datos internos (`.nodex/`) cuyas copias en conflicto se saben juntar.
-const INTERNAL: [&str; 6] = ["dudas.json", "espacios.json", "actividad.json", "analizadas.txt", "todo.json", "google.json"];
+const INTERNAL: [&str; 7] = ["dudas.json", "espacios.json", "actividad.json", "analizadas.txt", "correos-anotados.txt", "todo.json", "google.json"];
 
 impl NotesApp {
     /// Busca copias en conflicto y junta las que ya llevan un rato. Se llama cada segundo;
@@ -162,6 +162,10 @@ impl NotesApp {
                 self.analyzed.extend(text.lines().filter_map(|l| u64::from_str_radix(l.trim(), 16).ok()));
                 self.save_analyzed();
             }
+            "correos-anotados.txt" => {
+                let merged = conflicts::merge_lines(&vault::read_text(main).unwrap_or_default(), &text);
+                let _ = fs::write(main, merged);
+            }
             // Qué evento de Google o tarea de To Do corresponde a cada cosa: se suman las parejas que falten.
             _ => {
                 let (Ok(mut a), Ok(b)) = (
@@ -194,6 +198,32 @@ impl NotesApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Una nota que otro equipo está organizando no se toca; al soltarla, sí.
+    #[test]
+    fn a_note_is_organized_by_one_device() {
+        let dir = std::env::temp_dir().join(format!("nodex-un-equipo-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("General")).unwrap();
+        let path = dir.join("General").join("2026-09-30.md");
+        let text = "Entregar el informe el viernes\n";
+        fs::write(&path, text).unwrap();
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut app = NotesApp::new(cfg, None, egui::Context::default());
+        app.machine = "pc-b".into();
+        let analysis = || serde_json::from_str::<Analysis>(r#"{"unidades": [{"id": "L1", "etiquetas": ["informe"]}]}"#).unwrap();
+        // El otro equipo (pc-a) la tomó: aquí no se pide ni se aplica.
+        assert!(crate::claims::take_note(&dir, "General/2026-09-30", "pc-a", 60));
+        assert!(!crate::claims::take_note(&dir, "General/2026-09-30", &app.machine, 60));
+        app.apply_analysis(path.clone(), ai::fnv(text), analysis());
+        assert_eq!(fs::read_to_string(&path).unwrap(), text, "la organiza el otro equipo");
+        // Cuando la suelta, se organiza aquí.
+        crate::claims::release_note(&dir, "General/2026-09-30", "pc-a");
+        app.apply_analysis(path.clone(), ai::fnv(text), analysis());
+        assert!(fs::read_to_string(&path).unwrap().contains("#informe"));
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     /// Dos equipos con la app abierta sobre la misma carpeta: lo que guarda uno no borra lo
     /// del otro, y lo que uno quita no reaparece.

@@ -7,6 +7,7 @@ mod app;
 mod ask;
 mod calendars;
 mod capture;
+mod claims;
 mod config;
 mod conflicts;
 mod doubts;
