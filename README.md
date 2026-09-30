@@ -150,7 +150,7 @@ Notas/
 
 Si la IA falla o responde vacío, el último intercambio queda en `ia-ultima.txt` (junto a `config.toml`) para ver qué pasó.
 
-Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro equipo), la app lo recarga. Si justo lo estabas editando, la otra versión se guarda como copia "(conflicto)".
+Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro equipo), la app lo recarga al instante: el sistema operativo le avisa qué archivos cambiaron, sin revisar toda la carpeta (una revisión completa se hace igual cada 10 minutos, por seguridad). Si justo lo estabas editando, la otra versión se guarda como copia "(conflicto)".
 
 ## Código
 

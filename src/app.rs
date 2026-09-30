@@ -856,7 +856,7 @@ impl NotesApp {
 
     /// Detecta cambios hechos por fuera (otra app, Dropbox).
     fn poll(&mut self) {
-        self.vault.scan();
+        self.vault.refresh();
         let m = vault::modified(&self.note.path);
         if m.is_none() || m == self.note.disk_mtime {
             return;
