@@ -122,12 +122,45 @@ pub struct Note {
     pub text: String,
     /// El texto en minúsculas y sin tildes, para buscar (se prepara la primera vez que se busca).
     folded: std::cell::OnceCell<String>,
+    /// Datos que se calculan una sola vez por versión de la nota (la nota se reemplaza al cambiar).
+    meeting: std::cell::OnceCell<bool>,
+    tags: std::cell::OnceCell<Vec<(String, usize)>>,
+    day: std::cell::OnceCell<String>,
+    hash: std::cell::OnceCell<u64>,
 }
 
 impl Note {
     /// El texto como se compara al buscar (ver `fold`). Tiene las mismas líneas que `text`.
     pub fn folded(&self) -> &str {
         self.folded.get_or_init(|| fold(&self.text))
+    }
+
+    /// ¿Es una reunión? (`test` decide, con el texto; el resultado se guarda).
+    pub fn meeting(&self, test: impl FnOnce(&str) -> bool) -> bool {
+        *self.meeting.get_or_init(|| test(&self.text))
+    }
+
+    /// Etiquetas de la nota con cuántas líneas las usan.
+    pub fn tags(&self) -> &[(String, usize)] {
+        self.tags.get_or_init(|| {
+            let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+            for line in self.text.lines().filter(|l| l.contains('#')) {
+                for t in tags::line_tags(line) {
+                    *counts.entry(t).or_default() += 1;
+                }
+            }
+            counts.into_iter().collect()
+        })
+    }
+
+    /// Día en que se editó por última vez ("2026-09-30", hora de aquí).
+    pub fn day(&self) -> &str {
+        self.day.get_or_init(|| chrono::DateTime::<chrono::Local>::from(self.modified).format("%Y-%m-%d").to_string())
+    }
+
+    /// Huella del texto (para saber si la IA ya lo analizó).
+    pub fn hash(&self) -> u64 {
+        *self.hash.get_or_init(|| crate::ai::fnv(&self.text))
     }
 }
 
@@ -415,7 +448,11 @@ impl Vault {
         let title = stem(&path);
         self.cache_dirty = true;
         self.generation += 1;
-        self.notes.insert(path.clone(), Note { path, workspace, title, modified, text, folded: std::cell::OnceCell::new() });
+        use std::cell::OnceCell;
+        self.notes.insert(
+            path.clone(),
+            Note { path, workspace, title, modified, text, folded: OnceCell::new(), meeting: OnceCell::new(), tags: OnceCell::new(), day: OnceCell::new(), hash: OnceCell::new() },
+        );
     }
 
     /// Notas de un espacio, la más reciente primero.
@@ -439,10 +476,8 @@ impl Vault {
     pub fn tag_counts(&self, ws: &str) -> Vec<(String, usize)> {
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         for n in self.notes.values().filter(|n| n.workspace == ws) {
-            for line in n.text.lines() {
-                for t in tags::line_tags(line) {
-                    *counts.entry(t).or_default() += 1;
-                }
+            for (t, c) in n.tags() {
+                *counts.entry(t.clone()).or_default() += c;
             }
         }
         counts.into_iter().collect()

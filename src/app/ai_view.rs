@@ -158,10 +158,22 @@ impl NotesApp {
         self.vault
             .all_notes()
             .into_iter()
-            .filter(|n| Some(&n.path) != meeting.as_ref() && !self.analyzed.contains(&ai::fnv(&n.text)))
+            .filter(|n| Some(&n.path) != meeting.as_ref() && !self.analyzed.contains(&n.hash()))
             .filter(|n| n.text.split_whitespace().count() >= 3)
             .map(|n| n.path.clone())
             .collect()
+    }
+
+    /// Cuántas notas faltan por organizar (se cuenta de nuevo solo si cambió algo).
+    fn unorganized_count(&mut self) -> usize {
+        let key = (self.vault.generation, self.analyzed.len());
+        if let Some((k, n)) = self.unorganized_count.filter(|(k, _)| *k == key) {
+            let _ = k;
+            return n;
+        }
+        let n = self.unorganized().len();
+        self.unorganized_count = Some((key, n));
+        n
     }
 
     /// Preguntas y sugerencias de la IA que esperan respuesta.
@@ -172,6 +184,7 @@ impl NotesApp {
     pub(super) fn ai_view(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
         let asks = self.pending_asks();
+        let pending = self.unorganized_count();
         let w = ui.available_width();
         let col_w = (w - 64.0).clamp(200.0, COLUMN_MAX);
 
@@ -191,7 +204,7 @@ impl NotesApp {
                         }
                     });
                 });
-                if let Some(a) = self.ai_status(ui) {
+                if let Some(a) = self.ai_status(ui, pending) {
                     action = Some(a);
                 }
                 ui.add_space(12.0);
@@ -235,7 +248,7 @@ impl NotesApp {
     }
 
     /// Modelo, qué está haciendo y cuántas notas faltan por organizar.
-    fn ai_status(&self, ui: &mut Ui) -> Option<Action> {
+    fn ai_status(&self, ui: &mut Ui, pending: usize) -> Option<Action> {
         let mut action = None;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
@@ -261,7 +274,6 @@ impl NotesApp {
                 ui.label(RichText::new(format!("Organizando «{}»{progress}", vault::stem(p))).size(13.0).color(ACCENT));
                 return;
             }
-            let pending = self.unorganized().len();
             if pending == 0 {
                 ui.label(RichText::new(format!("{} Todo organizado", icon::CHECK_CIRCLE)).size(13.0).color(SUCCESS));
             } else {

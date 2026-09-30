@@ -204,7 +204,7 @@ impl NotesApp {
     fn tab_label(&self, tab: &Tab) -> (&'static str, String) {
         match tab {
             Tab::Note(p) => {
-                let meeting = self.vault.get(p).is_some_and(|n| is_meeting(&n.text));
+                let meeting = self.vault.get(p).is_some_and(|n| n.meeting(is_meeting));
                 let title = if *p == self.note.path { self.note.title.clone() } else { vault::stem(p) };
                 let glyph = if meeting { icon::USERS } else if agenda::is_date(&title) { icon::SUN } else { icon::FILE_TEXT };
                 (glyph, display_title(&title))

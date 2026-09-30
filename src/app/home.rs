@@ -82,36 +82,24 @@ impl NotesApp {
         soon.sort_by(|a, b| a.due.cmp(&b.due));
         let asks = self.doubts.pending.len();
         let ideas = self.ideas.ready().count();
-        let notes = self.vault.all_notes();
-        let recent: Vec<(PathBuf, String, String, SystemTime)> =
-            notes.iter().take(8).map(|n| (n.path.clone(), display_title(&n.title), n.workspace.clone(), n.modified)).collect();
-        let meetings: Vec<(PathBuf, String, SystemTime, usize)> = notes
+        // Lo que depende de todas las notas sale del resumen (se calcula solo si algo cambió).
+        let summary = self.summary();
+        let recent = summary.recent.clone();
+        let meetings: Vec<(PathBuf, String, SystemTime, usize)> = summary
+            .meetings
             .iter()
-            .filter(|n| is_meeting(&n.text))
-            .take(5)
-            .map(|n| {
-                let rel = self.rel(&n.path);
+            .map(|(p, title, m)| {
+                let rel = self.rel(p);
                 let open = pending.iter().filter(|t| t.note.as_deref() == Some(rel.as_str())).count();
-                (n.path.clone(), n.title.clone(), n.modified, open)
+                (p.clone(), title.clone(), *m, open)
             })
             .collect();
-        let spaces: Vec<(String, usize, usize)> = self
-            .vault
-            .workspaces
+        let spaces: Vec<(String, usize, usize)> = summary
+            .spaces
             .iter()
-            .map(|w| {
-                let n = self.vault.notes_in(w).len();
-                let p = pending.iter().filter(|t| t.project == *w).count();
-                (w.clone(), n, p)
-            })
+            .map(|(w, n)| (w.clone(), *n, pending.iter().filter(|t| t.project == *w).count()))
             .collect();
-        let written = notes
-            .iter()
-            .filter(|n| {
-                let d: DateTime<Local> = n.modified.into();
-                d.format("%Y-%m-%d").to_string() >= week_ago
-            })
-            .count();
+        let written = summary.written_week;
         let done_week = tasks.iter().filter(|t| t.done && t.done_on.as_deref().is_some_and(|d| d >= week_ago.as_str())).count();
         let mut capture: Option<String> = None;
         let mut question: Option<String> = None;

@@ -116,6 +116,106 @@ struct Found {
     shown: usize,
 }
 
+/// Una nota en la lista de la barra lateral.
+struct SideNote {
+    path: PathBuf,
+    /// Cómo se muestra ("Reunión CIC", o "Vie 25 sep" en el Diario).
+    title: String,
+    /// La fecha a la derecha ("15:34", "25 sep").
+    right: String,
+    meeting: bool,
+}
+
+/// Lo que muestran la barra lateral e Inicio, calculado una sola vez por cada cambio en las
+/// notas (o de espacio, o de día), en vez de en cada repintado.
+struct Summary {
+    /// (estado de las notas, espacio, día) con que se calculó.
+    key: (u64, String, String),
+    /// Notas del espacio con título (la más reciente primero) y del Diario (la más nueva primero).
+    others: Vec<SideNote>,
+    diary: Vec<SideNote>,
+    /// ¿Existe ya la nota de hoy del espacio?
+    today_exists: bool,
+    tags: Vec<(String, usize)>,
+    /// Inicio: notas recientes (ruta, título, espacio, fecha).
+    recent: Vec<(PathBuf, String, String, SystemTime)>,
+    /// Inicio: reuniones recientes (ruta, título, fecha).
+    meetings: Vec<(PathBuf, String, SystemTime)>,
+    /// Inicio: notas por espacio y notas escritas en los últimos 7 días.
+    spaces: Vec<(String, usize)>,
+    written_week: usize,
+}
+
+impl Summary {
+    fn build(vault: &Vault, key: (u64, String, String)) -> Summary {
+        let (ws, today_s) = (&key.1, &key.2);
+        let today_path = vault.note_path(ws, today_s);
+        let mut others = Vec::new();
+        let mut diary = Vec::new();
+        let mut today_exists = false;
+        for n in vault.notes_in(ws) {
+            if n.path == today_path {
+                today_exists = true;
+                continue;
+            }
+            let daily = agenda::is_date(&n.title);
+            let row = SideNote {
+                path: n.path.clone(),
+                title: if daily { display_title(&n.title) } else { n.title.clone() },
+                right: if daily { String::new() } else { short_date(n.modified) },
+                meeting: n.meeting(is_meeting),
+            };
+            if daily {
+                diary.push((n.title.clone(), row));
+            } else {
+                others.push(row);
+            }
+        }
+        diary.sort_by(|a, b| b.0.cmp(&a.0));
+        let all = vault.all_notes();
+        let week_ago = (Local::now() - chrono::Duration::days(6)).format("%Y-%m-%d").to_string();
+        let mut per_ws: HashMap<&str, usize> = HashMap::new();
+        for n in &all {
+            *per_ws.entry(n.workspace.as_str()).or_default() += 1;
+        }
+        Summary {
+            others,
+            diary: diary.into_iter().map(|(_, r)| r).collect(),
+            today_exists,
+            tags: vault.tag_counts(ws),
+            recent: all.iter().take(8).map(|n| (n.path.clone(), display_title(&n.title), n.workspace.clone(), n.modified)).collect(),
+            meetings: all.iter().filter(|n| n.meeting(is_meeting)).take(5).map(|n| (n.path.clone(), n.title.clone(), n.modified)).collect(),
+            spaces: vault.workspaces.iter().map(|w| (w.clone(), per_ws.get(w.as_str()).copied().unwrap_or(0))).collect(),
+            written_week: all.iter().filter(|n| n.day() >= week_ago.as_str()).count(),
+            key,
+        }
+    }
+}
+
+/// Alto de una fila de lista (`list_row`).
+const ROW_H: f32 = 27.0;
+
+/// Las filas de una lista larga que caen en la parte visible. Reserva de una sola vez el lugar
+/// de las de arriba y devuelve cuáles dibujar; después se llama a `skip_rows` con las de abajo.
+/// Así no se dibujan (ni se recorren) miles de filas que nadie ve.
+fn visible_rows(ui: &mut Ui, n: usize) -> std::ops::Range<usize> {
+    let row = ROW_H + ui.spacing().item_spacing.y;
+    let top = ui.cursor().top();
+    let clip = ui.clip_rect();
+    let first = (((clip.top() - top) / row).floor().max(0.0) as usize).min(n);
+    let last = ((((clip.bottom() - top) / row).ceil().max(0.0)) as usize + 1).min(n).max(first);
+    skip_rows(ui, first);
+    first..last
+}
+
+/// Reserva el lugar de `k` filas sin dibujarlas.
+fn skip_rows(ui: &mut Ui, k: usize) {
+    if k > 0 {
+        let gap = ui.spacing().item_spacing.y;
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), k as f32 * (ROW_H + gap) - gap), Sense::hover());
+    }
+}
+
 /// Lo necesario para revertir el último cambio automático de la IA.
 struct Undo {
     /// Contenido previo de cada archivo tocado (`None` = el archivo no existía).
@@ -271,6 +371,10 @@ pub struct NotesApp {
     diary_open: bool,
     /// Resultados de la última búsqueda (se reutilizan mientras no cambie nada).
     found: Option<Found>,
+    /// Lo que muestran la barra lateral e Inicio (se recalcula solo si algo cambió).
+    summary: Option<std::rc::Rc<Summary>>,
+    /// Notas sin organizar: ((estado de las notas, notas analizadas), cuántas).
+    unorganized_count: Option<((u64, usize), usize)>,
     /// Ventana de la IA: sección abierta, lo que hizo y cuál de sus cambios se puede deshacer.
     ai_tab: ai_view::AiTab,
     activity: crate::activity::Log,
@@ -500,6 +604,8 @@ impl NotesApp {
             home_question: String::new(),
             diary_open: false,
             found: None,
+            summary: None,
+            unorganized_count: None,
             ai_tab: ai_view::AiTab::default(),
             activity: crate::activity::Log::load(&cfg_root),
             undo_entry: None,
@@ -1820,12 +1926,7 @@ impl NotesApp {
             if section(ui, "Notas", Some(&format!("Nueva nota en {} (Ctrl+N)", self.ws))) {
                 action = Some(Action::NewNote);
             }
-            let notes: Vec<(PathBuf, String, SystemTime, bool)> = self
-                .vault
-                .notes_in(&self.ws)
-                .iter()
-                .map(|n| (n.path.clone(), n.title.clone(), n.modified, is_meeting(&n.text)))
-                .collect();
+            let summary = self.summary();
             let editing = self.view == View::Editor;
             // Clic abre; Ctrl+clic o la rueda, en otra pestaña; el tacho la manda a la papelera.
             let row_action = |ui: &Ui, r: &Response, path: &PathBuf| -> Option<Action> {
@@ -1849,7 +1950,7 @@ impl NotesApp {
 
             // Hoy, siempre arriba: la nota del día de este espacio (se crea al escribir).
             let today_path = self.vault.note_path(&self.ws, &today());
-            let today_exists = notes.iter().any(|n| n.0 == today_path);
+            let today_exists = summary.today_exists;
             let r = list_row(ui, icon::SUN, "Hoy", if today_exists { "" } else { "vacía" }, today_path == self.note.path && editing);
             let r = r.on_hover_text("La nota de hoy de este espacio: escribe aquí lo que vaya surgiendo (Ctrl+D)");
             if today_exists {
@@ -1868,19 +1969,21 @@ impl NotesApp {
                 }
             }
             let live = self.meeting.as_ref().map(|m| m.path.clone());
-            let (mut diary, others): (Vec<_>, Vec<_>) = notes.into_iter().filter(|n| n.0 != today_path).partition(|n| agenda::is_date(&n.1));
-            for (path, title, modified, meeting) in others {
-                let glyph = if meeting { icon::USERS } else { icon::FILE_TEXT };
-                let right = if live.as_ref() == Some(&path) { "en curso".to_string() } else { short_date(modified) };
-                let r = list_row(ui, glyph, &title, &right, path == self.note.path && editing);
-                if let Some(a) = row_action(ui, &r, &path) {
+            let rows = visible_rows(ui, summary.others.len());
+            let below = summary.others.len() - rows.end;
+            for n in &summary.others[rows] {
+                let glyph = if n.meeting { icon::USERS } else { icon::FILE_TEXT };
+                let right = if live.as_ref() == Some(&n.path) { "en curso" } else { n.right.as_str() };
+                let r = list_row(ui, glyph, &n.title, right, n.path == self.note.path && editing);
+                if let Some(a) = row_action(ui, &r, &n.path) {
                     action = Some(a);
                 }
             }
+            skip_rows(ui, below);
             // Diario: las notas de días anteriores, de la más nueva a la más vieja.
+            let diary = &summary.diary;
             if !diary.is_empty() {
-                diary.sort_by(|a, b| b.1.cmp(&a.1));
-                let open = self.diary_open || diary.iter().any(|n| n.0 == self.note.path);
+                let open = self.diary_open || diary.iter().any(|n| n.path == self.note.path);
                 let caret = if open { icon::CARET_DOWN } else { icon::CARET_RIGHT };
                 let r = list_row(ui, caret, "Diario", &diary.len().to_string(), false)
                     .on_hover_text("Las notas de días anteriores");
@@ -1888,22 +1991,25 @@ impl NotesApp {
                     self.diary_open = !open;
                 }
                 if open {
-                    for (path, title, _, meeting) in diary {
-                        let glyph = if meeting { icon::USERS } else { icon::CALENDAR_BLANK };
+                    let rows = visible_rows(ui, diary.len());
+                    let below = diary.len() - rows.end;
+                    for n in &diary[rows] {
+                        let glyph = if n.meeting { icon::USERS } else { icon::CALENDAR_BLANK };
                         let r = ui.horizontal(|ui| {
                             ui.add_space(14.0);
-                            list_row(ui, glyph, &display_title(&title), "", path == self.note.path && editing)
+                            list_row(ui, glyph, &n.title, "", n.path == self.note.path && editing)
                         });
-                        if let Some(a) = row_action(ui, &r.inner, &path) {
+                        if let Some(a) = row_action(ui, &r.inner, &n.path) {
                             action = Some(a);
                         }
                     }
+                    skip_rows(ui, below);
                 }
             }
             ui.add_space(14.0);
 
             // Etiquetas del espacio
-            let tags = self.vault.tag_counts(&self.ws);
+            let tags = summary.tags.clone();
             section(ui, "Etiquetas", None);
             if tags.is_empty() {
                 ui.label(RichText::new("Escribe #palabra en una nota.").color(MUTED).size(12.5));
@@ -2053,6 +2159,17 @@ impl NotesApp {
             self.found = Some(Found { key, generation: self.vault.generation, tag, hits, shown: FOUND_PAGE });
         }
         self.found.as_ref().expect("recién calculado")
+    }
+
+    /// El resumen de la barra lateral e Inicio, calculado de nuevo solo si cambió algo.
+    fn summary(&mut self) -> std::rc::Rc<Summary> {
+        let key = (self.vault.generation, self.ws.clone(), today());
+        if let Some(s) = self.summary.as_ref().filter(|s| s.key == key) {
+            return s.clone();
+        }
+        let s = std::rc::Rc::new(Summary::build(&self.vault, key));
+        self.summary = Some(s.clone());
+        s
     }
 
     /// Lista de líneas que tienen una etiqueta o coinciden con la búsqueda.
@@ -2595,7 +2712,7 @@ fn row_trash_button(ui: &Ui, r: &Response, tip: &str) -> bool {
 
 /// Fila de lista a todo el ancho: ícono + texto recortado a la izquierda, dato a la derecha.
 fn list_row(ui: &mut Ui, glyph: &str, text: &str, right: &str, selected: bool) -> Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 27.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), Sense::click());
     let bg = if selected {
         ACCENT_BG
     } else if resp.hovered() {
@@ -2727,6 +2844,17 @@ mod tests {
         fs::write(&path, "más cubicaciones").unwrap();
         app.vault.upsert(path, "más cubicaciones".into(), SystemTime::now());
         assert_eq!(app.found().hits.len(), 4);
+        // El resumen de la barra lateral e Inicio se reutiliza hasta que cambia una nota.
+        app.ws = "Obra".into();
+        let a = app.summary();
+        assert!(std::rc::Rc::ptr_eq(&a, &app.summary()));
+        assert_eq!(a.others.iter().map(|n| n.title.as_str()).collect::<HashSet<_>>(), HashSet::from(["Losa", "Cubicaciones"]));
+        let path = dir.join("Obra").join("Nueva.md");
+        fs::write(&path, "hola #obra").unwrap();
+        app.vault.upsert(path, "hola #obra".into(), SystemTime::now());
+        let b = app.summary();
+        assert!(!std::rc::Rc::ptr_eq(&a, &b));
+        assert_eq!((b.others.len(), b.tags.clone()), (3, vec![("obra".to_string(), 1)]));
         // Etiqueta: solo en el espacio actual.
         app.search.clear();
         app.ws = "General".into();
