@@ -1,0 +1,2 @@
+# Archivos para el servidor Linux: siempre con finales de línea de Linux.
+server/deploy/* text eol=lf
