@@ -494,14 +494,14 @@ impl Agenda {
     }
 
     /// Las tareas y eventos que venían de `from` (o las tareas con esos identificadores)
-    /// pasan a la nota `note` del espacio `ws`.
+    /// pasan a la nota `note` del espacio `ws` (con `ws` vacío, cada una conserva su espacio).
     pub fn retarget(&self, from: Option<&str>, ids: &[String], note: &str, ws: &str) -> io::Result<()> {
         let fix = |l: &str| -> String {
             l.split_whitespace()
                 .map(|w| {
                     if w.starts_with("nota:") {
                         format!("nota:{}", encode_note(note))
-                    } else if w.starts_with('+') && w.len() > 1 {
+                    } else if w.starts_with('+') && w.len() > 1 && !ws.is_empty() {
                         project_token(ws)
                     } else {
                         w.to_string()

@@ -403,7 +403,12 @@ impl NotesApp {
             let count = lines::units(&self.note.text).len();
             ui.horizontal(|ui| {
                 let notes = if count > 1 { format!("   ·   {}", plural(count, "nota")) } else { String::new() };
-                ui.label(RichText::new(format!("{} {}{notes}   ·   {when}", icon::FOLDER_SIMPLE, self.ws)).size(12.5).color(MUTED));
+                let place = if vault::in_diary(&self.note.path) {
+                    format!("{} Diario · la IA lleva cada cosa a su espacio", icon::SUN)
+                } else {
+                    format!("{} {}", icon::FOLDER_SIMPLE, workspace_of(&self.note.path).unwrap_or_else(|| self.ws.clone()))
+                };
+                ui.label(RichText::new(format!("{place}{notes}   ·   {when}")).size(12.5).color(MUTED));
                 if in_meeting {
                     ui.label(RichText::new(format!("  {} Reunión en curso", icon::RECORD)).size(12.5).color(SUCCESS));
                 } else if is_meeting(&self.note.text) && self.ai.is_ok() {

@@ -92,6 +92,7 @@ impl NotesApp {
         let title = match t.kind {
             Kind::Correo => "La IA anotó correos en tu nota de hoy",
             Kind::Error => "La IA no pudo terminar",
+            Kind::Sincronizar if t.text.contains("«Hoy»") => "Las notas del día, en un solo «Hoy»",
             Kind::Sincronizar => "Se juntaron dos versiones",
             _ => "La IA ordenó tu nota",
         };

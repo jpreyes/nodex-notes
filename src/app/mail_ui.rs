@@ -372,14 +372,10 @@ impl NotesApp {
             self.mail.store.save();
             return;
         }
-        // Una línea por correo al final de la nota de hoy de su espacio (o de General).
-        let fallback = self.vault.workspaces.iter().find(|w| *w == vault::DEFAULT_WORKSPACE).cloned().unwrap_or_else(|| self.ws.clone());
+        // Una línea por correo al final de la nota de hoy (la IA lleva cada una a su espacio).
         let mut files: Vec<(PathBuf, Option<String>)> = Vec::new();
-        let mut spaces: Vec<String> = entries.iter().map(|(w, _, _)| if w.is_empty() { fallback.clone() } else { w.clone() }).collect();
-        spaces.dedup();
-        for ws in spaces {
-            let path = self.vault.note_path(&ws, &today());
-            let lines: Vec<&(String, String, String)> = entries.iter().filter(|(w, _, _)| (if w.is_empty() { &fallback } else { w }) == &ws).collect();
+        for path in [self.today_path()] {
+            let lines: Vec<&(String, String, String)> = entries.iter().collect();
             let open = path == self.note.path;
             let before = if open { Some(self.note.text.clone()).filter(|t| !t.is_empty() || self.note.disk_mtime.is_some()) } else { vault::read_text(&path).ok() };
             let base = before.clone().unwrap_or_default();
@@ -431,7 +427,7 @@ impl NotesApp {
             return; // todo estaba anotado ya
         }
         let notes: Vec<String> = files.iter().map(|(p, _)| self.rel(p)).collect();
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new() });
         self.msg(format!("Correo · {} en la nota de hoy; la IA los ordena", plural(entries.len(), "correo anotado")));
         let details: Vec<String> = entries.iter().map(|(_, l, _)| l.chars().take(220).collect()).collect();
         let what = format!("Anotó {} en {}", plural(entries.len(), "correo"), notes.join(", "));
@@ -693,7 +689,7 @@ impl NotesApp {
 mod tests {
     use super::*;
 
-    /// Un correo importante se anota en la nota de hoy de su espacio (una vez) y verifica compromisos.
+    /// Un correo importante se anota en la nota de hoy (una vez) y verifica compromisos.
     #[test]
     fn mail_results_become_tasks_and_checks() {
         let dir = std::env::temp_dir().join(format!("nodex-correo-{}", std::process::id()));
@@ -716,11 +712,11 @@ mod tests {
         let m = &app.mail.store.mails[0];
         assert!(m.analyzed && m.important && m.workspace == "Consorcio");
         assert_eq!(m.items.len(), 2);
-        // Queda anotado en la nota de hoy de su espacio, y la IA la ordenará como cualquier nota.
-        let daily = dir.join("Consorcio").join(format!("{}.md", today()));
+        // Queda anotado en la nota de hoy (una sola, en el Diario), y la IA lo llevará a su espacio.
+        let daily = dir.join("Diario").join(format!("{}.md", today()));
         let text = fs::read_to_string(&daily).unwrap();
         assert_eq!(text, "Correo de Juan (26 sep): Planos rev. B. Juan manda los planos y pide la cubicación\n");
-        assert_eq!(app.mail.store.mails[0].noted, format!("Consorcio/{}", today()));
+        assert_eq!(app.mail.store.mails[0].noted, format!("Diario/{}", today()));
         assert!(app.touched.contains(&daily));
         // No se anota dos veces.
         app.mail.batch = vec![("c1".into(), "jp@gmail.com:INBOX:3".into())];
@@ -757,7 +753,8 @@ mod tests {
         // El otro equipo (pc-a) ya tomó el primero; el segundo ya está escrito en la nota de hoy
         // (llegó por Dropbox); el tercero es de este equipo.
         crate::claims::claim_mails(&dir, &["<uno@x>".into()], "pc-a");
-        let daily = dir.join("General").join(format!("{}.md", today()));
+        let daily = dir.join("Diario").join(format!("{}.md", today()));
+        fs::create_dir_all(dir.join("Diario")).unwrap();
         fs::write(&daily, "Correo de Ana (29 sep): Visita. Ana propone visitar la obra el jueves\n").unwrap();
         app.vault.scan();
         let reply = r#"{"correos": [{"id": "c1", "resumen": "Manda planos", "importante": true},
@@ -768,7 +765,7 @@ mod tests {
         assert_eq!(text, "Correo de Ana (29 sep): Visita. Ana propone visitar la obra el jueves\nCorreo de Ana (29 sep): Acta. Envía el acta\n");
         let noted: Vec<&str> = app.mail.store.mails.iter().map(|m| m.noted.as_str()).collect();
         assert_eq!(noted[0], "otro equipo");
-        assert!(noted[1].starts_with("General/") && noted[2].starts_with("General/"));
+        assert!(noted[1].starts_with("Diario/") && noted[2].starts_with("Diario/"));
         let _ = fs::remove_dir_all(&dir);
     }
 }

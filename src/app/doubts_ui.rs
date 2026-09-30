@@ -141,7 +141,7 @@ impl NotesApp {
             self.msg("Esa línea cambió; la pregunta se descartó");
             return;
         }
-        let ws_of_note = workspace_of(&path).unwrap_or_else(|| self.ws.clone());
+        let ws_of_note = self.space_of(&path);
         let mut t = text.clone();
 
         // Etiquetas y fecha, en la primera línea de la nota de adentro.
@@ -276,7 +276,7 @@ impl NotesApp {
                 self.ws = ws;
             }
         }
-        self.undo = Some(Undo { files, renamed: renamed.clone(), agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
+        self.undo = Some(Undo { files, renamed: renamed.clone(), agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new() });
         let what = if done.is_empty() { "listo".to_string() } else { done.join(" · ") };
         self.msg(format!("Respuesta aplicada: {what}"));
         let note = match &renamed {
@@ -353,7 +353,7 @@ impl NotesApp {
             let _ = self.agenda.remove_by_id(id);
         }
         if let (Some(id), false) = (&m.moved_task, same) {
-            let ws = workspace_of(&keep_path).unwrap_or_default();
+            let ws = self.space_of(&keep_path);
             let _ = self.agenda.retarget(None, std::slice::from_ref(id), &self.rel(&keep_path), &ws);
         }
         self.gcal_dirty = true;
@@ -366,7 +366,7 @@ impl NotesApp {
             self.note = OpenNote::load(current);
         }
         self.prune_doubts();
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None });
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new() });
         self.msg(format!("Unidas en «{}»", vault::stem(&keep_path)));
         let note = self.rel(&keep_path);
         let details = vec![format!("«{keep_unit}»"), format!("«{drop_unit}» ({})", self.rel(&drop_path))];

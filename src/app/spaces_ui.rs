@@ -158,7 +158,7 @@ impl NotesApp {
         details.extend(files.iter().filter(|(p, _)| workspace_of(p).as_deref() == Some(ws.as_str())).map(|(p, _)| format!("→ {}", self.rel(p))));
         let undoable = !files.is_empty() || !moved.is_empty() || created_dir.is_some();
         if undoable {
-            self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved, created_dir });
+            self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved, created_dir, apart: Vec::new() });
         }
         self.prune_doubts();
         self.prune_ideas();

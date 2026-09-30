@@ -26,6 +26,7 @@ mod ai_view;
 mod ask_view;
 mod calendars_ui;
 mod conflicts_ui;
+mod diary;
 mod doubts_ui;
 mod editor;
 mod followup;
@@ -170,7 +171,7 @@ struct Summary {
     /// Notas del espacio con título (la más reciente primero) y del Diario (la más nueva primero).
     others: Vec<SideNote>,
     diary: Vec<SideNote>,
-    /// ¿Existe ya la nota de hoy del espacio?
+    /// ¿Existe ya la nota de hoy?
     today_exists: bool,
     tags: Vec<(String, usize)>,
     /// Inicio: notas recientes (ruta, título, espacio, fecha).
@@ -185,16 +186,16 @@ struct Summary {
 impl Summary {
     fn build(vault: &Vault, key: (u64, String, String)) -> Summary {
         let (ws, today_s) = (&key.1, &key.2);
-        let today_path = vault.note_path(ws, today_s);
+        let today_path = vault.diary_path(today_s);
+        let today_exists = vault.get(&today_path).is_some();
         let mut others = Vec::new();
         let mut diary = Vec::new();
-        let mut today_exists = false;
-        for n in vault.notes_in(ws) {
+        // El Diario es uno solo; las notas del día que queden en el espacio (sin juntar) también van ahí.
+        for n in vault.notes_in(ws).into_iter().chain(vault.notes_in(vault::DIARY)) {
             if n.path == today_path {
-                today_exists = true;
                 continue;
             }
-            let daily = agenda::is_date(&n.title);
+            let daily = n.workspace == vault::DIARY || agenda::is_date(&n.title);
             let row = SideNote {
                 path: n.path.clone(),
                 title: if daily { display_title(&n.title) } else { n.title.clone() },
@@ -284,6 +285,8 @@ struct Undo {
     moved: Vec<(PathBuf, PathBuf)>,
     /// Carpeta de un espacio creado (se borra al deshacer, si quedó vacía).
     created_dir: Option<PathBuf>,
+    /// Notas del día que se habían juntado en el Diario: al deshacer, quedan aparte para siempre.
+    apart: Vec<String>,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -434,6 +437,9 @@ pub struct NotesApp {
     /// Estado de las notas la última vez que se emparejaron las tareas con sus líneas, y cuándo.
     tasks_gen: Option<u64>,
     tasks_at: Instant,
+    /// Lo mismo para juntar en el Diario las notas del día que quedaron en los espacios.
+    days_gen: Option<u64>,
+    days_at: Instant,
     /// Identificador de este equipo, y las notas que otro equipo está organizando (se reintentan después).
     machine: String,
     claim_wait: HashMap<PathBuf, Instant>,
@@ -477,7 +483,11 @@ fn today() -> String {
     Local::now().format("%Y-%m-%d").to_string()
 }
 
+/// El espacio de una nota; `None` para las notas del día (no son de ningún espacio).
 fn workspace_of(path: &Path) -> Option<String> {
+    if vault::in_diary(path) {
+        return None;
+    }
     Some(path.parent()?.file_name()?.to_string_lossy().into_owned())
 }
 
@@ -609,7 +619,7 @@ impl NotesApp {
             vault.workspaces.first().cloned().unwrap_or_else(|| vault::DEFAULT_WORKSPACE.into())
         };
         let last = vault.root.join(&estado.nota);
-        let path = if !estado.nota.is_empty() && last.is_file() { last } else { vault.note_path(&ws, &today()) };
+        let path = if !estado.nota.is_empty() && last.is_file() { last } else { vault.diary_path(&today()) };
         let ws = workspace_of(&path).unwrap_or(ws);
         let mut analyzed = load_analyzed(&vault.root);
         let mut vault = vault;
@@ -683,6 +693,8 @@ impl NotesApp {
             dropbox: crate::dropbox::contains(&cfg_root).then(|| crate::dropbox::Watch::start(ctx.clone())),
             tasks_gen: None,
             tasks_at: long_ago(),
+            days_gen: None,
+            days_at: long_ago(),
             machine: crate::claims::machine_id(),
             claim_wait: HashMap::new(),
             conflict_seen: HashMap::new(),
@@ -962,6 +974,22 @@ impl NotesApp {
         self.save_estado();
     }
 
+    /// La nota de hoy: una sola, en `Diario/` (la IA reparte lo que tiene a cada espacio).
+    fn today_path(&self) -> PathBuf {
+        self.vault.diary_path(&today())
+    }
+
+    /// El espacio de lo que no tiene uno claro (una tarea en la nota del día): General, o el primero.
+    fn home_ws(&self) -> String {
+        let w = &self.vault.workspaces;
+        w.iter().find(|w| *w == vault::DEFAULT_WORKSPACE).or(w.first()).cloned().unwrap_or_else(|| vault::DEFAULT_WORKSPACE.into())
+    }
+
+    /// El espacio de una nota para sus tareas; las del día, `home_ws`.
+    fn space_of(&self, path: &Path) -> String {
+        workspace_of(path).unwrap_or_else(|| self.home_ws())
+    }
+
     fn new_note(&mut self) {
         self.save();
         let path = self.vault.unique_path(&self.ws, "Sin título");
@@ -983,7 +1011,7 @@ impl NotesApp {
         self.search.clear();
         let path = match self.vault.notes_in(&ws).first() {
             Some(n) => n.path.clone(),
-            None => self.vault.note_path(&ws, &today()),
+            None => self.vault.unique_path(&ws, "Sin título"),
         };
         self.open_in_tab(path, Some(usize::MAX));
     }
@@ -1044,6 +1072,7 @@ impl NotesApp {
                         at: Instant::now(),
                         moved: vec![(path.clone(), dest)],
                         created_dir: None,
+                        apart: Vec::new(),
                     });
                     self.undo_entry = None;
                     self.msg(format!("«{}» movida a la papelera", vault::stem(&path)));
@@ -1082,6 +1111,7 @@ impl NotesApp {
                     at: Instant::now(),
                     moved: vec![(self.vault.root.join(&ws), dest)],
                     created_dir: None,
+                    apart: Vec::new(),
                 });
                 self.undo_entry = None;
                 self.touched.retain(|p| workspace_of(p).as_deref() != Some(ws.as_str()));
@@ -1140,6 +1170,7 @@ impl NotesApp {
             self.sync_stores();
         }
         self.resolve_conflicts(false);
+        self.maybe_merge_days();
         self.maybe_reconcile_tasks();
         let m = vault::modified(&self.note.path);
         if m.is_none() || !self.note.changed_on_disk() {
@@ -1534,6 +1565,22 @@ impl NotesApp {
             Some((self.rel(p), w.clone()))
         };
         let created = today();
+        // Lo que queda en la nota del día (que no es de ningún espacio) va al espacio que dijo la IA
+        // para esa unidad, o a General.
+        let home = self.home_ws();
+        let in_diary = vault::in_diary(&path);
+        let src_ws = |unidad: &str| -> String {
+            if !in_diary {
+                return ws.clone();
+            }
+            let u = unidad.trim();
+            a.unidades
+                .iter()
+                .find(|x| x.id.trim().eq_ignore_ascii_case(u))
+                .and_then(|x| self.vault.workspaces.iter().find(|w| w.eq_ignore_ascii_case(x.espacio.trim())))
+                .cloned()
+                .unwrap_or_else(|| home.clone())
+        };
         let (mut src_tasks, mut src_events, mut other_tasks, mut other_events) = (vec![], vec![], vec![], vec![]);
         // Acuerdos de reuniones: los de otros llevan "@Nombre" (lo que se espera de cada uno).
         let meeting_units: HashSet<String> = plan.agreements.iter().map(|g| g.unit.clone()).collect();
@@ -1541,7 +1588,7 @@ impl NotesApp {
             let text = if g.who.is_empty() { g.what.clone() } else { format!("{} @{}", g.what, g.who.split_whitespace().collect::<Vec<_>>().join("_")) };
             match place(&g.unit) {
                 Some((rel, w)) => other_tasks.push(agenda::format_task(&created, &text, &w, g.due.as_deref(), &rel, Some(&g.id))),
-                None => src_tasks.push(agenda::format_task(&created, &text, &ws, g.due.as_deref(), &source_rel, Some(&g.id))),
+                None => src_tasks.push(agenda::format_task(&created, &text, &src_ws(&g.unit), g.due.as_deref(), &source_rel, Some(&g.id))),
             }
         }
         for (ti, t) in a.tareas.iter().enumerate().filter(|(_, t)| !t.texto.trim().is_empty()) {
@@ -1553,14 +1600,14 @@ impl NotesApp {
             let id = plan.task_ids.get(ti).cloned().flatten();
             match place(&t.unidad) {
                 Some((rel, w)) => other_tasks.push(agenda::format_task(&created, &t.texto, &w, due, &rel, id.as_deref())),
-                None => src_tasks.push(agenda::format_task(&created, &t.texto, &ws, due, &source_rel, id.as_deref())),
+                None => src_tasks.push(agenda::format_task(&created, &t.texto, &src_ws(&t.unidad), due, &source_rel, id.as_deref())),
             }
         }
         for e in a.eventos.iter().filter(|e| agenda::is_date(e.fecha.trim()) && !e.titulo.trim().is_empty()) {
             let time = Some(e.hora.trim()).filter(|h| agenda::is_time(h));
             match place(&e.unidad) {
                 Some((rel, w)) => other_events.push(agenda::format_event(e.fecha.trim(), time, &e.titulo, &w, &rel)),
-                None => src_events.push(agenda::format_event(e.fecha.trim(), time, &e.titulo, &ws, &source_rel)),
+                None => src_events.push(agenda::format_event(e.fecha.trim(), time, &e.titulo, &src_ws(&e.unidad), &source_rel)),
             }
         }
         let r1 = self.agenda.replace_for_note(&source_old, &source_rel, &src_tasks, &src_events);
@@ -1676,6 +1723,7 @@ impl NotesApp {
             at: Instant::now(),
             moved: Vec::new(),
             created_dir: None,
+            apart: Vec::new(),
         });
         let name = if emptied { String::new() } else { format!(" {}:", vault::stem(&new_path)) };
         self.msg(format!("IA ·{name} {}", done.join(" · ")));
@@ -1755,6 +1803,9 @@ impl NotesApp {
         if let Some(dir) = &u.created_dir {
             let _ = fs::remove_dir(dir); // solo si quedó vacía
         }
+        if !u.apart.is_empty() {
+            self.keep_apart(&u.apart);
+        }
         let _ = self.agenda.restore(&u.agenda);
         self.save_analyzed();
         self.vault.scan();
@@ -1785,7 +1836,7 @@ impl NotesApp {
             Action::NewNote => self.new_note(),
             Action::Today => {
                 self.search.clear();
-                let p = self.vault.note_path(&self.ws, &today());
+                let p = self.today_path();
                 self.open_in_tab(p, Some(usize::MAX));
             }
             Action::SelectWorkspace(ws) => self.select_workspace(ws),
@@ -2057,6 +2108,71 @@ impl NotesApp {
         ui.add_space(10.0);
 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            let summary = self.summary();
+            let editing = self.view == View::Editor;
+            // Clic abre; Ctrl+clic o la rueda, en otra pestaña; el tacho la manda a la papelera.
+            let row_action = |ui: &Ui, r: &Response, path: &PathBuf| -> Option<Action> {
+                if row_trash_button(ui, r, "Mover a la papelera (se puede deshacer)") {
+                    return Some(Action::Trash(path.clone()));
+                }
+                let mut act = None;
+                if r.middle_clicked() || (r.clicked() && ui.input(|i| i.modifiers.command)) {
+                    act = Some(Action::OpenNewTab(path.clone()));
+                } else if r.clicked() {
+                    act = Some(Action::Open(path.clone(), None));
+                }
+                r.context_menu(|ui| {
+                    if ui.button(format!("{}  Mover a la papelera", icon::TRASH)).clicked() {
+                        act = Some(Action::Trash(path.clone()));
+                        ui.close();
+                    }
+                });
+                act
+            };
+
+            // Hoy y el Diario, arriba y fuera de los espacios: una sola nota por día (se crea al
+            // escribir); la IA reparte lo que tiene a cada espacio.
+            let today_path = self.today_path();
+            let today_exists = summary.today_exists;
+            let r = list_row(ui, icon::SUN, "Hoy", if today_exists { "" } else { "vacía" }, today_path == self.note.path && editing);
+            let r = r.on_hover_text("La nota de hoy: escribe aquí lo que vaya surgiendo; la IA reparte cada cosa a su espacio (Ctrl+D)");
+            if today_exists {
+                if let Some(a) = row_action(ui, &r, &today_path) {
+                    action = Some(a);
+                }
+            } else if r.clicked() {
+                action = Some(Action::Today);
+            }
+
+            // Diario: las notas de días anteriores, de la más nueva a la más vieja.
+            let diary = &summary.diary;
+            if !diary.is_empty() {
+                let open = self.diary_open || diary.iter().any(|n| n.path == self.note.path);
+                let caret = if open { icon::CARET_DOWN } else { icon::CARET_RIGHT };
+                let r = list_row(ui, caret, "Diario", &diary.len().to_string(), false)
+                    .on_hover_text("Las notas de días anteriores");
+                if r.clicked() {
+                    self.diary_open = !open;
+                }
+                if open {
+                    let rows = visible_rows(ui, diary.len());
+                    let below = diary.len() - rows.end;
+                    for n in &diary[rows] {
+                        let glyph = if n.meeting { icon::USERS } else { icon::CALENDAR_BLANK };
+                        let r = ui.horizontal(|ui| {
+                            ui.add_space(14.0);
+                            list_row(ui, glyph, &n.title, "", n.path == self.note.path && editing)
+                        });
+                        if let Some(a) = row_action(ui, &r.inner, &n.path) {
+                            action = Some(a);
+                        }
+                    }
+                    skip_rows(ui, below);
+                }
+            }
+
+            ui.add_space(14.0);
+
             // Espacios
             if section(ui, "Espacios", Some("Nuevo espacio")) {
                 self.new_ws = Some(String::new());
@@ -2097,41 +2213,6 @@ impl NotesApp {
             if section(ui, "Notas", Some(&format!("Nueva nota en {} (Ctrl+N)", self.ws))) {
                 action = Some(Action::NewNote);
             }
-            let summary = self.summary();
-            let editing = self.view == View::Editor;
-            // Clic abre; Ctrl+clic o la rueda, en otra pestaña; el tacho la manda a la papelera.
-            let row_action = |ui: &Ui, r: &Response, path: &PathBuf| -> Option<Action> {
-                if row_trash_button(ui, r, "Mover a la papelera (se puede deshacer)") {
-                    return Some(Action::Trash(path.clone()));
-                }
-                let mut act = None;
-                if r.middle_clicked() || (r.clicked() && ui.input(|i| i.modifiers.command)) {
-                    act = Some(Action::OpenNewTab(path.clone()));
-                } else if r.clicked() {
-                    act = Some(Action::Open(path.clone(), None));
-                }
-                r.context_menu(|ui| {
-                    if ui.button(format!("{}  Mover a la papelera", icon::TRASH)).clicked() {
-                        act = Some(Action::Trash(path.clone()));
-                        ui.close();
-                    }
-                });
-                act
-            };
-
-            // Hoy, siempre arriba: la nota del día de este espacio (se crea al escribir).
-            let today_path = self.vault.note_path(&self.ws, &today());
-            let today_exists = summary.today_exists;
-            let r = list_row(ui, icon::SUN, "Hoy", if today_exists { "" } else { "vacía" }, today_path == self.note.path && editing);
-            let r = r.on_hover_text("La nota de hoy de este espacio: escribe aquí lo que vaya surgiendo (Ctrl+D)");
-            if today_exists {
-                if let Some(a) = row_action(ui, &r, &today_path) {
-                    action = Some(a);
-                }
-            } else if r.clicked() {
-                action = Some(Action::Today);
-            }
-
             let open_is_new = self.note.disk_mtime.is_none();
             if open_is_new && self.note.path != today_path && workspace_of(&self.note.path).as_deref() == Some(self.ws.as_str()) {
                 let r = list_row(ui, icon::FILE_TEXT, &self.note.title, "nueva", editing);
@@ -2151,32 +2232,6 @@ impl NotesApp {
                 }
             }
             skip_rows(ui, below);
-            // Diario: las notas de días anteriores, de la más nueva a la más vieja.
-            let diary = &summary.diary;
-            if !diary.is_empty() {
-                let open = self.diary_open || diary.iter().any(|n| n.path == self.note.path);
-                let caret = if open { icon::CARET_DOWN } else { icon::CARET_RIGHT };
-                let r = list_row(ui, caret, "Diario", &diary.len().to_string(), false)
-                    .on_hover_text("Las notas de días anteriores");
-                if r.clicked() {
-                    self.diary_open = !open;
-                }
-                if open {
-                    let rows = visible_rows(ui, diary.len());
-                    let below = diary.len() - rows.end;
-                    for n in &diary[rows] {
-                        let glyph = if n.meeting { icon::USERS } else { icon::CALENDAR_BLANK };
-                        let r = ui.horizontal(|ui| {
-                            ui.add_space(14.0);
-                            list_row(ui, glyph, &n.title, "", n.path == self.note.path && editing)
-                        });
-                        if let Some(a) = row_action(ui, &r.inner, &n.path) {
-                            action = Some(a);
-                        }
-                    }
-                    skip_rows(ui, below);
-                }
-            }
             ui.add_space(14.0);
 
             // Etiquetas del espacio
@@ -3197,10 +3252,10 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         // Configuración y estado de prueba fuera de la carpeta real del usuario.
         unsafe { std::env::set_var("NODEX_CONFIG_DIR", dir.join(".config")) };
-        for ws in ["General", "Consorcio", "Docencia"] {
+        for ws in ["General", "Consorcio", "Docencia", "Diario"] {
             fs::create_dir_all(dir.join(ws)).unwrap();
         }
-        let daily = dir.join("General").join("2026-09-24.md");
+        let daily = dir.join("Diario").join("2026-09-24.md");
         let original = "Debo entregar el informe de revisión de las trincheras\n\
             Las trincheras enstán en la carpeta dropbox /workspace/proeyctos/activos/consorcio/04 Trincheras\n\
             Debo entregar mañana el informe a la UTalca\n\
@@ -3220,7 +3275,7 @@ mod tests {
                 {"id": "L1", "espacio": "Consorcio", "nota": "Trincheras", "etiquetas": ["informe"]},
                 {"id": "L2", "de": "L1", "etiquetas": ["trincheras"]},
                 {"id": "L3", "espacio": "Docencia", "nota": "Informe UTalca", "etiquetas": ["utalca"]},
-                {"id": "L4", "etiquetas": ["lavet"]},
+                {"id": "L4", "espacio": "Docencia", "etiquetas": ["lavet"]},
                 {"id": "B6", "espacio": "Consorcio", "nota": "Reunión Estructuras", "es_reunion": true, "resumen": "Se revisaron las vigas del eje 3."}],
               "tareas": [
                 {"texto": "Entregar el informe a la UTalca", "fecha": "2026-09-25", "unidad": "L3"},
@@ -3244,7 +3299,8 @@ mod tests {
         // El bloque de reunión se mueve entero, con resumen y #reunión.
         let r = fs::read_to_string(dir.join("Consorcio").join("Reunión Estructuras.md")).unwrap();
         assert_eq!(r, "## Reunión Estructuras · 2026-09-24 15:00\n- 15:03 revisar vigas eje 3\n## fin · 15:42\n### Resumen\nSe revisaron las vigas del eje 3.\n#reunión\n");
-        // La línea 4 no se atribuyó: se queda en la nota del día, con su etiqueta y su casilla.
+        // La línea 4 no tiene nota: se queda en la nota del día, con su etiqueta y su casilla (y su
+        // tarea, en el espacio que dijo la IA).
         let d = fs::read_to_string(&daily).unwrap();
         assert!(d.starts_with("- [ ] Debo entregar la proxima semana el LaVet #lavet due:2026-10-02 ^"), "{d}");
         assert_eq!(d.lines().count(), 1);
@@ -3252,7 +3308,7 @@ mod tests {
         // Tareas: cada una apunta a su nota y a su línea.
         let tasks = fs::read_to_string(dir.join("tareas.txt")).unwrap();
         assert!(tasks.contains(&format!("Entregar el informe a la UTalca +Docencia due:2026-09-25 nota:Docencia/Informe%20UTalca id:{utalca_id}")), "{tasks}");
-        assert!(tasks.contains(&format!("Entregar el LaVet +General due:2026-10-02 nota:General/2026-09-24 id:{lavet_id}")), "{tasks}");
+        assert!(tasks.contains(&format!("Entregar el LaVet +Docencia due:2026-10-02 nota:Diario/2026-09-24 id:{lavet_id}")), "{tasks}");
 
         // Marcar la casilla en la nota marca la tarea; desmarcarla en Tareas desmarca la línea.
         app.open(daily.clone(), None);

@@ -5,7 +5,8 @@
 //! equipos pueden quedar distintas: la nota se junta línea por línea y `tareas.txt` llega por
 //! su lado. Aquí se emparejan, con reglas que nunca pierden trabajo:
 //!
-//! - la línea se movió a otra nota o espacio → la tarea apunta a donde está ahora;
+//! - la línea se movió a otra nota o espacio → la tarea apunta a donde está ahora (en la nota del
+//!   día, que no es de ningún espacio, la tarea conserva el suyo);
 //! - hecha en un lado y pendiente en el otro → queda hecha en los dos;
 //! - la línea tiene fecha → vale la de la línea; si no tiene y la tarea sí, se escribe en la línea;
 //! - hay una línea con casilla e identificador sin tarea → se crea la tarea.
@@ -46,8 +47,10 @@ impl NotesApp {
     pub(super) fn reconcile_tasks(&mut self) -> usize {
         self.tasks_gen = Some(self.vault.generation);
         self.tasks_at = Instant::now();
-        // Dónde está cada línea de tarea: id -> (nota, espacio, día de la nota, línea).
+        // Dónde está cada línea de tarea: id -> (nota, espacio, día de la nota, línea). El espacio
+        // va vacío en las notas del día.
         let mut places: BTreeMap<String, Vec<(String, String, String, vault::TaskLine)>> = BTreeMap::new();
+        let home = self.home_ws();
         for n in self.vault.all_notes() {
             if n.task_lines().is_empty() {
                 continue;
@@ -57,8 +60,9 @@ impl NotesApp {
                 continue;
             }
             let rel = self.rel(&n.path);
+            let ws = if n.workspace == vault::DIARY { String::new() } else { n.workspace.clone() };
             for tl in n.task_lines() {
-                places.entry(tl.id.clone()).or_default().push((rel.clone(), n.workspace.clone(), n.day().to_string(), tl.clone()));
+                places.entry(tl.id.clone()).or_default().push((rel.clone(), ws.clone(), n.day().to_string(), tl.clone()));
             }
         }
         if places.is_empty() {
@@ -71,10 +75,12 @@ impl NotesApp {
             // Si la misma línea está en dos notas, se prefiere la nota a la que ya apunta la tarea.
             let (rel, ws, day, line) = found.iter().find(|p| task.is_some_and(|t| t.note.as_deref() == Some(p.0.as_str()))).unwrap_or(&found[0]);
             let Some(t) = task else {
+                let ws = if ws.is_empty() { &home } else { ws };
                 let new = agenda::format_task(day, &line.text, ws, line.due.as_deref(), rel, Some(id));
                 fixes.push(Fix::Add(if line.done { format!("x {day} {new}") } else { new }));
                 continue;
             };
+            let ws = if ws.is_empty() { &t.project } else { ws };
             if t.note.as_deref() != Some(rel.as_str()) || t.project != *ws {
                 fixes.push(Fix::Move(id.clone(), rel.clone(), ws.clone()));
             }

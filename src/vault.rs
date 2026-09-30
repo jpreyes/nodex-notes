@@ -1,10 +1,12 @@
-//! Carpeta de notas: cada subcarpeta es un espacio de trabajo y cada `.md` una nota.
+//! Carpeta de notas: cada subcarpeta es un espacio de trabajo y cada `.md` una nota. Las notas
+//! del día van todas en `Diario/` (una sola por día, fuera de los espacios).
 //!
 //! ```text
 //! Dropbox/Notas/
+//!   Diario/
+//!     2026-09-24.md   (la nota de ese día)
 //!   Proyecto Edificio A/
 //!     Cubicaciones losa.md
-//!     2026-09-24.md
 //!   Docencia/
 //!   .papelera/        (notas eliminadas; no se muestra)
 //! ```
@@ -31,6 +33,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_WORKSPACE: &str = "General";
+/// La carpeta de las notas del día. No es un espacio: no se lista entre ellos.
+pub const DIARY: &str = "Diario";
 const TRASH: &str = ".papelera";
 /// Revisión completa de seguridad, por si se perdió algún aviso.
 const FULL_SCAN_EVERY: Duration = Duration::from_secs(600);
@@ -213,6 +217,8 @@ pub fn fold(s: &str) -> String {
 pub struct Vault {
     pub root: PathBuf,
     pub workspaces: Vec<String>,
+    /// La carpeta de las notas del día (como esté escrita en disco; `Diario` si aún no existe).
+    diary_dir: PathBuf,
     notes: HashMap<PathBuf, Note>,
     /// Avisos del sistema operativo cuando algo cambia en la carpeta.
     watcher: Option<RecommendedWatcher>,
@@ -245,6 +251,17 @@ pub fn modified(path: &Path) -> Option<SystemTime> {
     fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
+/// ¿Es el nombre de la carpeta de las notas del día? (Sin distinguir mayúsculas: en Windows y
+/// Mac «diario» es la misma carpeta).
+pub fn is_diary_dir(name: &str) -> bool {
+    name.eq_ignore_ascii_case(DIARY)
+}
+
+/// ¿Está la nota en la carpeta de las notas del día?
+pub fn in_diary(path: &Path) -> bool {
+    path.parent().and_then(|p| p.file_name()).is_some_and(|n| is_diary_dir(&n.to_string_lossy()))
+}
+
 pub fn stem(path: &Path) -> String {
     path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
 }
@@ -262,6 +279,7 @@ pub fn sanitize(title: &str) -> String {
 impl Vault {
     pub fn new(root: PathBuf) -> Self {
         let mut v = Vault {
+            diary_dir: root.join(DIARY),
             root,
             workspaces: Vec::new(),
             notes: HashMap::new(),
@@ -400,7 +418,7 @@ impl Vault {
             }
             match parts.len() {
                 // Un espacio creado, renombrado o borrado (los archivos sueltos, como tareas.txt, no).
-                1 => folders_changed |= structural.contains(p) && (p.is_dir() || self.workspaces.contains(&parts[0])),
+                1 => folders_changed |= structural.contains(p) && (p.is_dir() || self.workspaces.contains(&parts[0]) || is_diary_dir(&parts[0])),
                 2 if is_md(p) => self.refresh_note(p),
                 _ => {}
             }
@@ -442,13 +460,18 @@ impl Vault {
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .filter(|n| !n.starts_with('.'))
             .collect();
+        // Las notas del día se leen como las demás, pero su carpeta no es un espacio.
+        let diary: Vec<String> = ws.iter().filter(|w| is_diary_dir(w)).cloned().collect();
+        ws.retain(|w| !is_diary_dir(w));
         if ws.is_empty() && fs::create_dir_all(self.root.join(DEFAULT_WORKSPACE)).is_ok() {
             ws.push(DEFAULT_WORKSPACE.to_string());
         }
         ws.sort_by_key(|w| w.to_lowercase());
 
+        self.diary_dir = self.root.join(diary.first().map_or(DIARY, |d| d.as_str()));
+
         let mut seen = HashSet::new();
-        for w in &ws {
+        for w in ws.iter().chain(&diary) {
             for e in fs::read_dir(self.root.join(w)).into_iter().flatten().flatten() {
                 let path = e.path();
                 if !is_md(&path) || !e.file_type().is_ok_and(|t| t.is_file()) {
@@ -480,6 +503,7 @@ impl Vault {
             .parent()
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().into_owned())
+            .map(|w| if is_diary_dir(&w) { DIARY.to_string() } else { w })
             .unwrap_or_default();
         let title = stem(&path);
         self.cache_dirty = true;
@@ -519,6 +543,11 @@ impl Vault {
         counts.into_iter().collect()
     }
 
+    /// La nota de un día ("2026-09-30"), en `Diario/` (se usa la carpeta como esté escrita).
+    pub fn diary_path(&self, day: &str) -> PathBuf {
+        self.diary_dir.join(format!("{}.md", sanitize(day)))
+    }
+
     pub fn note_path(&self, ws: &str, title: &str) -> PathBuf {
         self.root.join(ws).join(format!("{}.md", sanitize(title)))
     }
@@ -537,6 +566,9 @@ impl Vault {
 
     pub fn create_workspace(&mut self, name: &str) -> io::Result<String> {
         let name = sanitize(name);
+        if is_diary_dir(&name) {
+            return Err(io::Error::other(format!("«{DIARY}» es la carpeta de las notas del día")));
+        }
         fs::create_dir_all(self.root.join(&name))?;
         self.scan();
         Ok(name)

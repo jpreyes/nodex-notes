@@ -38,13 +38,13 @@ fn note_row(ui: &mut Ui, glyph: &str, title: &str, right: &str, path: &Path) -> 
 }
 
 impl NotesApp {
-    /// Anotar algo rápido: va al final de la nota de hoy del espacio actual (la IA lo ordena después).
-    fn quick_capture(&mut self, line: &str) {
+    /// Anotar algo rápido: va al final de la nota de hoy (la IA lo reparte después).
+    pub(super) fn quick_capture(&mut self, line: &str) {
         let line = line.trim();
         if line.is_empty() {
             return;
         }
-        let path = self.vault.note_path(&self.ws, &today());
+        let path = self.today_path();
         if path == self.note.path {
             let t = self.note.text.trim_end().to_string();
             self.note.text = if t.is_empty() { format!("{line}\n") } else { format!("{t}\n{line}\n") };
@@ -66,7 +66,7 @@ impl NotesApp {
             }
             self.touched.insert(path.clone());
         }
-        self.msg(format!("Anotado en la nota de hoy de {}", self.ws));
+        self.msg("Anotado en la nota de hoy; la IA lo lleva a su espacio");
     }
 
     pub(super) fn home_view(&mut self, ui: &mut Ui) -> Option<Action> {
@@ -130,7 +130,7 @@ impl NotesApp {
                 });
                 sent
             };
-            if boxed(ui, &mut self.home_capture, "inicio-anotar", format!("{}  Anota algo rápido… (va a la nota de hoy de {})", icon::NOTE_PENCIL, self.ws)) {
+            if boxed(ui, &mut self.home_capture, "inicio-anotar", format!("{}  Anota algo rápido… (va a la nota de hoy; la IA lo lleva a su espacio)", icon::NOTE_PENCIL)) {
                 capture = Some(std::mem::take(&mut self.home_capture));
             }
             ui.add_space(6.0);
@@ -294,9 +294,13 @@ mod tests {
         app.note = OpenNote::load(dir.join("General").join("Otra.md"));
         app.quick_capture("Llamar a Juan");
         app.quick_capture("Comprar pan");
-        let p = dir.join("General").join(format!("{}.md", today()));
+        // Va a la única nota de hoy, en el Diario (no a una del espacio), y el Diario no es un espacio.
+        let p = dir.join("Diario").join(format!("{}.md", today()));
         assert_eq!(fs::read_to_string(&p).unwrap(), "Llamar a Juan\nComprar pan\n");
         assert!(app.touched.contains(&p), "la IA la organizará");
+        assert!(!dir.join("General").join(format!("{}.md", today())).exists());
+        app.vault.scan();
+        assert_eq!(app.vault.workspaces, vec!["General".to_string()]);
         let _ = fs::remove_dir_all(&dir);
     }
 }

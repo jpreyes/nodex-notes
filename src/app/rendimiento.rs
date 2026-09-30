@@ -15,7 +15,7 @@
 use super::*;
 
 /// Cambiar si cambia el generador (así se vuelven a crear las carpetas).
-const GENERATOR: &str = "v1";
+const GENERATOR: &str = "v2";
 const SPACES: [&str; 12] = [
     "General", "Consorcio", "Docencia", "Obra Talca", "Proyecto LAV", "Clientes", "Personal", "Investigación", "Finanzas", "Casa",
     "Lecturas", "Viajes",
@@ -111,6 +111,8 @@ fn generate(n: usize, root: &Path) -> f64 {
             let k = rng.range(3, 60);
             (title, (0..k).map(|_| line(&mut rng, &words, today)).collect())
         };
+        // Las notas del día van en el Diario (una por día).
+        let ws = if kind < 35 { vault::DIARY } else { ws };
         if !used.insert((ws, title.clone())) {
             title = format!("{title} {i}");
             used.insert((ws, title.clone()));
