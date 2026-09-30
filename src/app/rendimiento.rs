@@ -182,6 +182,9 @@ struct Row {
     search: f64,
     /// Un repintado con la búsqueda abierta (ya calculada).
     search_frame: f64,
+    /// Preparar una pregunta para la IA (elegir las notas relevantes) y cuántas notas se envían.
+    ask: f64,
+    ask_docs: usize,
     ram: f64,
 }
 
@@ -239,9 +242,15 @@ fn measure(n: usize, base: &Path) -> Row {
     let search_frame = frames(&ctx, &mut app, 3);
     app.search.clear();
 
+    // Preparar una pregunta: con muchas notas, la app elige las relevantes sin IA.
+    let t = Instant::now();
+    let (input, _) = app.build_request("¿Cómo va la cubicación del muro de la obra?".into(), Vec::new(), None);
+    let ask = ms(t.elapsed());
+    let ask_docs = input.docs.len();
+
     drop(app);
     let _ = fs::remove_dir_all(&cfg_dir);
-    Row { notes: n, mb, load, load_cached, cached_reads, home_first, home, note_first, note: note_ms, rescan, search, search_frame, ram }
+    Row { notes: n, mb, load, load_cached, cached_reads, home_first, home, note_first, note: note_ms, rescan, search, search_frame, ask, ask_docs, ram }
 }
 
 fn seconds(ms: f64) -> String {
@@ -250,14 +259,14 @@ fn seconds(ms: f64) -> String {
 
 fn table(rows: &[Row]) -> String {
     let mut out = String::from(
-        "| Notas | Tamaño | Cargar sin copia | Cargar con copia | 1er cuadro Inicio | Cuadro Inicio | 1er cuadro nota | Cuadro nota | Revisar carpeta | Quieta en Inicio | Quieta en nota | Buscar | Repintar búsqueda | RAM (sin ventana) |\n\
-         |---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n",
+        "| Notas | Tamaño | Cargar sin copia | Cargar con copia | 1er cuadro Inicio | Cuadro Inicio | 1er cuadro nota | Cuadro nota | Revisar carpeta | Quieta en Inicio | Quieta en nota | Buscar | Repintar búsqueda | Preparar pregunta | RAM (sin ventana) |\n\
+         |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n",
     );
     for r in rows {
         // La app repinta y revisa la carpeta una vez por segundo: eso es lo que gasta quieta.
         let idle = |frame: f64| format!("{:.1} %", (frame + r.rescan) / 10.0);
         out += &format!(
-            "| {} | {:.1} MB | {} | {} ({} leídas) | {} | {} | {} | {} | {} | {} | {} | {} | {} | {:.0} MB |\n",
+            "| {} | {:.1} MB | {} | {} ({} leídas) | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} ({} notas) | {:.0} MB |\n",
             r.notes,
             r.mb,
             seconds(r.load),
@@ -272,6 +281,8 @@ fn table(rows: &[Row]) -> String {
             idle(r.note),
             seconds(r.search),
             seconds(r.search_frame),
+            seconds(r.ask),
+            r.ask_docs,
             r.ram
         );
     }

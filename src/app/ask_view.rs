@@ -125,23 +125,34 @@ impl NotesApp {
     /// Arma la pregunta con las notas (todas, o solo las editadas desde `since`), tareas y agenda.
     pub(super) fn build_request(&self, question: String, history: Vec<(String, String)>, since: Option<&str>) -> (ask::Input, Turn) {
         let mut sources = HashMap::new();
-        let docs: Vec<ask::Doc> = self
-            .vault
-            .all_notes()
+        let mut notes: Vec<&vault::Note> = self.vault.all_notes().into_iter().filter(|n| since.is_none_or(|s| n.day() >= s)).collect();
+        // Con muchas notas no se mandan todas: la app se queda con las más relevantes para la
+        // pregunta (sin IA) y, si aún son muchas, la IA elige entre esas.
+        let total: usize = notes.iter().map(|n| n.text.len()).sum();
+        if total > ask::ALL_LIMIT {
+            let candidates: Vec<ask::Candidate> = notes
+                .iter()
+                .map(|n| ask::Candidate {
+                    workspace: &n.workspace,
+                    title: &n.title,
+                    folded: n.folded(),
+                    day: if agenda::is_date(&n.title) { &n.title } else { n.day() },
+                    meeting: n.meeting(is_meeting),
+                })
+                .collect();
+            let picked = ask::rank(&question, &history, &candidates, &today(), ask::MAX_CANDIDATES);
+            notes = picked.into_iter().map(|i| notes[i]).collect();
+        }
+        let docs: Vec<ask::Doc> = notes
             .into_iter()
-            .filter(|n| {
-                let d: DateTime<Local> = n.modified.into();
-                since.is_none_or(|s| d.format("%Y-%m-%d").to_string().as_str() >= s)
-            })
             .enumerate()
             .map(|(i, n)| {
-                let d: DateTime<Local> = n.modified.into();
                 let doc = ask::Doc {
                     key: format!("n{}", i + 1),
                     path: n.path.clone(),
                     workspace: n.workspace.clone(),
                     title: n.title.clone(),
-                    date: d.format("%Y-%m-%d").to_string(),
+                    date: n.day().to_string(),
                     text: n.text.clone(),
                 };
                 sources.insert(doc.key.clone(), Source { path: doc.path.clone(), label: doc.label() });

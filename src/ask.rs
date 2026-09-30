@@ -1,7 +1,9 @@
 //! Preguntar: responde preguntas sobre todas las notas, tareas y agenda, citando de dónde sale cada dato.
 //!
-//! Si las notas son pocas se envían todas. Si son muchas, primero la IA elige cuáles leer a partir
-//! de un índice (espacio, título, fecha, etiquetas y un extracto) y después responde leyendo solo esas.
+//! Si las notas son pocas se envían todas. Si son muchas, la app primero se queda con las más
+//! relevantes para la pregunta (`rank`, sin IA: palabras de la pregunta, título, espacio, fechas,
+//! reuniones y lo reciente); si aún no caben, la IA elige cuáles leer a partir de un índice
+//! (espacio, título, fecha, etiquetas y un extracto) y después responde leyendo solo esas.
 //! Cada nota va con sus líneas numeradas, para que la respuesta cite "[n3:12]" (nota n3, línea 12).
 
 use crate::agenda::{Event, Task};
@@ -11,7 +13,130 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 
 /// Hasta este tamaño (en caracteres) se envían todas las notas de una vez.
-const ALL_LIMIT: usize = 80_000;
+pub const ALL_LIMIT: usize = 80_000;
+/// Con más notas que eso, cuántas preselecciona la app antes de preguntarle a la IA.
+pub const MAX_CANDIDATES: usize = 120;
+/// Aunque pocas notas coincidan con la pregunta, se agregan recientes hasta llegar a estas.
+const MIN_CANDIDATES: usize = 20;
+
+/// Palabras de una pregunta que no ayudan a encontrar notas.
+const STOPWORDS: &[&str] = &[
+    "que", "como", "cual", "cuales", "cuando", "donde", "quien", "quienes", "cuanto", "cuantos", "cuanta", "cuantas", "para", "por",
+    "los", "las", "del", "una", "uno", "unos", "unas", "con", "sin", "sobre", "entre", "desde", "hasta", "esta", "este", "esto", "estas",
+    "estos", "esa", "ese", "eso", "fue", "era", "eran", "son", "hay", "mis", "tus", "sus", "nos", "les", "mas", "pero", "tambien", "muy",
+    "todo", "toda", "todos", "todas", "algo", "nota", "notas", "resumen", "resume", "dime", "dame", "lista", "tengo", "tiene", "tienen",
+    "falta", "faltan", "hacer", "hice", "hizo", "sido", "estar", "haber", "the", "and", "pasada", "pasado", "proximo", "proxima", "semana",
+    "mes", "hoy", "ayer", "manana", "dia", "dias",
+];
+
+/// Lo que se necesita de una nota para ordenarla por relevancia.
+pub struct Candidate<'a> {
+    pub workspace: &'a str,
+    pub title: &'a str,
+    /// Texto en minúsculas y sin tildes (`vault::fold`).
+    pub folded: &'a str,
+    /// Día de la nota: su título si es una nota del día, o su última edición (AAAA-MM-DD).
+    pub day: &'a str,
+    pub meeting: bool,
+}
+
+/// Palabras útiles de una pregunta: sin tildes, sin palabras de relleno y sin repetir.
+pub fn keywords(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for w in crate::vault::fold(text).split(|c: char| !c.is_alphanumeric()) {
+        if w.chars().count() > 2 && !STOPWORDS.contains(&w) && !out.iter().any(|x| x == w) {
+            out.push(w.to_string());
+        }
+    }
+    out
+}
+
+/// Rango de días al que se refiere la pregunta ("ayer", "la semana pasada", "este mes"), si lo dice.
+fn date_window(question: &str, today: &str) -> Option<(String, String)> {
+    let q = crate::vault::fold(question);
+    let t = chrono::NaiveDate::parse_from_str(today, "%Y-%m-%d").ok()?;
+    let day = |n: i64| (t - chrono::Duration::days(n)).format("%Y-%m-%d").to_string();
+    let has = |w: &str| q.split(|c: char| !c.is_alphanumeric()).any(|x| x == w);
+    if q.contains("semana pasada") {
+        Some((day(13), day(6)))
+    } else if has("ayer") {
+        Some((day(1), day(1)))
+    } else if has("hoy") {
+        Some((day(0), day(0)))
+    } else if has("semana") {
+        Some((day(7), day(0)))
+    } else if q.contains("mes pasado") {
+        Some((day(62), day(28)))
+    } else if has("mes") {
+        Some((day(31), day(0)))
+    } else {
+        None
+    }
+}
+
+/// Las notas más relevantes para la pregunta, la mejor primero (como mucho `max`). Sin IA:
+/// cuenta las palabras de la pregunta (más peso en el título y el espacio, y a las palabras
+/// poco comunes), las fechas que menciona, si habla de reuniones y lo reciente.
+/// `notes` viene de la más reciente a la más antigua.
+pub fn rank(question: &str, history: &[(String, String)], notes: &[Candidate], today: &str, max: usize) -> Vec<usize> {
+    // Una pregunta de seguimiento ("¿y cuándo se entrega?") hereda el tema de la anterior.
+    let mut terms = keywords(question);
+    if let Some((prev, _)) = history.last() {
+        for w in keywords(prev) {
+            if !terms.contains(&w) {
+                terms.push(w);
+            }
+        }
+    }
+    let window = date_window(question, today);
+    let about_meetings = crate::vault::fold(question).contains("reunion");
+    let n = notes.len().max(1) as f64;
+    // Cuántas veces aparece cada palabra en cada nota, y en cuántas notas aparece.
+    let counts: Vec<Vec<usize>> = terms.iter().map(|t| notes.iter().map(|c| c.folded.matches(t.as_str()).take(5).count()).collect()).collect();
+    let weight: Vec<f64> = counts.iter().map(|c| (1.0 + n / (1 + c.iter().filter(|x| **x > 0).count()) as f64).ln()).collect();
+    let recent = chrono::NaiveDate::parse_from_str(today, "%Y-%m-%d").ok().map(|t| (t - chrono::Duration::days(7)).format("%Y-%m-%d").to_string());
+
+    let mut scored: Vec<(f64, usize)> = Vec::new();
+    for (i, c) in notes.iter().enumerate() {
+        let (title, ws) = (crate::vault::fold(c.title), crate::vault::fold(c.workspace));
+        let mut score = 0.0;
+        for (k, t) in terms.iter().enumerate() {
+            score += counts[k][i] as f64 * weight[k];
+            if title.contains(t.as_str()) {
+                score += 8.0 * weight[k];
+            }
+            if ws.contains(t.as_str()) {
+                score += 4.0 * weight[k];
+            }
+        }
+        if let Some((from, to)) = &window {
+            if c.day >= from.as_str() && c.day <= to.as_str() {
+                score += 12.0;
+            }
+        }
+        if about_meetings && c.meeting {
+            score += 6.0;
+        }
+        if score > 0.0 {
+            // Entre dos parecidas, la más reciente.
+            if recent.as_deref().is_some_and(|r| c.day >= r) {
+                score += 1.0;
+            }
+            scored.push((score, i));
+        }
+    }
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.cmp(&b.1)));
+    let mut out: Vec<usize> = scored.into_iter().take(max).map(|(_, i)| i).collect();
+    // Pocas coincidencias (o una pregunta general): se completa con lo más reciente.
+    let mut i = 0;
+    while out.len() < MIN_CANDIDATES.min(max) && i < notes.len() {
+        if !out.contains(&i) {
+            out.push(i);
+        }
+        i += 1;
+    }
+    out
+}
 /// Tamaño máximo de las notas elegidas, y de cada una.
 const SELECTED_LIMIT: usize = 60_000;
 const NOTE_LIMIT: usize = 12_000;
@@ -423,6 +548,32 @@ mod tests {
         assert!(index.contains("[n1] Consorcio/Trincheras · 2026-09-24 · #trincheras · Revisión de taludes #trincheras · están en Dropbox\n"), "{index}");
         assert_eq!(parse_selection("```json\n{\"notas\": [\"n1\", \"n9\", \"[N1]\"]}\n```", &input.docs), vec![0]);
         assert_eq!(keyword_pick(&Input { question: "¿dónde están los taludes?".into(), ..input }), vec![0]);
+    }
+
+    /// Con muchas notas, la app elige sola las que tienen que ver con la pregunta.
+    #[test]
+    fn ranks_notes_for_a_question() {
+        let texts = [
+            ("General", "2026-09-29", "comprar pan\nllamar al medico", "2026-09-29", false),
+            ("Obra Talca", "Muro eje 3", "revisar la cubicacion del muro\nfalta el acero", "2026-08-02", false),
+            ("Consorcio", "Reunión CIC", "## reunion cic · 2026-09-24 10:00\n- 10:02 se hablo del presupuesto", "2026-09-24", true),
+            ("Docencia", "Clases", "preparar la clase de hormigon", "2026-05-10", false),
+            ("General", "2026-09-22", "pedir la cubicacion a juan", "2026-09-22", false),
+        ];
+        let notes: Vec<Candidate> = texts.iter().map(|(ws, title, folded, day, meeting)| Candidate { workspace: ws, title, folded, day, meeting: *meeting }).collect();
+        let today = "2026-09-30";
+        assert_eq!(keywords("¿Cómo va la cubicación del muro en Obra Talca?"), vec!["cubicacion", "muro", "obra", "talca"]);
+        // Palabras de la pregunta: primero la que las tiene en el título y el espacio.
+        let r = rank("¿Cómo va la cubicación del muro en Obra Talca?", &[], &notes, today, 3);
+        assert_eq!(r[..2], [1, 4], "{r:?}");
+        // Reuniones y fechas.
+        assert_eq!(rank("¿Qué se habló en la reunión de la semana pasada?", &[], &notes, today, 1), vec![2]);
+        assert_eq!(rank("¿Qué anoté ayer?", &[], &notes, today, 1), vec![0]);
+        // Una pregunta de seguimiento hereda el tema de la anterior.
+        let history = vec![("¿Cómo va la cubicación del muro?".to_string(), "Falta el acero".to_string())];
+        assert_eq!(rank("¿Y quién la tiene?", &history, &notes, today, 1), vec![1]);
+        // Pregunta general: lo más reciente.
+        assert_eq!(rank("¿Qué tengo?", &[], &notes, today, 3), vec![0, 1, 2]);
     }
 
     #[test]
