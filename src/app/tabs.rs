@@ -15,6 +15,23 @@ pub(super) struct Tabs {
     pub(super) active: usize,
 }
 
+impl Tabs {
+    /// Mueve la pestaña `from` para que quede antes de la que estaba en `to` (`to` = cantidad:
+    /// al final). La activa sigue siendo la misma.
+    pub(super) fn move_tab(&mut self, from: usize, to: usize) {
+        if from >= self.list.len() || to > self.list.len() || to == from || to == from + 1 {
+            return;
+        }
+        let active = self.list.get(self.active).cloned();
+        let tab = self.list.remove(from);
+        let at = if to > from { to - 1 } else { to };
+        self.list.insert(at, tab);
+        if let Some(a) = active {
+            self.active = self.list.iter().position(|t| *t == a).unwrap_or(0);
+        }
+    }
+}
+
 impl Default for Tabs {
     fn default() -> Self {
         Tabs { list: vec![Tab::View(View::Home)], active: 0 }
@@ -223,12 +240,17 @@ impl NotesApp {
             Activate(usize),
             Close(usize),
             CloseOthers(usize),
+            Move(usize, usize),
             New,
             NewNote,
             NewMeeting,
         }
         let mut todo = None;
         let n = self.tabs.list.len();
+        // Arrastrar una pestaña la cambia de lugar: (cuál, dónde se soltaría).
+        let mut rects: Vec<egui::Rect> = Vec::with_capacity(n);
+        let mut dragging: Option<usize> = None;
+        let mut dropped: Option<usize> = None;
         let avail = ui.available_width() - 36.0;
         let w = (avail / n as f32).clamp(90.0, 200.0);
         let bar = ui.max_rect();
@@ -240,7 +262,14 @@ impl NotesApp {
                     let tab = self.tabs.list[i].clone();
                     let (glyph, title) = self.tab_label(&tab);
                     let active = i == self.tabs.active;
-                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 31.0), Sense::click());
+                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 31.0), Sense::click_and_drag());
+                    rects.push(rect);
+                    if resp.dragged() {
+                        dragging = Some(i);
+                    }
+                    if resp.drag_stopped() {
+                        dropped = Some(i);
+                    }
                     let p = ui.painter();
                     let hovered = resp.hovered();
                     if active {
@@ -287,6 +316,19 @@ impl NotesApp {
                         }
                     });
                 }
+                // Dónde quedaría la pestaña arrastrada: una línea en ese lugar.
+                let from = dragging.or(dropped);
+                let target = from.and_then(|_| ui.ctx().pointer_interact_pos()).map(|p| rects.iter().position(|r| p.x < r.center().x).unwrap_or(n));
+                if let (Some(i), Some(to)) = (dragging, target) {
+                    if to != i && to != i + 1 {
+                        let x = rects.get(to).map_or_else(|| rects[n - 1].right() + 1.0, |r| r.left() - 1.0);
+                        ui.painter().vline(x, rects[0].y_range(), Stroke::new(2.0, ACCENT));
+                    }
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                }
+                if let (Some(i), Some(to)) = (dropped, target) {
+                    todo = Some(Do::Move(i, to));
+                }
                 let ws = self.ws.clone();
                 let plus = ui.menu_button(RichText::new(icon::PLUS).size(15.0).color(MUTED), |ui| {
                     if ui.button(format!("{}  Nota nueva en {ws}   Ctrl+N", icon::NOTE_PENCIL)).clicked() {
@@ -309,6 +351,11 @@ impl NotesApp {
             Some(Do::Activate(i)) if i != self.tabs.active => self.activate_tab(i),
             Some(Do::Close(i)) => self.close_tab(i),
             Some(Do::CloseOthers(i)) => self.close_others(i),
+            Some(Do::Move(from, to)) => {
+                self.sync_tab();
+                self.tabs.move_tab(from, to);
+                self.save_estado();
+            }
             Some(Do::New) => self.new_tab(Tab::View(View::Home)),
             Some(Do::NewNote) => {
                 // Siempre en una pestaña nueva.
@@ -329,6 +376,22 @@ impl NotesApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tabs_move_and_keep_the_active_one() {
+        let t = |s: &str| Tab::Note(PathBuf::from(s));
+        let mut tabs = Tabs { list: vec![t("a"), t("b"), t("c"), t("d")], active: 1 };
+        tabs.move_tab(0, 3); // «a» antes de «d»
+        assert_eq!(tabs.list, vec![t("b"), t("c"), t("a"), t("d")]);
+        assert_eq!(tabs.list[tabs.active], t("b"));
+        tabs.move_tab(3, 0); // «d» al comienzo
+        assert_eq!(tabs.list, vec![t("d"), t("b"), t("c"), t("a")]);
+        tabs.move_tab(1, 4); // «b» al final
+        assert_eq!(tabs.list, vec![t("d"), t("c"), t("a"), t("b")]);
+        assert_eq!(tabs.list[tabs.active], t("b"));
+        tabs.move_tab(2, 3); // al mismo lugar: nada
+        assert_eq!(tabs.list, vec![t("d"), t("c"), t("a"), t("b")]);
+    }
 
     #[test]
     fn tabs_round_trip() {

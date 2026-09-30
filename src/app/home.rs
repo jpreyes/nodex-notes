@@ -4,11 +4,14 @@
 
 
 use super::*;
+use std::cell::RefCell;
 
-/// Una tarjeta con título e ícono.
-fn card<R>(ui: &mut Ui, glyph: &str, title: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
+/// Una tarjeta con título e ícono. Un clic en el título la minimiza (o la abre); las
+/// minimizadas quedan en `closed` (se recuerdan entre sesiones). Devuelve `None` si está minimizada.
+fn card<R>(ui: &mut Ui, glyph: &str, title: &str, closed: &RefCell<HashSet<String>>, add: impl FnOnce(&mut Ui) -> R) -> Option<R> {
     // Ancho fijo: lo que no cabe se recorta, así las dos columnas no se montan.
     let inner = (ui.available_width() - 44.0).max(120.0);
+    let is_closed = closed.borrow().contains(title);
     let r = Frame::new()
         .fill(Color32::WHITE)
         .stroke(Stroke::new(1.0, theme::BORDER))
@@ -18,9 +21,28 @@ fn card<R>(ui: &mut Ui, glyph: &str, title: &str, add: impl FnOnce(&mut Ui) -> R
             ui.set_width(inner);
             ui.set_max_width(inner);
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-            ui.label(RichText::new(format!("{glyph}  {title}")).font(theme::bold(14.0)).color(TEXT));
+            let head = ui
+                .horizontal(|ui| {
+                    ui.label(RichText::new(format!("{glyph}  {title}")).font(theme::bold(14.0)).color(TEXT));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(RichText::new(if is_closed { icon::CARET_RIGHT } else { icon::CARET_DOWN }).size(13.0).color(MUTED));
+                    });
+                })
+                .response
+                .interact(Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(if is_closed { "Abrir" } else { "Minimizar" });
+            if head.clicked() {
+                let mut c = closed.borrow_mut();
+                if !c.remove(title) {
+                    c.insert(title.to_string());
+                }
+            }
+            if is_closed {
+                return None;
+            }
             ui.add_space(6.0);
-            add(ui)
+            Some(add(ui))
         })
         .inner;
     ui.add_space(12.0);
@@ -71,6 +93,9 @@ impl NotesApp {
 
     pub(super) fn home_view(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
+        // Tarjetas minimizadas: se comparten entre las dos columnas y se guardan si cambian.
+        let before = self.home_closed.clone();
+        let closed = RefCell::new(std::mem::take(&mut self.home_closed));
         let today_s = today();
         let tomorrow = (Local::now() + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
         let week_ago = (Local::now() - chrono::Duration::days(6)).format("%Y-%m-%d").to_string();
@@ -158,7 +183,7 @@ impl NotesApp {
                 ui.add_space(12.0);
             }
             // Tu día: lo atrasado, hoy, mañana y la semana (antes era la vista Hoy).
-            let day = card(ui, icon::SUN, "Tu día", |ui| self.day_sections(ui));
+            let day = card(ui, icon::SUN, "Tu día", &closed, |ui| self.day_sections(ui)).flatten();
             if day.is_some() {
                 action = day;
             }
@@ -167,7 +192,7 @@ impl NotesApp {
             let mut act_l = None;
             let mut act_r = None;
             let mut left = |ui: &mut Ui| {
-                card(ui, icon::USERS, "Reuniones recientes", |ui| {
+                card(ui, icon::USERS, "Reuniones recientes", &closed, |ui| {
                     if meetings.is_empty() {
                         ui.label(RichText::new("Todavía no hay reuniones.").color(MUTED));
                     }
@@ -185,7 +210,7 @@ impl NotesApp {
                         act_l = Some(Action::StartMeeting);
                     }
                 });
-                card(ui, icon::CLOCK, "Notas recientes", |ui| {
+                card(ui, icon::CLOCK, "Notas recientes", &closed, |ui| {
                     for (p, title, ws, m) in &recent {
                         let right = format!("{ws} · {}", short_date(*m));
                         if let Some(a) = note_row(ui, icon::FILE_TEXT, title, &right, p) {
@@ -196,7 +221,7 @@ impl NotesApp {
                 });
             };
             let mut right = |ui: &mut Ui| {
-                card(ui, icon::SPARKLE, "La IA", |ui| {
+                card(ui, icon::SPARKLE, "La IA", &closed, |ui| {
                     if asks + ideas == 0 {
                         ui.label(RichText::new("Nada pendiente: todo organizado.").color(MUTED));
                     } else {
@@ -218,7 +243,7 @@ impl NotesApp {
                     }
                 });
                 if !self.cfg.correos.is_empty() {
-                    card(ui, icon::ENVELOPE_SIMPLE, "Correo", |ui| {
+                    card(ui, icon::ENVELOPE_SIMPLE, "Correo", &closed, |ui| {
                         let since = (Local::now() - chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
                         let important = self.mail.store.mails.iter().filter(|m| m.important && m.date >= since).count();
                         let checks = self.mail.open_checks().len();
@@ -236,7 +261,7 @@ impl NotesApp {
                         }
                     });
                 }
-                card(ui, icon::FOLDER_SIMPLE, "Espacios", |ui| {
+                card(ui, icon::FOLDER_SIMPLE, "Espacios", &closed, |ui| {
                     for (w, n, p) in &spaces {
                         let right = if *p > 0 { format!("{} · {}", plural(*n, "nota"), plural(*p, "tarea")) } else { plural(*n, "nota") };
                         if list_row(ui, icon::FOLDER_SIMPLE, w, &right, *w == self.ws).clicked() {
@@ -244,7 +269,7 @@ impl NotesApp {
                         }
                     }
                 });
-                card(ui, icon::CALENDAR_CHECK, "Esta semana", |ui| {
+                card(ui, icon::CALENDAR_CHECK, "Esta semana", &closed, |ui| {
                     let done = if done_week == 1 { "1 tarea hecha".to_string() } else { format!("{done_week} tareas hechas") };
                     let written = if written == 1 { "1 nota escrita".to_string() } else { format!("{written} notas escritas") };
                     ui.label(RichText::new(format!("{written}  ·  {done}")).size(13.5));
@@ -266,6 +291,10 @@ impl NotesApp {
                 action = Some(a);
             }
         });
+        self.home_closed = closed.into_inner();
+        if self.home_closed != before {
+            self.save_estado();
+        }
         if let Some(line) = capture {
             self.quick_capture(&line);
         }

@@ -159,6 +159,8 @@ pub struct Estado {
     /// Pestañas abiertas ("nota:General/x", "vista:hoy") y cuál está activa.
     pub pestanas: Vec<String>,
     pub pestana: usize,
+    /// Tarjetas de Inicio minimizadas (por su título).
+    pub inicio_cerradas: Vec<String>,
 }
 
 fn estado_path() -> PathBuf {
@@ -175,8 +177,9 @@ pub fn load_estado() -> Estado {
 fn render_estado(e: &Estado) -> String {
     let q = |s: &str| toml::Value::String(s.to_string()).to_string();
     let tabs = toml::Value::Array(e.pestanas.iter().map(|t| toml::Value::String(t.clone())).collect()).to_string();
+    let closed = toml::Value::Array(e.inicio_cerradas.iter().map(|t| toml::Value::String(t.clone())).collect()).to_string();
     format!(
-        "espacio = {}\nnota = {}\nhoy = {}\nsemana = {}\npestanas = {tabs}\npestana = {}\n",
+        "espacio = {}\nnota = {}\nhoy = {}\nsemana = {}\npestanas = {tabs}\npestana = {}\ninicio_cerradas = {closed}\n",
         q(&e.espacio),
         q(&e.nota),
         q(&e.hoy),
@@ -204,7 +207,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("estado.toml");
-        let e = Estado { espacio: "Obra".into(), nota: r"Obra\Nota.md".into(), hoy: "2026-09-26".into(), semana: "2026-W39".into(), pestanas: vec!["vista:inicio".into()], pestana: 0 };
+        let e = Estado { espacio: "Obra".into(), nota: r"Obra\Nota.md".into(), hoy: "2026-09-26".into(), semana: "2026-W39".into(), pestanas: vec!["vista:inicio".into()], pestana: 0, inicio_cerradas: Vec::new() };
         fs::write(&path, render_estado(&e)).unwrap();
         let back: Estado = toml::from_str(&crate::vault::read_text(&path).unwrap()).unwrap();
         assert_eq!((back.espacio, back.hoy, back.pestanas), (e.espacio, e.hoy, e.pestanas));
@@ -220,8 +223,10 @@ mod tests {
             semana: "2026-W39".into(),
             pestanas: vec!["vista:inicio".into(), "nota:General/Notas \"raras\"".into()],
             pestana: 1,
+            inicio_cerradas: vec!["Tu día".into(), "La IA".into()],
         };
         let back: Estado = toml::from_str(&render_estado(&e)).unwrap();
+        assert_eq!(back.inicio_cerradas, e.inicio_cerradas);
         assert_eq!((back.espacio, back.nota, back.hoy, back.semana), (e.espacio, e.nota, e.hoy, e.semana));
         assert_eq!((back.pestanas, back.pestana), (e.pestanas, e.pestana));
     }

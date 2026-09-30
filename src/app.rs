@@ -395,6 +395,8 @@ pub struct NotesApp {
     menu_line: Option<usize>,
     /// Conversar tiene espacio para la lista de conversaciones al lado.
     chats_wide: bool,
+    /// Tarjetas de Inicio minimizadas (por su título).
+    home_closed: HashSet<String>,
     /// Borrar para siempre: qué, y si se marcó «Entiendo que no se puede recuperar».
     forever: Option<(trash_view::Forever, bool)>,
     new_task: String,
@@ -664,6 +666,7 @@ impl NotesApp {
         };
         let estado_hoy = estado.hoy.clone();
         let estado_semana = estado.semana.clone();
+        let home_closed: HashSet<String> = estado.inicio_cerradas.iter().cloned().collect();
         let estado_tabs = estado.pestanas.clone();
         let estado_tab = estado.pestana;
         let mut app = NotesApp {
@@ -715,6 +718,7 @@ impl NotesApp {
             ideas: crate::spaces::Ideas::load(&cfg_root),
             week: week::WeekState::default(),
             week_seen: estado_semana,
+            home_closed,
             followup: followup::FollowUp::default(),
             tabs: tabs::Tabs::default(),
             cals: crate::calendars::Calendars::load(),
@@ -951,6 +955,11 @@ impl NotesApp {
             semana: self.week_seen.clone(),
             pestanas: self.tabs.list.iter().map(|t| tabs::encode(t, &self.vault.root)).collect(),
             pestana: self.tabs.active,
+            inicio_cerradas: {
+                let mut v: Vec<String> = self.home_closed.iter().cloned().collect();
+                v.sort();
+                v
+            },
         });
         if let Err(e) = r {
             self.msg(format!("No se pudo guardar estado.toml: {e}"));
