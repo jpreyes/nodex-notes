@@ -192,6 +192,8 @@ Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro eq
 | `src/config.rs` | `config.toml` y `estado.toml` (última nota abierta). |
 | `src/theme.rs` | Colores del tema claro, fuentes e íconos. |
 | `src/tags.rs` | Reconoce las etiquetas `#palabra`. |
+| `src/app/rendimiento.rs` | Banco de pruebas de rendimiento: genera carpetas de 1.000 a 50.000 notas y mide la app sin ventana. |
+| `tools/medir-ventana.ps1` | Mide la app real con ventana (Windows), con las mismas carpetas. |
 | `.github/workflows/release.yml` | Compila y publica los ejecutables al subir una etiqueta `vX.Y.Z`. |
 
 ## Compilar
@@ -203,6 +205,16 @@ cargo build --release
 En Linux se necesitan `libxkbcommon-dev libgl1-mesa-dev libwayland-dev libx11-dev`.
 
 Para publicar una versión, sube una etiqueta `vX.Y.Z`: GitHub Actions compila para los tres sistemas y adjunta los archivos al Release.
+
+## Rendimiento
+
+El banco de pruebas genera carpetas de notas realistas (1.000, 5.000, 10.000 y 50.000 notas, siempre las mismas, en la carpeta temporal `nodex-bench/`) y mide la app sin abrir ventana: cargar, dibujar Inicio y una nota, la revisión de la carpeta que se hace cada segundo, buscar y la RAM. Cada tamaño se mide en un proceso aparte. El resultado se imprime y se agrega a `target/rendimiento.md`.
+
+```bash
+cargo test --release rendimiento -- --ignored --nocapture
+```
+
+Para medir solo algunos tamaños: `NODEX_BENCH=1000,10000`. Con las carpetas ya generadas, `tools/medir-ventana.ps1` mide en Windows la app real con ventana (tiempo hasta el primer cuadro, RAM y procesador con la app quieta). La primera lectura de una carpeta es «en frío» (los archivos no están en la memoria de Windows) y puede ser mucho más lenta: conviene medir dos veces.
 
 ## Licencia
 

@@ -30,6 +30,8 @@ mod editor;
 mod followup;
 mod home;
 mod mail_ui;
+#[cfg(test)]
+mod rendimiento;
 mod settings;
 mod spaces_ui;
 mod tabs;
@@ -2287,6 +2289,19 @@ impl NotesApp {
 
 impl eframe::App for NotesApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        self.frame(ui);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.close_meeting(Local::now());
+        self.save();
+        self.save_estado();
+    }
+}
+
+impl NotesApp {
+    /// Un cuadro completo de la ventana (también lo usa el banco de pruebas de rendimiento).
+    fn frame(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         let mut actions: Vec<Action> = Vec::new();
         actions.extend(self.shortcuts(&ctx));
@@ -2376,12 +2391,6 @@ impl eframe::App for NotesApp {
             self.window_title = title;
         }
         ctx.request_repaint_after(if self.note.dirty { AUTOSAVE } else { POLL });
-    }
-
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.close_meeting(Local::now());
-        self.save();
-        self.save_estado();
     }
 }
 
