@@ -12,6 +12,10 @@
 //! Los cambios en disco (Dropbox, otro programa) llegan por los avisos del sistema operativo
 //! (`notify`): cada segundo solo se relee lo que cambió. Una revisión completa de toda la carpeta
 //! queda como red de seguridad cada 10 minutos, o cada 30 segundos si no hay avisos.
+//!
+//! Para no abrir miles de archivos al arrancar (lento «en frío», sobre todo con antivirus), una
+//! copia de todas las notas se guarda en un solo archivo local, fuera de Dropbox (`cache_file`).
+//! Al abrir se lee esa copia y solo se releen las notas cuya fecha cambió desde entonces.
 
 use crate::tags;
 use notify::event::ModifyKind;
@@ -20,8 +24,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::io::{BufWriter, Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
-use std::time::{Duration, Instant, SystemTime};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_WORKSPACE: &str = "General";
 const TRASH: &str = ".papelera";
@@ -29,6 +36,83 @@ const TRASH: &str = ".papelera";
 const FULL_SCAN_EVERY: Duration = Duration::from_secs(600);
 /// Sin avisos del sistema (p. ej. en una carpeta de red): revisión completa cada tanto.
 const FALLBACK_SCAN_EVERY: Duration = Duration::from_secs(30);
+/// Cada cuánto se guarda la copia local de las notas si algo cambió (y siempre al cerrar).
+const CACHE_EVERY: Duration = Duration::from_secs(300);
+const CACHE_MAGIC: &[u8] = b"NODEX-NOTAS-1\n";
+
+/// Dónde va la copia local de las notas de una carpeta: en la carpeta local del equipo
+/// (`AppData\Local\nodex-notes`), una por carpeta de notas. En pruebas, junto a la
+/// configuración de prueba o en la carpeta temporal.
+pub fn cache_file(root: &Path) -> PathBuf {
+    let dir = if cfg!(test) {
+        std::env::temp_dir().join("nodex-cache-pruebas")
+    } else if let Some(d) = std::env::var_os("NODEX_CONFIG_DIR").filter(|d| !d.is_empty()) {
+        PathBuf::from(d)
+    } else {
+        dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("nodex-notes")
+    };
+    dir.join(format!("notas-{:016x}.cache", crate::ai::fnv(&root.to_string_lossy())))
+}
+
+fn put_u32(out: &mut Vec<u8>, v: usize) {
+    out.extend_from_slice(&(v as u32).to_le_bytes());
+}
+
+/// La copia en bytes: por nota, su ruta relativa, su fecha y su texto.
+fn encode_cache(root: &Path, notes: &HashMap<PathBuf, Note>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(notes.values().map(|n| n.text.len() + 64).sum::<usize>() + 32);
+    out.extend_from_slice(CACHE_MAGIC);
+    put_u32(&mut out, notes.len());
+    for n in notes.values() {
+        let rel = n.path.strip_prefix(root).unwrap_or(&n.path).to_string_lossy().replace('\\', "/");
+        let t = n.modified.duration_since(UNIX_EPOCH).unwrap_or_default();
+        put_u32(&mut out, rel.len());
+        out.extend_from_slice(rel.as_bytes());
+        out.extend_from_slice(&t.as_secs().to_le_bytes());
+        out.extend_from_slice(&t.subsec_nanos().to_le_bytes());
+        put_u32(&mut out, n.text.len());
+        out.extend_from_slice(n.text.as_bytes());
+    }
+    out
+}
+
+/// Lee la copia; `None` si no existe o no se entiende (entonces se lee todo desde las notas).
+fn decode_cache(root: &Path, bytes: &[u8]) -> Option<Vec<(PathBuf, SystemTime, String)>> {
+    let mut b = bytes.strip_prefix(CACHE_MAGIC)?;
+    let mut take = |n: usize| -> Option<&[u8]> {
+        let (a, rest) = (b.get(..n)?, b.get(n..)?);
+        b = rest;
+        Some(a)
+    };
+    let u32_at = |x: &[u8]| u32::from_le_bytes(x.try_into().expect("4 bytes")) as usize;
+    let count = u32_at(take(4)?);
+    let mut out = Vec::with_capacity(count);
+    for _ in 0..count {
+        let len = u32_at(take(4)?);
+        let rel = std::str::from_utf8(take(len)?).ok()?.to_string();
+        let secs = u64::from_le_bytes(take(8)?.try_into().ok()?);
+        let nanos = u32::from_le_bytes(take(4)?.try_into().ok()?);
+        let len = u32_at(take(4)?);
+        let text = std::str::from_utf8(take(len)?).ok()?.to_string();
+        let path = rel.split('/').fold(root.to_path_buf(), |p, part| p.join(part));
+        out.push((path, UNIX_EPOCH + Duration::new(secs, nanos), text));
+    }
+    Some(out)
+}
+
+/// Escribe la copia sin dejarla a medias (archivo temporal y luego cambio de nombre).
+fn write_cache(file: &Path, bytes: &[u8]) -> io::Result<()> {
+    if let Some(dir) = file.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let tmp = file.with_extension(format!("tmp{}", std::process::id()));
+    {
+        let mut w = BufWriter::new(fs::File::create(&tmp)?);
+        w.write_all(bytes)?;
+        w.flush()?;
+    }
+    fs::rename(&tmp, file)
+}
 
 pub struct Note {
     pub path: PathBuf,
@@ -46,8 +130,13 @@ pub struct Vault {
     watcher: Option<RecommendedWatcher>,
     events: Option<Receiver<notify::Result<notify::Event>>>,
     last_full: Instant,
-    /// Cuántas revisiones completas se hicieron (para las pruebas).
+    /// Cuántas revisiones completas se hicieron y cuántas notas se leyeron del disco (pruebas).
     pub full_scans: usize,
+    pub reads: usize,
+    /// La copia local cambió desde que se guardó, y cuándo se guardó por última vez.
+    cache_dirty: bool,
+    cache_saved: Instant,
+    cache_busy: Arc<AtomicBool>,
 }
 
 fn is_md(path: &Path) -> bool {
@@ -88,10 +177,69 @@ impl Vault {
             events: None,
             last_full: Instant::now(),
             full_scans: 0,
+            reads: 0,
+            cache_dirty: false,
+            cache_saved: Instant::now(),
+            cache_busy: Arc::new(AtomicBool::new(false)),
         };
+        // Primero la copia local (un solo archivo); después solo se relee lo que cambió.
+        let cached = v.load_cache();
         v.scan();
         v.watch();
+        if !cached || v.cache_dirty {
+            v.save_cache();
+        }
         v
+    }
+
+    /// Carga la copia local de las notas. Devuelve si había una.
+    fn load_cache(&mut self) -> bool {
+        let file = cache_file(&self.root);
+        let Ok(mut f) = fs::File::open(&file) else { return false };
+        let mut bytes = Vec::new();
+        if f.read_to_end(&mut bytes).is_err() {
+            return false;
+        }
+        let Some(notes) = decode_cache(&self.root, &bytes) else { return false };
+        for (path, modified, text) in notes {
+            self.upsert(path, text, modified);
+        }
+        self.cache_dirty = false;
+        true
+    }
+
+    /// Guarda la copia local en segundo plano (la app no se detiene mientras se escribe).
+    pub fn save_cache(&mut self) {
+        if self.cache_busy.swap(true, Ordering::SeqCst) {
+            return; // ya se está guardando; se hará en la próxima vuelta
+        }
+        let bytes = encode_cache(&self.root, &self.notes);
+        let file = cache_file(&self.root);
+        let busy = self.cache_busy.clone();
+        self.cache_dirty = false;
+        self.cache_saved = Instant::now();
+        std::thread::spawn(move || {
+            let _ = write_cache(&file, &bytes);
+            busy.store(false, Ordering::SeqCst);
+        });
+    }
+
+    /// Guarda la copia ahora, esperando a que termine (al cerrar la app).
+    pub fn save_cache_now(&mut self) {
+        while self.cache_busy.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if self.cache_dirty {
+            let _ = write_cache(&cache_file(&self.root), &encode_cache(&self.root, &self.notes));
+            self.cache_dirty = false;
+        }
+    }
+
+    /// Guarda la copia si cambió algo y ya pasó un rato (se llama cada segundo).
+    pub fn maybe_save_cache(&mut self) {
+        if self.cache_dirty && self.cache_saved.elapsed() >= CACHE_EVERY {
+            self.save_cache();
+        }
     }
 
     /// Empieza a recibir los avisos del sistema (si no se puede, se revisa cada 30 segundos).
@@ -173,7 +321,7 @@ impl Vault {
                 }
             }
             _ => {
-                self.notes.remove(path);
+                self.cache_dirty |= self.notes.remove(path).is_some();
             }
         }
     }
@@ -209,11 +357,14 @@ impl Vault {
                     continue;
                 }
                 if let Ok(text) = read_text(&path) {
+                    self.reads += 1;
                     self.upsert(path, text, m);
                 }
             }
         }
+        let before = self.notes.len();
         self.notes.retain(|p, _| seen.contains(p));
+        self.cache_dirty |= self.notes.len() != before;
         self.workspaces = ws;
     }
 
@@ -225,6 +376,7 @@ impl Vault {
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
         let title = stem(&path);
+        self.cache_dirty = true;
         self.notes.insert(path.clone(), Note { path, workspace, title, modified, text });
     }
 
@@ -293,7 +445,7 @@ impl Vault {
             i += 1;
         }
         fs::rename(path, &dest)?;
-        self.notes.remove(path);
+        self.cache_dirty |= self.notes.remove(path).is_some();
         Ok(dest)
     }
 
@@ -368,6 +520,46 @@ mod tests {
         fs::create_dir_all(root.join("Obra")).unwrap();
         fs::write(root.join("Obra").join("C.md"), "c").unwrap();
         wait(&mut v, "espacio nuevo", &|v| v.workspaces.contains(&"Obra".to_string()) && v.get(&v.root.join("Obra").join("C.md")).is_some());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Al abrir de nuevo, las notas salen de la copia local: solo se lee del disco lo que cambió.
+    #[test]
+    fn startup_reads_only_what_changed() {
+        let root = std::env::temp_dir().join(format!("nodex-copia-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_file(cache_file(&root));
+        fs::create_dir_all(root.join("General")).unwrap();
+        fs::create_dir_all(root.join("Obra")).unwrap();
+        for i in 0..20 {
+            fs::write(root.join("General").join(format!("N{i}.md")), format!("nota {i} #tag")).unwrap();
+        }
+        fs::write(root.join("Obra").join("Ñandú.md"), "\u{feff}con acentos: año").unwrap();
+        let mut v = Vault::new(root.clone());
+        assert_eq!(v.reads, 21, "la primera vez se lee todo");
+        v.save_cache_now();
+        while v.cache_busy.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        drop(v);
+
+        // Cambia una, se borra otra y aparece una nueva.
+        std::thread::sleep(Duration::from_millis(20));
+        fs::write(root.join("General").join("N3.md"), "cambiada").unwrap();
+        fs::remove_file(root.join("General").join("N4.md")).unwrap();
+        fs::write(root.join("Obra").join("Nueva.md"), "nueva").unwrap();
+        let v = Vault::new(root.clone());
+        assert_eq!(v.reads, 2, "solo la cambiada y la nueva");
+        assert_eq!(v.get(&root.join("General").join("N3.md")).unwrap().text, "cambiada");
+        assert!(v.get(&root.join("General").join("N4.md")).is_none());
+        assert_eq!(v.get(&root.join("Obra").join("Ñandú.md")).unwrap().text, "con acentos: año");
+        assert_eq!(v.all_notes().len(), 21);
+
+        // Una copia dañada no rompe nada: se lee todo.
+        fs::write(cache_file(&root), b"basura").unwrap();
+        let v = Vault::new(root.clone());
+        assert_eq!(v.reads, 21);
+        let _ = fs::remove_file(cache_file(&root));
         let _ = fs::remove_dir_all(&root);
     }
 

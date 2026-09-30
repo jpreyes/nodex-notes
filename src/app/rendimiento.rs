@@ -170,6 +170,10 @@ struct Row {
     notes: usize,
     mb: f64,
     load: f64,
+    /// Abrir de nuevo, con la copia local de las notas (lo normal desde la segunda vez).
+    load_cached: f64,
+    /// Cuántas notas se leyeron del disco al abrir con la copia.
+    cached_reads: usize,
     home_first: f64,
     home: f64,
     note_first: f64,
@@ -189,10 +193,19 @@ fn measure(n: usize, base: &Path) -> Row {
     let ctx = egui::Context::default();
     theme::setup(&ctx);
 
-    // Cargar: leer todas las notas y preparar la app.
+    // Cargar sin copia local: leer todas las notas y preparar la app (la primera vez).
+    let _ = fs::remove_file(vault::cache_file(&root));
+    let t = Instant::now();
+    let mut app = NotesApp::new(cfg.clone(), None, ctx.clone());
+    let load = ms(t.elapsed());
+    app.vault.save_cache_now();
+    drop(app);
+
+    // Cargar de nuevo, ahora con la copia local.
     let t = Instant::now();
     let mut app = NotesApp::new(cfg, None, ctx.clone());
-    let load = ms(t.elapsed());
+    let load_cached = ms(t.elapsed());
+    let cached_reads = app.vault.reads;
 
     // Inicio (es lo que se abre la primera vez cada día).
     app.apply(Action::ShowTab(View::Home));
@@ -225,7 +238,7 @@ fn measure(n: usize, base: &Path) -> Row {
 
     drop(app);
     let _ = fs::remove_dir_all(&cfg_dir);
-    Row { notes: n, mb, load, home_first, home, note_first, note: note_ms, rescan, search, ram }
+    Row { notes: n, mb, load, load_cached, cached_reads, home_first, home, note_first, note: note_ms, rescan, search, ram }
 }
 
 fn seconds(ms: f64) -> String {
@@ -234,17 +247,19 @@ fn seconds(ms: f64) -> String {
 
 fn table(rows: &[Row]) -> String {
     let mut out = String::from(
-        "| Notas | Tamaño | Cargar | 1er cuadro Inicio | Cuadro Inicio | 1er cuadro nota | Cuadro nota | Revisar carpeta | Quieta en Inicio | Quieta en nota | Buscar | RAM (sin ventana) |\n\
-         |---|---|---|---|---|---|---|---|---|---|---|---|\n",
+        "| Notas | Tamaño | Cargar sin copia | Cargar con copia | 1er cuadro Inicio | Cuadro Inicio | 1er cuadro nota | Cuadro nota | Revisar carpeta | Quieta en Inicio | Quieta en nota | Buscar | RAM (sin ventana) |\n\
+         |---|---|---|---|---|---|---|---|---|---|---|---|---|\n",
     );
     for r in rows {
         // La app repinta y revisa la carpeta una vez por segundo: eso es lo que gasta quieta.
         let idle = |frame: f64| format!("{:.1} %", (frame + r.rescan) / 10.0);
         out += &format!(
-            "| {} | {:.1} MB | {} | {} | {} | {} | {} | {} | {} | {} | {} | {:.0} MB |\n",
+            "| {} | {:.1} MB | {} | {} ({} leídas) | {} | {} | {} | {} | {} | {} | {} | {} | {:.0} MB |\n",
             r.notes,
             r.mb,
             seconds(r.load),
+            seconds(r.load_cached),
+            r.cached_reads,
             seconds(r.home_first),
             seconds(r.home),
             seconds(r.note_first),

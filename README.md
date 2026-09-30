@@ -150,7 +150,9 @@ Notas/
 
 Si la IA falla o responde vacío, el último intercambio queda en `ia-ultima.txt` (junto a `config.toml`) para ver qué pasó.
 
-Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro equipo), la app lo recarga al instante: el sistema operativo le avisa qué archivos cambiaron, sin revisar toda la carpeta (una revisión completa se hace igual cada 10 minutos, por seguridad). Si justo lo estabas editando, la otra versión se guarda como copia "(conflicto)".
+Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro equipo), la app lo recarga al instante: el sistema operativo le avisa qué archivos cambiaron, sin revisar toda la carpeta (una revisión completa se hace igual cada 10 minutos, por seguridad).
+
+Para abrir rápido aunque haya miles de notas, la app guarda una copia de todas en un solo archivo local (`AppData\Local\nodex-notes` en Windows, la carpeta de caché del sistema en Mac y Linux; nunca en Dropbox). Al abrir lee esa copia y solo relee del disco las notas que cambiaron desde la última vez. Si la copia falta o está dañada, simplemente lee todas las notas. Si justo lo estabas editando, la otra versión se guarda como copia "(conflicto)".
 
 ## Código
 

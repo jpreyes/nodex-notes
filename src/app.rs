@@ -591,6 +591,7 @@ impl NotesApp {
         }
         self.close_meeting(Local::now());
         self.save();
+        self.vault.save_cache_now();
         self.cfg.carpeta_notas = path.clone();
         self.save_config();
         self.vault = Vault::new(path);
@@ -857,6 +858,7 @@ impl NotesApp {
     /// Detecta cambios hechos por fuera (otra app, Dropbox).
     fn poll(&mut self) {
         self.vault.refresh();
+        self.vault.maybe_save_cache();
         let m = vault::modified(&self.note.path);
         if m.is_none() || m == self.note.disk_mtime {
             return;
@@ -2296,6 +2298,7 @@ impl eframe::App for NotesApp {
         self.close_meeting(Local::now());
         self.save();
         self.save_estado();
+        self.vault.save_cache_now();
     }
 }
 
