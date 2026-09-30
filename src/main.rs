@@ -16,6 +16,7 @@ mod lines;
 mod links;
 mod mail;
 mod mail_ai;
+mod merge;
 mod organize;
 mod spaces;
 mod tags;

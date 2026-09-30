@@ -75,12 +75,17 @@ struct OpenNote {
     last_edit: Instant,
     /// Fecha de modificación en disco cuando se leyó o guardó; `None` = aún no existe.
     disk_mtime: Option<SystemTime>,
+    /// El texto tal como estaba en disco la última vez que se leyó o guardó: la base común
+    /// para juntar lo escrito aquí con lo que llegue de otro equipo.
+    base: String,
 }
 
 impl OpenNote {
     fn load(path: PathBuf) -> Self {
+        let text = vault::read_text(&path).unwrap_or_default();
         OpenNote {
-            text: vault::read_text(&path).unwrap_or_default(),
+            base: text.clone(),
+            text,
             disk_mtime: vault::modified(&path),
             title: vault::stem(&path),
             path,
@@ -794,20 +799,45 @@ impl NotesApp {
         if let Some(dir) = n.path.parent() {
             let _ = fs::create_dir_all(dir);
         }
+        // Si el archivo cambió por fuera desde la última lectura (otro equipo, Dropbox), no se
+        // pisa: se junta lo de aquí con lo de allá, línea por línea.
+        let mut merged = None;
+        if vault::modified(&n.path) != n.disk_mtime {
+            if let Ok(disk) = vault::read_text(&n.path) {
+                if disk != n.base && disk != n.text {
+                    let m = crate::merge::merge3(&n.base, &n.text, &disk);
+                    n.text = m.text;
+                    merged = Some(m.conflicts);
+                }
+            }
+        }
         match fs::write(&n.path, &n.text) {
             Ok(()) => {
                 n.dirty = false;
+                n.base = n.text.clone();
                 n.disk_mtime = vault::modified(&n.path);
                 if let Some(m) = n.disk_mtime {
                     self.vault.upsert(n.path.clone(), n.text.clone(), m);
                 }
                 self.touched.insert(self.note.path.clone());
+                if let Some(conflicts) = merged {
+                    self.merged_msg(conflicts);
+                }
             }
             Err(e) => {
                 n.last_edit = Instant::now(); // reintenta en el próximo ciclo
                 self.msg(format!("No se pudo guardar: {e}"));
             }
         }
+    }
+
+    /// Aviso de que se juntó lo escrito aquí con lo que llegó de otro equipo.
+    fn merged_msg(&mut self, conflicts: usize) {
+        self.msg(match conflicts {
+            0 => "Se juntaron tus cambios con los que llegaron de otro equipo".to_string(),
+            1 => "Se juntaron tus cambios con los de otro equipo; una parte cambió en los dos: quedaron las dos versiones, revísala".to_string(),
+            n => format!("Se juntaron tus cambios con los de otro equipo; {n} partes cambiaron en los dos: quedaron las dos versiones, revísalas"),
+        });
     }
 
     fn save_estado(&mut self) {
@@ -1026,18 +1056,22 @@ impl NotesApp {
         let Ok(disk_text) = vault::read_text(&self.note.path) else { return };
         self.note.disk_mtime = m;
         if disk_text == self.note.text {
+            self.note.base = disk_text;
             return;
         }
         if !self.note.dirty {
-            self.note.text = disk_text;
+            self.note.text = disk_text.clone();
+            self.note.base = disk_text;
             self.msg("Nota actualizada con cambios de otro equipo");
         } else {
-            // Ambos cambiaron: se conserva lo escrito aquí y la otra versión queda como copia.
-            let ws = workspace_of(&self.note.path).unwrap_or_else(|| self.ws.clone());
-            let name = format!("{} (conflicto {})", self.note.title, Local::now().format("%H.%M"));
-            let copy = self.vault.unique_path(&ws, &name);
-            let _ = fs::write(&copy, disk_text);
-            self.msg(format!("La nota cambió en otro equipo; esa versión quedó en «{}»", vault::stem(&copy)));
+            // Cambió aquí y allá: se juntan línea por línea (la base es lo último que se leyó
+            // o guardó). Lo que resulte se guarda como cualquier cambio.
+            let merged = crate::merge::merge3(&self.note.base, &self.note.text, &disk_text);
+            self.note.text = merged.text;
+            self.note.base = disk_text;
+            self.note.dirty = true;
+            self.note.last_edit = Instant::now();
+            self.merged_msg(merged.conflicts);
         }
     }
 
@@ -1255,6 +1289,9 @@ impl NotesApp {
         let is_open = path == self.note.path;
         if is_open && self.note.dirty {
             return; // se siguió escribiendo; se volverá a analizar
+        }
+        if is_open && vault::modified(&path) != self.note.disk_mtime {
+            return; // llegó un cambio de otro equipo: primero se junta, después se vuelve a analizar
         }
         let text = if is_open { self.note.text.clone() } else { vault::read_text(&path).unwrap_or_default() };
         if ai::fnv(&text) != hash {
@@ -2854,6 +2891,61 @@ fn highlight_line(line: &str, size: f32) -> LayoutJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Lo que llega de otro equipo mientras se escribe aquí se junta línea por línea: nada se
+    /// pisa, nada se pierde y no quedan copias "(conflicto)".
+    #[test]
+    fn changes_from_another_device_are_merged() {
+        let dir = std::env::temp_dir().join(format!("nodex-juntar-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("General")).unwrap();
+        let path = dir.join("General").join("Obra.md");
+        fs::write(&path, "Llamar a Pedro\nRevisar planos\nComprar pan\n").unwrap();
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut app = NotesApp::new(cfg, None, egui::Context::default());
+        app.open(path.clone(), None);
+        let outside = |text: &str| {
+            std::thread::sleep(Duration::from_millis(30)); // otra fecha de modificación
+            fs::write(&path, text).unwrap();
+        };
+
+        // 1. Aquí se agrega una línea; en otro equipo la IA se lleva dos. La app lo nota al revisar.
+        app.note.text = "Llamar a Pedro\nRevisar planos\nComprar pan\nIdea nueva\n".into();
+        app.note.dirty = true;
+        outside("Comprar pan\n");
+        app.poll();
+        assert_eq!(app.note.text, "Comprar pan\nIdea nueva\n");
+        assert!(app.note.dirty, "lo juntado todavía hay que guardarlo");
+        app.save();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "Comprar pan\nIdea nueva\n");
+
+        // 2. El cambio de afuera llega justo antes del autoguardado (sin que la app alcance a revisar).
+        app.note.text = "Comprar pan\nIdea nueva\nOtra mía\n".into();
+        app.note.dirty = true;
+        outside("Arriba, del otro equipo\nComprar pan\nIdea nueva\n");
+        app.save();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "Arriba, del otro equipo\nComprar pan\nIdea nueva\nOtra mía\n");
+        assert_eq!(app.note.text, "Arriba, del otro equipo\nComprar pan\nIdea nueva\nOtra mía\n");
+
+        // 3. La misma línea cambia en los dos: quedan las dos versiones y se avisa.
+        app.note.text = app.note.text.replace("Comprar pan", "Comprar pan integral");
+        app.note.dirty = true;
+        outside("Arriba, del otro equipo\nComprar pan y leche\nIdea nueva\nOtra mía\n");
+        app.save();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("Comprar pan integral\nComprar pan y leche\n"), "{text}");
+        assert!(app.message.as_ref().is_some_and(|(m, _)| m.contains("quedaron las dos versiones")), "{:?}", app.message);
+
+        // 4. Sin cambios aquí, simplemente se toma lo de afuera.
+        outside("Todo nuevo\n");
+        app.poll();
+        assert_eq!((app.note.text.as_str(), app.note.dirty), ("Todo nuevo\n", false));
+        // Nunca queda una copia "(conflicto)".
+        let names: Vec<String> = fs::read_dir(dir.join("General")).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, vec!["Obra.md"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     /// El cursor deja de parpadear tras un rato sin tocar nada y vuelve a parpadear al usar la app.
     #[test]
