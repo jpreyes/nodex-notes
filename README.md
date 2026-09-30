@@ -115,6 +115,8 @@ google_client_id = ""      # Google Calendar (ver más abajo)
 google_client_secret = ""
 ```
 
+**La primera vez** que abres la app, un asistente de tres pasos: dónde se guardan tus notas (en Dropbox u OneDrive si los tienes, para que estén en todos tus equipos; si no, en Documentos), tu cuenta (con la prueba de 14 días de la IA incluida; se puede saltar) y cómo se usa. Después, a escribir en la Bienvenida.
+
 **Tu cuenta** (Configuración → Tu cuenta): entras con tu correo (te llega un código de 6 dígitos) o con Microsoft. Una cuenta nueva trae una **prueba gratis de 14 días** con la IA incluida, sin claves ni configuración. Además, **tu configuración viaja con la cuenta**: tus calendarios, cuentas de correo, Google Calendar, Microsoft To Do y «organizar sola» te siguen a cualquier equipo donde entres (si cambias algo en dos equipos, queda el cambio más reciente de cada cosa). Viaja cifrada con una clave que vive en tu carpeta de notas (`.nodex/cuenta.clave`): el servidor no puede leerla. Si tus equipos no comparten la carpeta de notas, copia la clave desde Tu cuenta y pégala en el otro. La carpeta de notas y la sesión son de cada equipo.
 
 **IA incluida:** con el proveedor «IA incluida de Notas» no hace falta una clave de IA: basta el código que entrega el servicio (`codigo_ia`) y la dirección del servidor (`servidor_ia`). La ventana de la IA y la Configuración muestran cuánto va usado del mes (y la app avisa una vez al pasar el 80 %); al llegar al límite, las notas se siguen guardando y la IA vuelve al mes siguiente. El servidor está en [`server/`](server/README.md).
@@ -227,6 +229,7 @@ Para abrir rápido aunque haya miles de notas, la app guarda una copia de todas 
 | `src/app/manage.rs` | Corregir a mano: mover una nota a otro espacio, cambiar el nombre de un espacio o de una etiqueta, una nota como tarea. |
 | `server/` | `nodex-ia`: el servidor de la IA incluida (código por persona, uso medido, límite mensual). Ver su [README](server/README.md). |
 | `src/account.rs`, `src/app/account_ui.rs` | Tu cuenta: entrar (código por correo o Microsoft), el plan y la configuración que viaja con la cuenta (cifrada). |
+| `src/app/onboarding.rs` | El asistente de la primera vez: carpeta, cuenta y cómo se usa. |
 | `src/app/images.rs` | Capturas pegadas en las notas: guardarlas en `Adjuntos/` y mostrarlas en el editor. |
 | `src/app/recurring.rs` | Reuniones y notas que se repiten: se crean solas a su hora, con los pendientes de la anterior. |
 | `src/app/chats.rs` | Historial de conversaciones con la IA: guardar, retomar y borrar. |

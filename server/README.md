@@ -64,7 +64,10 @@ Hace falta un VPS y un subdominio que apunte a él (por ejemplo `ia.tudominio.cl
 
 7. **En la app:** Configuración → Tu cuenta (o, con un código, Inteligencia artificial → «IA
    incluida de Notas»), con la dirección `https://ia.tudominio.cl`. Si la app se compila con
-   `NODEX_SERVIDOR_IA=https://ia.tudominio.cl`, esa dirección viene puesta y no hay que escribirla.
+   `NODEX_SERVIDOR_IA=https://ia.tudominio.cl`, esa dirección viene puesta y no hay que escribirla,
+   y el asistente de la primera vez ofrece crear la cuenta. Para los instaladores del release,
+   crea en GitHub la variable del repositorio `NODEX_SERVIDOR_IA` (Settings → Secrets and
+   variables → Actions → Variables).
 
 ## Día a día
 
@@ -74,7 +77,7 @@ nodex-ia desactivar 3fa9c1      # deja sin IA a una persona (las primeras letras
 nodex-ia plan ana@correo.cl pro # plan de una cuenta: prueba [días], pro, fundador o gratis
 ```
 
-(con las mismas variables de entorno que el servicio, como en el paso 5).
+(con las mismas variables de entorno que el servicio, como en el paso 6).
 
 Los datos están en `NOTAS_IA_DATA`: `usuarios.json` (códigos), `cuentas.json` (cuentas y
 sesiones), `config/` (la configuración cifrada de cada cuenta) y `uso/AAAA-MM.json` (uso de cada

@@ -59,6 +59,9 @@ jobs:
           sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev
 
       - name: Compilar
+        # La dirección del servidor de Notas (variable del repositorio); vacía = cada persona la escribe.
+        env:
+          NODEX_SERVIDOR_IA: ${{ vars.NODEX_SERVIDOR_IA }}
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Empaquetar

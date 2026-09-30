@@ -314,6 +314,13 @@ impl NotesApp {
             if let Some((text, color)) = self.usage_label() {
                 ui.label(RichText::new(format!("({text})")).size(12.5).color(color));
             }
+            // La prueba de la cuenta: cuántos días le quedan (en color de aviso los últimos 3).
+            if let Some(Ok(info)) = self.acct.info.as_ref().filter(|_| ai::is_included(&self.cfg)) {
+                if info.plan == "prueba" {
+                    let color = if info.dias_prueba <= 3 { WARN } else { MUTED };
+                    ui.label(RichText::new(format!("· {}", info.plan_label())).size(12.5).color(color));
+                }
+            }
             ui.label(RichText::new("·").size(13.0).color(MUTED));
             if let Some(p) = &self.in_flight {
                 ui.spinner();

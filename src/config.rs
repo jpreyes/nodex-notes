@@ -31,6 +31,25 @@ pub struct Config {
     pub servidor_ia: String,
     /// El correo de tu cuenta de Notas, si entraste en este equipo.
     pub cuenta: String,
+    /// Se abrió la app por primera vez en este equipo (no había config.toml): se muestra el asistente.
+    #[serde(skip)]
+    pub first_run: bool,
+}
+
+/// Dónde guardar las notas la primera vez: en Dropbox u OneDrive si están (así se sincronizan
+/// entre equipos), si no en Documentos.
+pub fn default_folder() -> PathBuf {
+    // Para pruebas: otra carpeta, así nunca se tocan las notas reales.
+    if let Some(dir) = std::env::var_os("NODEX_CARPETA_INICIAL").filter(|d| !d.is_empty()) {
+        return PathBuf::from(dir);
+    }
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    for cloud in ["Dropbox", "OneDrive"] {
+        if home.join(cloud).is_dir() {
+            return home.join(cloud).join("Notas");
+        }
+    }
+    dirs::document_dir().unwrap_or(home).join("Notas")
 }
 
 impl Default for Config {
@@ -51,6 +70,7 @@ impl Default for Config {
             codigo_ia: String::new(),
             servidor_ia: String::new(),
             cuenta: String::new(),
+            first_run: false,
         }
     }
 }
@@ -78,7 +98,12 @@ pub fn load() -> (Config, Option<String>) {
             ),
         },
         Err(_) => {
-            let c = Config::default();
+            // Primera vez: las notas en la nube si hay una, y la IA incluida si la app trae su servidor.
+            let mut c = Config { carpeta_notas: default_folder(), first_run: true, ..Config::default() };
+            if crate::account::BUILT_IN_SERVER.is_some_and(|s| !s.trim().is_empty()) {
+                c.proveedor = "notas".into();
+                c.modelo = "incluida".into();
+            }
             let msg = match save(&c) {
                 Ok(()) => format!("Configuración creada en {}", path.display()),
                 Err(e) => format!("No se pudo crear {}: {e}", path.display()),

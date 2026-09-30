@@ -36,6 +36,7 @@ mod followup;
 mod home;
 mod images;
 mod mail_ui;
+mod onboarding;
 mod recurring;
 #[cfg(test)]
 mod rendimiento;
@@ -414,6 +415,8 @@ pub struct NotesApp {
     ai_usage_warned: String,
     /// Tu cuenta de Notas: sesión, plan y la configuración que viaja con ella.
     acct: account_ui::AccountState,
+    /// El asistente de la primera vez, mientras está abierto.
+    onboarding: Option<onboarding::Onboarding>,
     /// Último minuto en que se revisaron las recurrentes, y su ventana (abierta si hay formulario).
     recurring_checked: String,
     recurring_form: Option<recurring::Form>,
@@ -653,7 +656,8 @@ fn new_task_id() -> String {
 
 impl NotesApp {
     pub fn new(cfg: Config, cfg_msg: Option<String>, ctx: egui::Context) -> Self {
-        let mut message = cfg_msg;
+        // La primera vez, el asistente ya explica todo.
+        let mut message = if cfg.first_run { None } else { cfg_msg };
         if let Err(e) = fs::create_dir_all(&cfg.carpeta_notas) {
             message = Some(format!("No se pudo crear {}: {e}", cfg.carpeta_notas.display()));
         }
@@ -687,6 +691,7 @@ impl NotesApp {
         let estado_hoy = estado.hoy.clone();
         let estado_semana = estado.semana.clone();
         let home_closed: HashSet<String> = estado.inicio_cerradas.iter().cloned().collect();
+        let first_run = cfg.first_run;
         let tasks_by_due = estado.tareas_por_fecha;
         let estado_tabs = estado.pestanas.clone();
         let estado_tab = estado.pestana;
@@ -747,6 +752,7 @@ impl NotesApp {
             ai_usage_at: long_ago(),
             ai_usage_warned: String::new(),
             acct: account_ui::AccountState::default(),
+            onboarding: first_run.then(onboarding::Onboarding::new),
             recurring_checked: String::new(),
             recurring_form: None,
             followup: followup::FollowUp::default(),
@@ -3009,6 +3015,7 @@ impl NotesApp {
         self.confirm_window(&ctx);
         self.forever_window(&ctx);
         self.recurring_window(&ctx);
+        self.onboarding_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {
             self.apply(a);
         }
