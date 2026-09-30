@@ -158,6 +158,8 @@ Los datos internos que comparten los equipos (las preguntas de la IA, las sugere
 
 Si tienes la app abierta en dos equipos, cada nota la organiza uno solo a la vez (el equipo deja una marca en `.nodex/organizando/` mientras la IA trabaja) y cada correo lo anota uno solo (`.nodex/correos-anotados.txt`). Las marcas viajan por Dropbox, así que es un mejor esfuerzo: tardan unos segundos en llegar al otro equipo.
 
+Las tareas que tienen línea en una nota (`- [ ] … ^id`) siguen a esa línea: si la línea se mueve a otra nota o espacio, la tarea apunta ahí; si quedó hecha en un lado y pendiente en el otro, queda hecha en los dos; si la línea tiene fecha, vale esa; y si una línea con casilla quedó sin su tarea, se vuelve a crear. Las tareas sin línea (las que agregas en Tareas o en Microsoft To Do) no se tocan.
+
 Para abrir rápido aunque haya miles de notas, la app guarda una copia de todas en un solo archivo local (`AppData\Local\nodex-notes` en Windows, la carpeta de caché del sistema en Mac y Linux; nunca en Dropbox). Al abrir lee esa copia y solo relee del disco las notas que cambiaron desde la última vez. Si la copia falta o está dañada, simplemente lee todas las notas.
 
 ## Código
@@ -197,6 +199,7 @@ Para abrir rápido aunque haya miles de notas, la app guarda una copia de todas 
 | `src/gcal.rs` | Google Calendar: OAuth con PKCE, calendario "Notas" y sincronización de eventos. |
 | `src/agenda.rs` | `tareas.txt` (todo.txt), `agenda.txt` y `agenda.ics`. |
 | `src/conflicts.rs`, `src/app/conflicts_ui.rs` | Reconoce las «copias en conflicto» de Dropbox y las junta con su original. |
+| `src/app/tasks_sync.rs` | Las tareas siguen a sus líneas: empareja `tareas.txt` con las líneas `- [ ] … ^id` de las notas. |
 | `src/claims.rs` | Marcas para que dos equipos no organicen la misma nota ni anoten el mismo correo a la vez. |
 | `src/shared.rs` | Datos internos compartidos entre equipos (`.nodex/`): aplica solo lo que cambió el otro, sin pisar. |
 | `src/merge.rs` | Junta dos versiones de una nota línea por línea (con base común, o conservando todo si no hay base). |

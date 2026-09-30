@@ -36,6 +36,7 @@ mod rendimiento;
 mod settings;
 mod spaces_ui;
 mod tabs;
+mod tasks_sync;
 mod today;
 mod todo_ui;
 mod week;
@@ -406,6 +407,9 @@ pub struct NotesApp {
     home_question: String,
     /// "Diario" (las notas de días anteriores) abierto en la barra lateral.
     diary_open: bool,
+    /// Estado de las notas la última vez que se emparejaron las tareas con sus líneas, y cuándo.
+    tasks_gen: Option<u64>,
+    tasks_at: Instant,
     /// Identificador de este equipo, y las notas que otro equipo está organizando (se reintentan después).
     machine: String,
     claim_wait: HashMap<PathBuf, Instant>,
@@ -652,6 +656,8 @@ impl NotesApp {
             home_capture: String::new(),
             home_question: String::new(),
             diary_open: false,
+            tasks_gen: None,
+            tasks_at: long_ago(),
             machine: crate::claims::machine_id(),
             claim_wait: HashMap::new(),
             conflict_seen: HashMap::new(),
@@ -1107,6 +1113,7 @@ impl NotesApp {
             self.sync_stores();
         }
         self.resolve_conflicts(false);
+        self.maybe_reconcile_tasks();
         let m = vault::modified(&self.note.path);
         if m.is_none() || m == self.note.disk_mtime {
             return;

@@ -127,6 +127,17 @@ pub struct Note {
     tags: std::cell::OnceCell<Vec<(String, usize)>>,
     day: std::cell::OnceCell<String>,
     hash: std::cell::OnceCell<u64>,
+    task_lines: std::cell::OnceCell<Vec<TaskLine>>,
+}
+
+/// Una línea de tarea de una nota: "- [ ] texto due:2026-10-02 ^id".
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskLine {
+    pub id: String,
+    pub done: bool,
+    pub due: Option<String>,
+    /// El texto de la línea, sin casilla, etiquetas, fecha ni identificador.
+    pub text: String,
 }
 
 impl Note {
@@ -156,6 +167,22 @@ impl Note {
     /// Día en que se editó por última vez ("2026-09-30", hora de aquí).
     pub fn day(&self) -> &str {
         self.day.get_or_init(|| chrono::DateTime::<chrono::Local>::from(self.modified).format("%Y-%m-%d").to_string())
+    }
+
+    /// Las líneas con casilla e identificador de la nota (las tareas que viven en ella).
+    pub fn task_lines(&self) -> &[TaskLine] {
+        self.task_lines.get_or_init(|| {
+            self.text
+                .lines()
+                .filter(|l| l.contains('^'))
+                .filter_map(|l| {
+                    let done = crate::lines::parse(l).check?;
+                    let id = crate::lines::id_of(l)?;
+                    let due = crate::lines::due_of(l).filter(|d| crate::agenda::is_date(d));
+                    Some(TaskLine { id, done, due, text: crate::doubts::core(l) })
+                })
+                .collect()
+        })
     }
 
     /// Huella del texto (para saber si la IA ya lo analizó).
@@ -460,7 +487,7 @@ impl Vault {
         use std::cell::OnceCell;
         self.notes.insert(
             path.clone(),
-            Note { path, workspace, title, modified, text, folded: OnceCell::new(), meeting: OnceCell::new(), tags: OnceCell::new(), day: OnceCell::new(), hash: OnceCell::new() },
+            Note { path, workspace, title, modified, text, folded: OnceCell::new(), meeting: OnceCell::new(), tags: OnceCell::new(), day: OnceCell::new(), hash: OnceCell::new(), task_lines: OnceCell::new() },
         );
     }
 
