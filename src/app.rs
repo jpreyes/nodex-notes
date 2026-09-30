@@ -34,6 +34,7 @@ mod manage;
 mod followup;
 mod home;
 mod mail_ui;
+mod recurring;
 #[cfg(test)]
 mod rendimiento;
 mod settings;
@@ -324,6 +325,8 @@ enum Action {
     RenameTag(String, String),
     /// Dejar una nota completa como tarea.
     NoteToTask(PathBuf),
+    /// La ventana de reuniones y notas recurrentes.
+    OpenRecurring,
     /// Devolver algo de la papelera a su lugar.
     Restore(crate::vault::Trashed),
     ShowTag(String),
@@ -397,6 +400,9 @@ pub struct NotesApp {
     chats_wide: bool,
     /// Tarjetas de Inicio minimizadas (por su título).
     home_closed: HashSet<String>,
+    /// Último minuto en que se revisaron las recurrentes, y su ventana (abierta si hay formulario).
+    recurring_checked: String,
+    recurring_form: Option<recurring::Form>,
     /// Borrar para siempre: qué, y si se marcó «Entiendo que no se puede recuperar».
     forever: Option<(trash_view::Forever, bool)>,
     new_task: String,
@@ -719,6 +725,8 @@ impl NotesApp {
             week: week::WeekState::default(),
             week_seen: estado_semana,
             home_closed,
+            recurring_checked: String::new(),
+            recurring_form: None,
             followup: followup::FollowUp::default(),
             tabs: tabs::Tabs::default(),
             cals: crate::calendars::Calendars::load(),
@@ -1216,6 +1224,7 @@ impl NotesApp {
         }
         self.resolve_conflicts(false);
         self.maybe_merge_days();
+        self.maybe_create_recurring();
         self.maybe_reconcile_tasks();
         let m = vault::modified(&self.note.path);
         if m.is_none() || !self.note.changed_on_disk() {
@@ -2024,7 +2033,12 @@ impl NotesApp {
             Action::RemoveCalendar(i) => self.remove_calendar(i),
             Action::EditCalendar(i, name, url) => self.edit_calendar(i, name, url),
             Action::RefreshCalendars => self.cals.last = None,
-            Action::StartMeetingNamed(title) => self.start_meeting_as(Some(title)),
+            Action::StartMeetingNamed(title) => {
+                if !self.start_recurring(&title) {
+                    self.start_meeting_as(Some(title));
+                }
+            }
+            Action::OpenRecurring => self.open_recurring(),
             Action::OpenNewTab(p) => self.new_tab(tabs::Tab::Note(p)),
             Action::ShowTab(v) => self.show_in_tab(v),
             Action::NewTab => self.new_tab(tabs::Tab::View(View::Home)),
@@ -2773,6 +2787,12 @@ impl NotesApp {
             if let Some(a) = calendars_ui::calendars_panel(ui, &subs, &self.cals, &mut self.cal_form) {
                 action = Some(a);
             }
+            ui.add_space(4.0);
+            let n = self.recurring().len();
+            let label = if n == 0 { "Reuniones y notas que se repiten…".to_string() } else { format!("Reuniones y notas que se repiten ({n})") };
+            if ui.link(RichText::new(format!("{} {label}", icon::ARROWS_CLOCKWISE)).size(12.5)).clicked() {
+                action = Some(Action::OpenRecurring);
+            }
             ui.add_space(14.0);
             if !overdue.is_empty() {
                 ui.label(RichText::new("Atrasadas").font(theme::bold(15.0)).color(RED));
@@ -2951,6 +2971,7 @@ impl NotesApp {
         self.followup_window(&ctx);
         self.confirm_window(&ctx);
         self.forever_window(&ctx);
+        self.recurring_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {
             self.apply(a);
         }

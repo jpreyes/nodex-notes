@@ -116,6 +116,7 @@ impl NotesApp {
     pub(super) fn all_events(&self) -> Vec<agenda::Event> {
         let mut e = self.agenda.events();
         e.extend(self.cals.as_agenda(&self.cfg.calendarios));
+        e.extend(self.recurring_events());
         e.sort_by(|a, b| (a.date.clone(), a.time.clone()).cmp(&(b.date.clone(), b.time.clone())));
         e
     }

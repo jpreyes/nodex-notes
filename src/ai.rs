@@ -417,7 +417,7 @@ fn today() -> String {
     format!("{} {}", DIAS[now.weekday().num_days_from_monday() as usize], now.format("%Y-%m-%d"))
 }
 
-const RULES_TASKS: &str = r#"- tareas: acciones pendientes concretas que la persona debe hacer ("debo…", "hay que…", "tengo que…"), redactadas con verbo en infinitivo, cada una con el id de la unidad de donde sale. Las líneas "- [ ] …" ya son tareas pendientes: inclúyelas igual (con su unidad). Ignora las hechas ("- [x] …"). "fecha" (AAAA-MM-DD) si se indica o se deduce: "mañana" = el día siguiente a hoy; "el viernes" = la fecha de ese viernes; un plazo vago como "la próxima semana" = el viernes de la próxima semana; "due:AAAA-MM-DD" en la línea es su fecha. Si no hay plazo, "".
+const RULES_TASKS: &str = r#"- tareas: acciones pendientes concretas que la persona debe hacer ("debo…", "hay que…", "tengo que…"), redactadas con verbo en infinitivo, cada una con el id de la unidad de donde sale. Las líneas "- [ ] …" ya son tareas pendientes: inclúyelas igual (con su unidad). Ignora las hechas ("- [x] …"). "fecha" (AAAA-MM-DD) si se indica o se deduce: "mañana" = el día siguiente a hoy; "el viernes" = la fecha de ese viernes; un plazo vago como "la próxima semana" = el viernes de la próxima semana; "due:AAAA-MM-DD" en la línea es su fecha. Si no hay plazo, "". Las líneas que empiezan con "↻" recuerdan tareas que ya existen: no crees tareas con ellas.
 - eventos: citas, visitas o reuniones futuras con fecha (AAAA-MM-DD) y hora (HH:MM) si se indica, con el id de su unidad. Las entregas con plazo son tareas, no eventos. No incluyas una reunión que el propio texto está registrando.
 - Ignora los "^abc12" del final de algunas líneas: son identificadores internos."#;
 
@@ -428,7 +428,7 @@ const RULES_DOUBTS: &str = r#"- dudas: si NO estás seguro de algo que importa, 
 
 const RULE_NEW_SPACE: &str = r#"espacio_nuevo: si trata de un proyecto, cliente, obra o tema concreto y recurrente que NO tiene espacio en la lista (por ejemplo, el nombre de un proyecto), ese nombre corto, tal como se llamaría el espacio ("LaVet"); si calza con un espacio existente o es algo general (informes, reuniones, compras, ideas), "". No propongas los que la persona descartó."#;
 
-const RULE_MEETING: &str = r#"asistentes (nombres mencionados), decisiones (lo que se decidió, frases cortas) y acuerdos (compromisos concretos: "quien" = nombre de la persona responsable, o "yo" si es quien escribe; "que" con verbo en infinitivo; "fecha" AAAA-MM-DD si se indica o se deduce, si no ""). Los compromisos de una reunión van en acuerdos, no en tareas."#;
+const RULE_MEETING: &str = r#"asistentes (nombres mencionados), decisiones (lo que se decidió, frases cortas) y acuerdos (compromisos concretos: "quien" = nombre de la persona responsable, o "yo" si es quien escribe; "que" con verbo en infinitivo; "fecha" AAAA-MM-DD si se indica o se deduce, si no ""). Los compromisos de una reunión van en acuerdos, no en tareas. Las líneas que empiezan con "↻" son acuerdos pendientes de la reunión anterior, que ya existen: no los repitas en acuerdos."#;
 
 const DOUBTS_SHAPE: &str = r#""dudas": [{"unidad": "L1", "pregunta": "", "opciones": [{"texto": "", "espacio": "", "nota": "", "de": "", "fecha": "", "etiquetas": [], "dato": ""}]}]"#;
 

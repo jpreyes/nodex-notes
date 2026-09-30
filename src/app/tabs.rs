@@ -241,6 +241,7 @@ impl NotesApp {
             Close(usize),
             CloseOthers(usize),
             Move(usize, usize),
+            Recurring,
             New,
             NewNote,
             NewMeeting,
@@ -339,6 +340,10 @@ impl NotesApp {
                         todo = Some(Do::NewMeeting);
                         ui.close();
                     }
+                    if ui.button(format!("{}  Reunión o nota que se repite…", icon::ARROWS_CLOCKWISE)).clicked() {
+                        todo = Some(Do::Recurring);
+                        ui.close();
+                    }
                     if ui.button(format!("{}  Inicio   Ctrl+T", icon::HOUSE)).clicked() {
                         todo = Some(Do::New);
                         ui.close();
@@ -368,6 +373,7 @@ impl NotesApp {
                 self.focus_title = true;
             }
             Some(Do::NewMeeting) => self.start_meeting(),
+            Some(Do::Recurring) => self.open_recurring(),
             _ => {}
         }
     }
