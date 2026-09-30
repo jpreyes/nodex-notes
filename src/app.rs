@@ -37,6 +37,8 @@ mod settings;
 mod spaces_ui;
 mod tabs;
 mod tasks_sync;
+#[cfg(test)]
+mod two_devices_tests;
 mod today;
 mod todo_ui;
 mod week;
@@ -71,6 +73,8 @@ const DIAS_CORTOS: [&str; 7] = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom
 /// Primera nota de una carpeta nueva: cómo se usa la app.
 const WELCOME: &str = "Escribe una idea por línea: cada línea es una nota distinta, y la IA la lleva después a su espacio.\n  Con Tab al comienzo, la línea se une a la nota de arriba, como un detalle\n  - con Tab dos veces se vuelve un ítem de lista\nPon #etiquetas donde quieras: se ven como píldoras de color #ejemplo\nEscribe tareas como las dirías, por ejemplo «enviar el informe el viernes»: la IA les pone casilla y fecha\nCtrl+R empieza una reunión: cada línea lleva su hora y Esc la cierra con un resumen\nCtrl+K abre la IA: pregúntale lo que quieras sobre tus notas\nCuando ya no la necesites, borra esta nota con el tacho que aparece al pasar el mouse en la barra lateral\n";
 const RED: Color32 = Color32::from_rgb(198, 40, 40);
+/// Avisos que no son errores (p. ej. Dropbox cerrado).
+const WARN: Color32 = Color32::from_rgb(176, 104, 0);
 
 struct OpenNote {
     path: PathBuf,
@@ -79,20 +83,38 @@ struct OpenNote {
     text: String,
     dirty: bool,
     last_edit: Instant,
-    /// Fecha de modificación en disco cuando se leyó o guardó; `None` = aún no existe.
+    /// Fecha de modificación y tamaño en disco cuando se leyó o guardó; `None` = aún no existe.
     disk_mtime: Option<SystemTime>,
+    disk_len: Option<u64>,
     /// El texto tal como estaba en disco la última vez que se leyó o guardó: la base común
     /// para juntar lo escrito aquí con lo que llegue de otro equipo.
     base: String,
 }
 
 impl OpenNote {
+    /// ¿Cambió el archivo por fuera desde la última vez que se leyó o guardó? Se mira la fecha
+    /// de modificación y también el tamaño: Windows actualiza la fecha con una precisión de
+    /// unos 16 ms, y un cambio justo después de guardar puede quedar con la misma fecha.
+    fn changed_on_disk(&self) -> bool {
+        let Ok(m) = fs::metadata(&self.path) else { return false };
+        m.modified().ok() != self.disk_mtime || Some(m.len()) != self.disk_len
+    }
+
+    /// Recuerda cómo quedó el archivo en disco (después de leerlo o guardarlo).
+    fn remember_disk(&mut self) {
+        let m = fs::metadata(&self.path).ok();
+        self.disk_mtime = m.as_ref().and_then(|m| m.modified().ok());
+        self.disk_len = m.map(|m| m.len());
+    }
+
     fn load(path: PathBuf) -> Self {
         let text = vault::read_text(&path).unwrap_or_default();
+        let meta = fs::metadata(&path).ok();
         OpenNote {
             base: text.clone(),
             text,
-            disk_mtime: vault::modified(&path),
+            disk_mtime: meta.as_ref().and_then(|m| m.modified().ok()),
+            disk_len: meta.map(|m| m.len()),
             title: vault::stem(&path),
             path,
             dirty: false,
@@ -407,6 +429,8 @@ pub struct NotesApp {
     home_question: String,
     /// "Diario" (las notas de días anteriores) abierto en la barra lateral.
     diary_open: bool,
+    /// Si la carpeta de notas está en Dropbox: si la app de Dropbox está abierta (para avisar).
+    dropbox: Option<crate::dropbox::Watch>,
     /// Estado de las notas la última vez que se emparejaron las tareas con sus líneas, y cuándo.
     tasks_gen: Option<u64>,
     tasks_at: Instant,
@@ -656,6 +680,7 @@ impl NotesApp {
             home_capture: String::new(),
             home_question: String::new(),
             diary_open: false,
+            dropbox: crate::dropbox::contains(&cfg_root).then(|| crate::dropbox::Watch::start(ctx.clone())),
             tasks_gen: None,
             tasks_at: long_ago(),
             machine: crate::claims::machine_id(),
@@ -788,6 +813,7 @@ impl NotesApp {
         self.vault.save_cache_now();
         self.cfg.carpeta_notas = path.clone();
         self.save_config();
+        self.dropbox = crate::dropbox::contains(&path).then(|| crate::dropbox::Watch::start(self.ctx.clone()));
         self.vault = Vault::new(path);
         self.agenda = Agenda::new(&self.vault.root);
         self.links = editor::LinkCache::new(&self.vault.root);
@@ -832,7 +858,7 @@ impl NotesApp {
         // Si el archivo cambió por fuera desde la última lectura (otro equipo, Dropbox), no se
         // pisa: se junta lo de aquí con lo de allá, línea por línea.
         let mut merged = None;
-        if vault::modified(&n.path) != n.disk_mtime {
+        if n.changed_on_disk() {
             if let Ok(disk) = vault::read_text(&n.path) {
                 if disk != n.base && disk != n.text {
                     let m = crate::merge::merge3(&n.base, &n.text, &disk);
@@ -845,7 +871,7 @@ impl NotesApp {
             Ok(()) => {
                 n.dirty = false;
                 n.base = n.text.clone();
-                n.disk_mtime = vault::modified(&n.path);
+                n.remember_disk();
                 if let Some(m) = n.disk_mtime {
                     self.vault.upsert(n.path.clone(), n.text.clone(), m);
                 }
@@ -1035,6 +1061,7 @@ impl NotesApp {
         if is_open {
             self.note.dirty = false;
             self.note.disk_mtime = None;
+            self.note.disk_len = None;
             let ws = self.ws.clone();
             self.select_workspace(ws);
         }
@@ -1115,11 +1142,11 @@ impl NotesApp {
         self.resolve_conflicts(false);
         self.maybe_reconcile_tasks();
         let m = vault::modified(&self.note.path);
-        if m.is_none() || m == self.note.disk_mtime {
+        if m.is_none() || !self.note.changed_on_disk() {
             return;
         }
         let Ok(disk_text) = vault::read_text(&self.note.path) else { return };
-        self.note.disk_mtime = m;
+        self.note.remember_disk();
         if disk_text == self.note.text {
             self.note.base = disk_text;
             return;
@@ -1366,7 +1393,7 @@ impl NotesApp {
         if is_open && self.note.dirty {
             return; // se siguió escribiendo; se volverá a analizar
         }
-        if is_open && vault::modified(&path) != self.note.disk_mtime {
+        if is_open && self.note.changed_on_disk() {
             return; // llegó un cambio de otro equipo: primero se junta, después se vuelve a analizar
         }
         if !crate::claims::note_is_mine(&self.vault.root, &self.rel(&path), &self.machine) {
@@ -2184,6 +2211,21 @@ impl NotesApp {
                 if r.clicked() {
                     action = Some(Action::Open(m.path.clone(), Some(usize::MAX)));
                 }
+                ui.add_space(12.0);
+            }
+            // Dropbox cerrado: se puede seguir trabajando, pero no se sincroniza.
+            if self.dropbox.as_ref().is_some_and(|d| d.closed()) {
+                let text = RichText::new(format!("{} Dropbox no está abierto", icon::CLOUD_SLASH)).size(12.5).color(WARN);
+                ui.label(text).on_hover_text(
+                    "Tus notas están en una carpeta de Dropbox, pero la app de Dropbox no está abierta. Puedes seguir trabajando: los cambios quedan en este equipo y se sincronizarán cuando la abras.",
+                );
+                ui.add_space(12.0);
+            }
+            // Copias en conflicto de Dropbox que se están por juntar (se juntan solas).
+            if !self.conflict_seen.is_empty() {
+                let n = self.conflict_seen.len();
+                let text = RichText::new(format!("{} Juntando {}", icon::ARROWS_MERGE, plural(n, "copia en conflicto"))).size(12.5).color(MUTED);
+                ui.label(text).on_hover_text("Dropbox dejó dos versiones de un archivo; en unos segundos se juntan solas, sin perder nada");
                 ui.add_space(12.0);
             }
             let (glyph, text, color) = if self.note.dirty {

@@ -11,6 +11,7 @@ mod claims;
 mod config;
 mod conflicts;
 mod doubts;
+mod dropbox;
 mod dups;
 mod gcal;
 mod ics;
