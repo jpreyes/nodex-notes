@@ -2448,7 +2448,7 @@ dependencies = [
 
 [[package]]
 name = "nodex-notes"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "arboard",
  "axum",

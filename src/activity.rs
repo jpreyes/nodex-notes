@@ -40,6 +40,8 @@ pub struct Entry {
     pub details: Vec<String>,
     /// Se deshizo.
     pub undone: bool,
+    /// La persona dijo «No, gracias» (o no quiso lo que sugirió la IA).
+    pub rechazado: bool,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

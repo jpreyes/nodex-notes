@@ -108,6 +108,7 @@ enum Change {
     IncludedCode(String),
     IncludedServer(String),
     AiAuto(bool),
+    AiSuggest(bool),
     GoogleCreds(String, String),
     MailArrive(bool),
     MailDaily(String),
@@ -381,6 +382,10 @@ impl NotesApp {
                 self.save_config();
                 self.restart_ai();
             }
+            Change::AiSuggest(on) => {
+                self.cfg.ia_sugerir = on;
+                self.save_config();
+            }
             Change::AiAuto(on) => {
                 self.cfg.ia_automatica = on;
                 self.ai_auto = on;
@@ -571,6 +576,13 @@ impl NotesApp {
         row(ui, "Organizar automáticamente", "Al dejar una nota o tras 45 s sin escribir", |ui| {
             if toggle(ui, &mut auto).changed() {
                 changes.push(Change::AiAuto(auto));
+            }
+        });
+
+        let mut suggest = self.cfg.ia_sugerir;
+        row(ui, "Sugerir antes de aplicar", "La IA propone (en la ventana de la IA → Preguntas) y nada cambia hasta que lo apruebas", |ui| {
+            if toggle(ui, &mut suggest).changed() {
+                changes.push(Change::AiSuggest(suggest));
             }
         });
 

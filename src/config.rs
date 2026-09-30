@@ -15,6 +15,8 @@ pub struct Config {
     pub clave_api: String,
     /// Analizar solas las notas que se escriben (reunión, espacio, etiquetas, tareas, agenda).
     pub ia_automatica: bool,
+    /// La IA propone y nada cambia hasta que se aprueba.
+    pub ia_sugerir: bool,
     /// Credenciales OAuth "App de escritorio" de Google Cloud (ver README).
     pub google_client_id: String,
     pub google_client_secret: String,
@@ -61,6 +63,7 @@ impl Default for Config {
             modelo: "deepseek-v4.1-flash".into(),
             clave_api: String::new(),
             ia_automatica: true,
+            ia_sugerir: false,
             google_client_id: String::new(),
             google_client_secret: String::new(),
             calendarios: Vec::new(),
@@ -154,6 +157,8 @@ fn render(c: &Config) -> String {
          \n\
          # Analizar solas las notas al terminar de escribirlas (espacio, etiquetas, tareas, agenda)\n\
          ia_automatica = {}\n\
+         # Sugerir antes de aplicar: la IA propone y nada cambia hasta que lo apruebas\n\
+         ia_sugerir = {}\n\
          \n\
          # Google Calendar: credenciales OAuth \"App de escritorio\" (pasos en el README)\n\
          google_client_id = {}\n\
@@ -170,6 +175,7 @@ fn render(c: &Config) -> String {
         q(&c.servidor_ia),
         q(&c.cuenta),
         c.ia_automatica,
+        c.ia_sugerir,
         q(&c.google_client_id),
         q(&c.google_client_secret),
         c.correo_al_llegar,

@@ -5,7 +5,7 @@ use genai::adapter::AdapterKind;
 use genai::chat::{ChatMessage, ChatOptions, ChatRequest};
 use genai::resolver::{AuthData, AuthResolver, Endpoint};
 use genai::{Client, ModelIden, ModelSpec, ServiceTarget};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 
@@ -14,7 +14,7 @@ pub fn fnv(s: &str) -> u64 {
     s.bytes().fold(0xcbf29ce484222325, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3))
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct AiTask {
     pub texto: String,
@@ -23,7 +23,7 @@ pub struct AiTask {
     pub unidad: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct AiEvent {
     pub titulo: String,
@@ -34,7 +34,7 @@ pub struct AiEvent {
 
 /// Una nota dentro del archivo (línea con sus sangrías, o bloque "##"): sus etiquetas,
 /// de qué otra es detalle y, en una nota de captura, a qué nota (y espacio) va.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct AiUnit {
     pub id: String,
@@ -54,7 +54,7 @@ pub struct AiUnit {
 }
 
 /// Un compromiso de una reunión: quién ("yo" = quien escribe), qué y para cuándo.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct AiAgreement {
     pub quien: String,
@@ -62,7 +62,7 @@ pub struct AiAgreement {
     pub fecha: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Analysis {
     // Nota con título: se analiza completa.
@@ -88,7 +88,7 @@ pub struct Analysis {
 
 /// Una pregunta de la IA sobre una unidad. Las opciones pueden venir como texto o como objeto
 /// ({"texto", "espacio", "nota", "de", "fecha", "etiquetas", "dato"}); ver `doubts::from_ai`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct AiDoubt {
     pub unidad: String,

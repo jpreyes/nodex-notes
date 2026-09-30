@@ -44,6 +44,7 @@ mod settings;
 mod spaces_ui;
 mod tabs;
 mod tasks_sync;
+mod trust;
 mod trash_view;
 #[cfg(test)]
 mod two_devices_tests;
@@ -330,6 +331,8 @@ enum Action {
     NoteToTask(PathBuf),
     /// La ventana de reuniones y notas recurrentes.
     OpenRecurring,
+    /// «No, gracias» en algo que hizo la IA (su entrada en «Lo que hizo»).
+    Reject(String),
     /// Devolver algo de la papelera a su lugar.
     Restore(crate::vault::Trashed),
     ShowTag(String),
@@ -417,6 +420,9 @@ pub struct NotesApp {
     acct: account_ui::AccountState,
     /// El asistente de la primera vez, mientras está abierto.
     onboarding: Option<onboarding::Onboarding>,
+    /// «No, gracias» abierto: qué, y lo que se va escribiendo. Y cuántas sugerencias esperan.
+    rejecting: Option<(trust::Rejected, String)>,
+    suggestion_count: usize,
     /// Último minuto en que se revisaron las recurrentes, y su ventana (abierta si hay formulario).
     recurring_checked: String,
     recurring_form: Option<recurring::Form>,
@@ -753,6 +759,8 @@ impl NotesApp {
             ai_usage_warned: String::new(),
             acct: account_ui::AccountState::default(),
             onboarding: first_run.then(onboarding::Onboarding::new),
+            rejecting: None,
+            suggestion_count: 0,
             recurring_checked: String::new(),
             recurring_form: None,
             followup: followup::FollowUp::default(),
@@ -803,6 +811,7 @@ impl NotesApp {
         };
         app.prune_doubts();
         app.prune_ideas();
+        app.suggestion_count = app.suggestions().len();
         // La primera vez de cada día se abre en Inicio (el resumen de todo).
         if app.today_shown != today() {
             app.today_shown = today();
@@ -1040,6 +1049,7 @@ impl NotesApp {
         self.ideas.sync(&root);
         self.activity.sync(&root);
         self.sync_analyzed();
+        self.suggestion_count = self.suggestions().len();
     }
 
     fn open(&mut self, path: PathBuf, cursor: Option<usize>) {
@@ -1481,7 +1491,11 @@ impl NotesApp {
             match r.result {
                 Ok(a) => {
                     self.ai_error = None;
-                    self.apply_analysis(r.path, r.hash, a)
+                    if self.cfg.ia_sugerir {
+                        self.suggest(r.path, r.hash, a)
+                    } else {
+                        self.apply_analysis(r.path, r.hash, a)
+                    }
                 }
                 Err(e) => {
                     self.touched.remove(&r.path);
@@ -2072,6 +2086,7 @@ impl NotesApp {
                 }
             }
             Action::OpenRecurring => self.open_recurring(),
+            Action::Reject(id) => self.ask_reject(trust::Rejected::Done(id)),
             Action::OpenNewTab(p) => self.new_tab(tabs::Tab::Note(p)),
             Action::ShowTab(v) => self.show_in_tab(v),
             Action::NewTab => self.new_tab(tabs::Tab::View(View::Home)),
@@ -3016,6 +3031,7 @@ impl NotesApp {
         self.forever_window(&ctx);
         self.recurring_window(&ctx);
         self.onboarding_window(&ctx);
+        self.reject_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {
             self.apply(a);
         }

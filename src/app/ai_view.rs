@@ -65,6 +65,7 @@ impl NotesApp {
             text,
             details,
             undone: false,
+            rechazado: false,
         };
         let (text, details) = (entry.text.clone(), entry.details.clone());
         let id = self.activity.add(entry);
@@ -139,6 +140,15 @@ impl NotesApp {
                                     close = true;
                                 }
                             }
+                            // «No, gracias»: deshace y le enseña a no repetirlo.
+                            if matches!(t.kind, Kind::Organizar | Kind::Correo) {
+                                ui.add_space(4.0);
+                                let b = egui::Button::new(RichText::new("No, gracias").size(13.0));
+                                if ui.add(b).on_hover_text("Deshace esto y la IA aprende a no repetirlo").clicked() {
+                                    action = Some(Action::Reject(t.entry.clone()));
+                                    close = true;
+                                }
+                            }
                         });
                     });
             });
@@ -181,7 +191,7 @@ impl NotesApp {
 
     /// Preguntas y sugerencias de la IA que esperan respuesta.
     pub(super) fn pending_asks(&self) -> usize {
-        self.doubts.pending.len() + self.ideas.ready().count()
+        self.doubts.pending.len() + self.ideas.ready().count() + self.suggestion_count
     }
 
     pub(super) fn ai_view(&mut self, ui: &mut Ui) -> Option<Action> {
@@ -362,8 +372,12 @@ impl NotesApp {
         let mut reply = None;
         let mut space_reply = None;
         let mut find_dups = false;
+        let suggested = self.suggestion_count > 0;
         Self::column_at(ui, "ai-asks", 18.0, |ui, _| {
-            if asks.is_empty() && ideas.is_empty() {
+            if let Some(a) = self.suggestions_ui(ui) {
+                action = Some(a);
+            }
+            if asks.is_empty() && ideas.is_empty() && !suggested {
                 ui.add_space(8.0);
                 ui.label(RichText::new(format!("{} No hay preguntas pendientes.", icon::CHECK_CIRCLE)).size(15.0).color(SUCCESS));
                 ui.add_space(4.0);
@@ -426,7 +440,18 @@ impl NotesApp {
         let can_undo = self.undo.as_ref().is_some_and(|u| u.at.elapsed() < UNDO_WINDOW);
         let undo_id = self.undo_entry.clone().filter(|_| can_undo);
         let days = self.activity.by_day();
+        let (n, bad) = super::trust::month_accuracy(&self.activity);
         Self::column_at(ui, "ai-log", 18.0, |ui, col_w| {
+            if n > 0 {
+                let pct = (n - bad) * 100 / n;
+                let text = format!(
+                    "Este mes: {} · {} · acertó en el {pct} %",
+                    plural(n, "cambio de la IA"),
+                    if bad == 1 { "1 deshecho o que no quisiste".to_string() } else { format!("{bad} deshechos o que no quisiste") }
+                );
+                ui.label(RichText::new(text).size(13.0).color(if pct >= 90 { SUCCESS } else if pct >= 70 { MUTED } else { WARN }));
+                ui.add_space(6.0);
+            }
             if days.is_empty() {
                 ui.add_space(8.0);
                 ui.label(RichText::new("Todavía no hay cambios.").size(15.0).color(MUTED));
@@ -468,12 +493,19 @@ impl NotesApp {
                                 if !e.note.is_empty() && path.is_file() && ui.link(RichText::new(format!("{} Abrir {}", icon::FILE_TEXT, e.note)).size(12.5)).clicked() {
                                     action = Some(Action::Open(path, None));
                                 }
-                                if e.undone {
+                                if e.rechazado {
+                                    ui.label(RichText::new("no lo quisiste").size(12.5).color(MUTED));
+                                } else if e.undone {
                                     ui.label(RichText::new("deshecho").size(12.5).color(MUTED));
-                                } else if undo_id.as_deref() == Some(e.id.as_str()) {
-                                    let b = egui::Button::new(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5));
-                                    if ui.add(b).clicked() {
-                                        action = Some(Action::Undo);
+                                } else {
+                                    if undo_id.as_deref() == Some(e.id.as_str()) {
+                                        let b = egui::Button::new(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5));
+                                        if ui.add(b).clicked() {
+                                            action = Some(Action::Undo);
+                                        }
+                                    }
+                                    if matches!(e.kind, Kind::Organizar | Kind::Correo) && ui.link(RichText::new("No, gracias").size(12.5)).on_hover_text("La IA lo tendrá en cuenta para no repetirlo").clicked() {
+                                        action = Some(Action::Reject(e.id.clone()));
                                     }
                                 }
                             });
