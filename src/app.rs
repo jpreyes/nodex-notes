@@ -48,6 +48,9 @@ const POLL: Duration = Duration::from_secs(1);
 const MEETING_IDLE: Duration = Duration::from_secs(30 * 60);
 /// La nota abierta se analiza con IA tras este tiempo sin escribir.
 const AI_IDLE: Duration = Duration::from_secs(45);
+/// El cursor de texto parpadea mientras se usa la app; tras este tiempo sin tocar nada queda
+/// fijo, para que la app quieta no repinte varias veces por segundo solo por el parpadeo.
+const CURSOR_REST: Duration = Duration::from_secs(10);
 /// Cuántas líneas de resultados se muestran de una vez al buscar.
 const FOUND_PAGE: usize = 300;
 /// Tiempo durante el que se ofrece deshacer lo que hizo la IA.
@@ -189,6 +192,26 @@ impl Summary {
             written_week: all.iter().filter(|n| n.day() >= week_ago.as_str()).count(),
             key,
         }
+    }
+}
+
+/// Diagnóstico: con la variable NODEX_CUADROS, escribe cada 5 segundos cuántos cuadros se
+/// dibujaron (para ver si algo repinta de más con la app quieta).
+fn count_frame(ctx: &egui::Context) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    if !*ON.get_or_init(|| std::env::var_os("NODEX_CUADROS").is_some()) {
+        return;
+    }
+    static FRAMES: AtomicU64 = AtomicU64::new(0);
+    static SINCE: OnceLock<std::sync::Mutex<Instant>> = OnceLock::new();
+    let n = FRAMES.fetch_add(1, Ordering::Relaxed) + 1;
+    let mut since = SINCE.get_or_init(|| std::sync::Mutex::new(Instant::now())).lock().expect("contador");
+    if since.elapsed() >= Duration::from_secs(5) {
+        eprintln!("CUADROS {:.1} por segundo; los pidió: {:?}", n as f64 / since.elapsed().as_secs_f64(), ctx.repaint_causes());
+        FRAMES.store(0, Ordering::Relaxed);
+        *since = Instant::now();
     }
 }
 
@@ -369,6 +392,9 @@ pub struct NotesApp {
     home_question: String,
     /// "Diario" (las notas de días anteriores) abierto en la barra lateral.
     diary_open: bool,
+    /// Última vez que se tocó el teclado o el mouse en la ventana, y si el cursor parpadea.
+    last_input: Instant,
+    cursor_blinks: bool,
     /// Resultados de la última búsqueda (se reutilizan mientras no cambie nada).
     found: Option<Found>,
     /// Lo que muestran la barra lateral e Inicio (se recalcula solo si algo cambió).
@@ -603,6 +629,8 @@ impl NotesApp {
             home_capture: String::new(),
             home_question: String::new(),
             diary_open: false,
+            last_input: Instant::now(),
+            cursor_blinks: true,
             found: None,
             summary: None,
             unorganized_count: None,
@@ -2485,6 +2513,16 @@ impl NotesApp {
     /// Un cuadro completo de la ventana (también lo usa el banco de pruebas de rendimiento).
     fn frame(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
+        count_frame(&ctx);
+        // El cursor parpadea solo mientras se usa la app (ver CURSOR_REST).
+        if ctx.input(|i| !i.events.is_empty()) {
+            self.last_input = Instant::now();
+        }
+        let blinks = self.last_input.elapsed() < CURSOR_REST;
+        if blinks != self.cursor_blinks {
+            self.cursor_blinks = blinks;
+            ctx.all_styles_mut(|s| s.visuals.text_cursor.blink = blinks);
+        }
         let mut actions: Vec<Action> = Vec::new();
         actions.extend(self.shortcuts(&ctx));
 
@@ -2816,6 +2854,36 @@ fn highlight_line(line: &str, size: f32) -> LayoutJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// El cursor deja de parpadear tras un rato sin tocar nada y vuelve a parpadear al usar la app.
+    #[test]
+    fn cursor_rests_when_idle() {
+        let dir = std::env::temp_dir().join(format!("nodex-cursor-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("General")).unwrap();
+        fs::write(dir.join("General").join("A.md"), "hola").unwrap();
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let ctx = egui::Context::default();
+        theme::setup(&ctx);
+        let mut app = NotesApp::new(cfg, None, ctx.clone());
+        let frame = |app: &mut NotesApp, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                events,
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+                ..Default::default()
+            };
+            ctx.run_ui(input, |ui| app.frame(ui)).drop_without_applying_deltas();
+        };
+        frame(&mut app, vec![]);
+        assert!(ctx.global_style().visuals.text_cursor.blink, "recién abierta, parpadea");
+        app.last_input = Instant::now().checked_sub(CURSOR_REST + Duration::from_secs(1)).expect("reloj");
+        frame(&mut app, vec![]);
+        assert!(!ctx.global_style().visuals.text_cursor.blink, "quieta: cursor fijo");
+        frame(&mut app, vec![egui::Event::PointerMoved(egui::pos2(300.0, 300.0))]);
+        assert!(ctx.global_style().visuals.text_cursor.blink, "al usarla, vuelve a parpadear");
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     /// Buscar: sin tildes ni mayúsculas, una sola vez por texto, y de nuevo si cambia una nota.
     #[test]

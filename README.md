@@ -218,6 +218,8 @@ cargo test --release rendimiento -- --ignored --nocapture
 
 Para medir solo algunos tamaños: `NODEX_BENCH=1000,10000`. Con las carpetas ya generadas, `tools/medir-ventana.ps1` mide en Windows la app real con ventana (tiempo hasta el primer cuadro, RAM y procesador con la app quieta). La primera lectura de una carpeta es «en frío» (los archivos no están en la memoria de Windows) y puede ser mucho más lenta: conviene medir dos veces.
 
+Para ver si algo repinta de más con la app quieta, la variable `NODEX_CUADROS=1` hace que la app escriba cada 5 segundos cuántos cuadros dibujó por segundo y quién los pidió. Lo normal es 1 por segundo (la revisión periódica). El cursor de texto parpadea mientras se usa la app y queda fijo tras 10 segundos sin tocar nada, justamente para no repintar de más.
+
 ## Licencia
 
 MIT
