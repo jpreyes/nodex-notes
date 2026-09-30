@@ -25,6 +25,7 @@ use std::time::{Duration, Instant, SystemTime};
 mod ai_view;
 mod ask_view;
 mod calendars_ui;
+mod conflicts_ui;
 mod doubts_ui;
 mod editor;
 mod followup;
@@ -397,6 +398,10 @@ pub struct NotesApp {
     home_question: String,
     /// "Diario" (las notas de días anteriores) abierto en la barra lateral.
     diary_open: bool,
+    /// Copias en conflicto de Dropbox vistas (y desde cuándo), y cuándo se buscaron.
+    conflict_seen: HashMap<PathBuf, Instant>,
+    conflicts_gen: u64,
+    conflicts_at: Instant,
     /// Última vez que se tocó el teclado o el mouse en la ventana, y si el cursor parpadea.
     last_input: Instant,
     cursor_blinks: bool,
@@ -634,6 +639,9 @@ impl NotesApp {
             home_capture: String::new(),
             home_question: String::new(),
             diary_open: false,
+            conflict_seen: HashMap::new(),
+            conflicts_gen: u64::MAX,
+            conflicts_at: Instant::now(),
             last_input: Instant::now(),
             cursor_blinks: true,
             found: None,
@@ -1049,6 +1057,7 @@ impl NotesApp {
     fn poll(&mut self) {
         self.vault.refresh();
         self.vault.maybe_save_cache();
+        self.resolve_conflicts(false);
         let m = vault::modified(&self.note.path);
         if m.is_none() || m == self.note.disk_mtime {
             return;

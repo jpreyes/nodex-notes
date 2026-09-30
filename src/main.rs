@@ -8,6 +8,7 @@ mod ask;
 mod calendars;
 mod capture;
 mod config;
+mod conflicts;
 mod doubts;
 mod dups;
 mod gcal;

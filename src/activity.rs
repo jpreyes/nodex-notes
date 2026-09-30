@@ -22,6 +22,8 @@ pub enum Kind {
     Duplicado,
     Espacio,
     Error,
+    /// Se juntaron dos versiones de un archivo (copia en conflicto de Dropbox).
+    Sincronizar,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

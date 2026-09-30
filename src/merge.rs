@@ -133,8 +133,6 @@ pub fn merge3(base: &str, mine: &str, theirs: &str) -> Merged {
     Merged { text: out.join("\n"), conflicts }
 }
 
-// (Todavía sin uso fuera de las pruebas: es para juntar las «copias en conflicto» de Dropbox, M2.2.)
-#[cfg_attr(not(test), allow(dead_code))]
 /// Todas las líneas de las dos versiones, en orden (sin base): lo común una vez, y lo que tiene
 /// solo una u otra, también. Puede hacer reaparecer una línea que una de las dos había borrado.
 pub fn union(a: &str, b: &str) -> String {

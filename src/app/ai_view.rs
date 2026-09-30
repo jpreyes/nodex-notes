@@ -34,6 +34,7 @@ fn kind_icon(k: Kind) -> (&'static str, Color32) {
         Kind::Duplicado => (icon::COPY, SUCCESS),
         Kind::Espacio => (icon::FOLDER_SIMPLE_PLUS, SUCCESS),
         Kind::Error => (icon::WARNING_CIRCLE, RED),
+        Kind::Sincronizar => (icon::ARROWS_MERGE, SUCCESS),
     }
 }
 
@@ -72,7 +73,7 @@ impl NotesApp {
         }
         let _ = self.activity.save(&self.vault.root);
         // Lo que hizo sola se avisa a la vista; lo que respondiste tú, no hace falta.
-        if matches!(kind, Kind::Organizar | Kind::Correo | Kind::Error) {
+        if matches!(kind, Kind::Organizar | Kind::Correo | Kind::Error | Kind::Sincronizar) {
             self.toast = Some(Toast { kind, entry: id, text, details, at: Instant::now() });
         }
     }
@@ -91,6 +92,7 @@ impl NotesApp {
         let title = match t.kind {
             Kind::Correo => "La IA anotó correos en tu nota de hoy",
             Kind::Error => "La IA no pudo terminar",
+            Kind::Sincronizar => "Se juntaron dos versiones",
             _ => "La IA ordenó tu nota",
         };
         let r = egui::Area::new(Id::new("ia-aviso"))

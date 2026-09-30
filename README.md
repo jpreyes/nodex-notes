@@ -152,6 +152,8 @@ Si la IA falla o responde vacío, el último intercambio queda en `ia-ultima.txt
 
 Si un archivo cambia por fuera (por ejemplo, Dropbox lo sincroniza desde otro equipo), la app lo recarga al instante: el sistema operativo le avisa qué archivos cambiaron, sin revisar toda la carpeta (una revisión completa se hace igual cada 10 minutos, por seguridad). Si justo lo estabas editando, la app junta las dos versiones línea por línea (como hace git), usando como base lo último que leyó o guardó: los cambios en líneas distintas se juntan solos, lo que un lado borró o movió no reaparece, y si los dos cambiaron la misma línea quedan las dos versiones y se avisa. Antes de guardar también revisa si el archivo cambió por fuera, así que nunca pisa lo que llegó de otro equipo.
 
+Si Dropbox deja una «copia en conflicto» (pasa cuando dos equipos cambian el mismo archivo sin conexión), la app la reconoce por su nombre, espera unos segundos a que Dropbox termine, la junta con el archivo original sin perder ninguna línea y manda la copia a la papelera. En `tareas.txt` junta por tarea: lo que quedó hecho en un equipo queda hecho. Queda anotado en «Lo que hizo», con Deshacer.
+
 Para abrir rápido aunque haya miles de notas, la app guarda una copia de todas en un solo archivo local (`AppData\Local\nodex-notes` en Windows, la carpeta de caché del sistema en Mac y Linux; nunca en Dropbox). Al abrir lee esa copia y solo relee del disco las notas que cambiaron desde la última vez. Si la copia falta o está dañada, simplemente lee todas las notas.
 
 ## Código
@@ -190,6 +192,7 @@ Para abrir rápido aunque haya miles de notas, la app guarda una copia de todas 
 | `src/app/calendars_ui.rs` | La lista de calendarios con «+ Agregar calendario». |
 | `src/gcal.rs` | Google Calendar: OAuth con PKCE, calendario "Notas" y sincronización de eventos. |
 | `src/agenda.rs` | `tareas.txt` (todo.txt), `agenda.txt` y `agenda.ics`. |
+| `src/conflicts.rs`, `src/app/conflicts_ui.rs` | Reconoce las «copias en conflicto» de Dropbox y las junta con su original. |
 | `src/merge.rs` | Junta dos versiones de una nota línea por línea (con base común, o conservando todo si no hay base). |
 | `src/vault.rs` | Carpeta de notas: espacios, notas `.md`, cambios en disco, papelera. |
 | `src/config.rs` | `config.toml` y `estado.toml` (última nota abierta). |

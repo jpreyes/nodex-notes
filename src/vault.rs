@@ -511,10 +511,11 @@ impl Vault {
         let dir = self.root.join(TRASH);
         fs::create_dir_all(&dir)?;
         let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
         let mut dest = dir.join(&name);
         let mut i = 2;
         while dest.exists() {
-            dest = dir.join(format!("{} {i}.md", stem(path)));
+            dest = dir.join(format!("{} {i}{ext}", stem(path)));
             i += 1;
         }
         fs::rename(path, &dest)?;
