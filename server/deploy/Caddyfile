@@ -1,0 +1,4 @@
+# Cambia el dominio por el tuyo (tiene que apuntar a este VPS).
+ia.tudominio.cl {
+	reverse_proxy 127.0.0.1:8080
+}

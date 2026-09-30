@@ -1,10 +1,15 @@
 [package]
 name = "nodex-notes"
-version = "0.22.4"
+version = "0.23.0"
 edition = "2024"
 description = "Notas rápidas estilo Notepad con espacios de trabajo, reuniones e IA que organiza sola"
 license = "MIT"
 repository = "https://github.com/jpreyes/nodex-notes"
+
+# El servidor de la IA incluida vive en server/ (se compila aparte: cargo build -p nodex-ia).
+[workspace]
+members = [".", "server"]
+default-members = ["."]
 
 [dependencies]
 # Pegar capturas de pantalla (imagen del portapapeles) y guardarlas como PNG.
@@ -33,6 +38,9 @@ webpki-roots = "1"
 [dev-dependencies]
 # Solo para el banco de pruebas de rendimiento (RAM del proceso).
 memory-stats = "1"
+# Prueba de punta a punta de la IA incluida (la app, el servidor y una IA falsa).
+nodex-ia = { path = "server" }
+axum = "0.8"
 
 # Saber si se presionó Ctrl+V cuando el portapapeles solo tiene una imagen (egui no lo avisa).
 [target.'cfg(windows)'.dependencies]

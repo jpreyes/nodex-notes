@@ -125,9 +125,77 @@ struct Provider {
     env: Option<&'static str>,
 }
 
+/// ¿Es la IA incluida de Notas? (el servidor propio, con el código de la persona)
+pub fn is_included(cfg: &Config) -> bool {
+    matches!(cfg.proveedor.trim().to_lowercase().as_str(), "notas" | "incluida")
+}
+
+/// La dirección de la API del servidor de la IA incluida ("https://ia.ejemplo.cl" -> ".../v1/").
+pub fn included_base(cfg: &Config) -> Option<String> {
+    let s = cfg.servidor_ia.trim().trim_end_matches('/');
+    if s.is_empty() {
+        return None;
+    }
+    let s = if s.starts_with("http://") || s.starts_with("https://") { s.to_string() } else { format!("https://{s}") };
+    Some(if s.ends_with("/v1") { format!("{s}/") } else { format!("{s}/v1/") })
+}
+
+/// Cuánto va del mes de la IA incluida (lo que responde el servidor en /v1/uso).
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct Usage {
+    pub mes: String,
+    pub usado: u64,
+    pub limite: u64,
+    pub pedidos: u64,
+    pub renueva: String,
+}
+
+impl Usage {
+    pub fn percent(&self) -> u64 {
+        if self.limite == 0 { 0 } else { (self.usado * 100 / self.limite).min(100) }
+    }
+}
+
+/// Pide al servidor cuánto va del mes (en otro hilo).
+pub fn fetch_usage(cfg: &Config, ctx: eframe::egui::Context) -> Receiver<Result<Usage, String>> {
+    let (tx, rx) = mpsc::channel();
+    let base = included_base(cfg);
+    let code = cfg.codigo_ia.trim().to_string();
+    std::thread::spawn(move || {
+        let result = (|| -> Result<Usage, String> {
+            let base = base.ok_or("Falta la dirección del servidor")?;
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
+            rt.block_on(async {
+                let r = reqwest::Client::new()
+                    .get(format!("{base}uso"))
+                    .bearer_auth(&code)
+                    .header("User-Agent", format!("nodex-notes/{}", env!("CARGO_PKG_VERSION")))
+                    .send()
+                    .await
+                    .map_err(|e| format!("sin conexión con el servidor ({e})"))?;
+                let status = r.status();
+                let text = r.text().await.map_err(|e| e.to_string())?;
+                if !status.is_success() {
+                    let msg = serde_json::from_str::<serde_json::Value>(&text)
+                        .ok()
+                        .and_then(|v| v.pointer("/error/message").and_then(|m| m.as_str()).map(str::to_string));
+                    return Err(msg.unwrap_or_else(|| format!("el servidor respondió {status}")));
+                }
+                serde_json::from_str(&text).map_err(|e| e.to_string())
+            })
+        })();
+        let _ = tx.send(result);
+        ctx.request_repaint();
+    });
+    rx
+}
+
 fn provider(proveedor: &str) -> Result<Provider, String> {
     let p = |kind, endpoint, env| Ok(Provider { kind, endpoint, env });
     match proveedor.trim().to_lowercase().as_str() {
+        // IA incluida: el servidor de Notas (compatible con OpenAI); su dirección está en config.toml.
+        "notas" | "incluida" => p(AdapterKind::OpenAI, None, None),
         // OpenCode Zen (pago por uso): API compatible con OpenAI (chat/completions).
         "opencode" | "opencode.ai" | "opencode-zen" | "zen" => {
             p(AdapterKind::OpenAI, Some("https://opencode.ai/zen/v1/"), Some("OPENCODE_API_KEY"))
@@ -139,7 +207,7 @@ fn provider(proveedor: &str) -> Result<Provider, String> {
         "gemini" | "google" => p(AdapterKind::Gemini, None, Some("GEMINI_API_KEY")),
         "ollama" => p(AdapterKind::Ollama, None, None),
         other => Err(format!(
-            "Proveedor desconocido «{other}» (usa opencode, opencode-go, anthropic, openai, gemini u ollama)"
+            "Proveedor desconocido «{other}» (usa notas, opencode, opencode-go, anthropic, openai, gemini u ollama)"
         )),
     }
 }
@@ -147,6 +215,7 @@ fn provider(proveedor: &str) -> Result<Provider, String> {
 /// Proveedores para la ventana de Configuración: (id en config.toml, nombre, modelos sugeridos, dónde sacar la clave).
 /// Los modelos de OpenCode son los que su documentación lista para chat/completions.
 pub const PROVIDERS: &[(&str, &str, &[&str], Option<&str>)] = &[
+    ("notas", "IA incluida de Notas (con tu código)", &["incluida"], None),
     ("opencode", "OpenCode Zen (pago por uso)", &["deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-pro"], Some("https://opencode.ai/zen")),
     ("opencode-go", "OpenCode Go (suscripción)", &["deepseek-v4.1-flash", "kimi-k3", "glm-5.3-flash"], Some("https://opencode.ai/zen")),
     ("anthropic", "Anthropic (Claude)", &["claude-haiku-4-5", "claude-sonnet-5"], None),
@@ -178,6 +247,20 @@ fn request_headers(cfg: &Config) -> Vec<(String, String)> {
 /// Cliente y destino (URL, clave y modelo) según la configuración.
 fn connection(cfg: &Config) -> Result<(Client, ModelSpec), String> {
     let prov = provider(&cfg.proveedor)?;
+    // IA incluida: el servidor de Notas con el código de la persona (el modelo lo decide el servidor).
+    if is_included(cfg) {
+        let base = included_base(cfg).ok_or("Falta la dirección del servidor de la IA incluida (Configuración → Inteligencia artificial)")?;
+        let code = cfg.codigo_ia.trim().to_string();
+        if code.is_empty() {
+            return Err("Falta tu código de IA incluida (Configuración → Inteligencia artificial)".into());
+        }
+        let target = ServiceTarget {
+            endpoint: Endpoint::from_owned(base),
+            auth: AuthData::from_single(code),
+            model: ModelIden::new(AdapterKind::OpenAI, "incluida"),
+        };
+        return Ok((Client::default(), target.into()));
+    }
     let key = Some(cfg.clave_api.trim().to_string())
         .filter(|k| !k.is_empty())
         .or_else(|| prov.env.and_then(|v| std::env::var(v).ok()).filter(|v| !v.is_empty()));
@@ -261,7 +344,7 @@ impl Ai {
     /// Inicia el hilo de IA. Devuelve un error legible si falta configuración.
     pub fn start(cfg: &Config, ctx: eframe::egui::Context) -> Result<Ai, String> {
         let (client, model) = connection(cfg)?;
-        let label = format!("{} · {}", cfg.proveedor, cfg.modelo);
+        let label = if is_included(cfg) { "IA incluida".to_string() } else { format!("{} · {}", cfg.proveedor, cfg.modelo) };
         let headers = request_headers(cfg);
         let (tx, job_rx) = mpsc::channel::<Job>();
         let (res_tx, rx) = mpsc::channel::<JobResult>();
@@ -319,6 +402,8 @@ pub fn friendly_error(e: &str) -> String {
         e[i..].find(end).map(|j| e[i..i + j].to_string())
     };
     match (between("status code '", '\x27'), between("\"message\":\"", '"')) {
+        // Los mensajes del servidor de Notas ya se explican solos.
+        (Some(_), Some(msg)) if msg.contains("IA incluida") => msg,
         (Some(status), Some(msg)) => format!("{status}: {msg}"),
         (Some(status), None) => status,
         _ => e.lines().next().unwrap_or(e).to_string(),
@@ -612,5 +697,68 @@ mod header_tests {
         let raw = server.join().unwrap();
         assert!(raw.contains(&format!("x-opencode-session: {}", session_id())), "{raw}");
         assert!(raw.contains(&format!("user-agent: nodex-notes/{}", env!("CARGO_PKG_VERSION"))), "{raw}");
+    }
+}
+
+#[cfg(test)]
+mod included_tests {
+    use super::*;
+    use axum::{Json, Router, routing::post};
+
+    /// La app con la IA incluida: habla con el servidor de Notas usando el código de la
+    /// persona, el servidor con una IA falsa, y la app ve cuánto va del mes.
+    #[test]
+    fn the_app_talks_to_the_notas_server() {
+        let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+        let data = std::env::temp_dir().join(format!("nodex-incluida-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&data);
+        let (base, code) = rt.block_on(async {
+            let fake = Router::new().route(
+                "/v1/chat/completions",
+                post(|Json(_): Json<serde_json::Value>| async {
+                    Json(serde_json::json!({
+                        "id": "x", "object": "chat.completion", "created": 0, "model": "m",
+                        "choices": [{"index": 0, "message": {"role": "assistant", "content": "hola desde la IA"}, "finish_reason": "stop"}],
+                        "usage": {"prompt_tokens": 50, "completion_tokens": 10, "total_tokens": 60}
+                    }))
+                }),
+            );
+            let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let upstream = format!("http://{}/v1/", l.local_addr().unwrap());
+            tokio::spawn(async move { axum::serve(l, fake).await.unwrap() });
+            let settings = nodex_ia::Settings {
+                upstream,
+                key: "clave-del-servicio".into(),
+                model: "deepseek-v4.1-flash".into(),
+                data: data.clone(),
+                default_limit: 100,
+                price_in: 0.3,
+                price_out: 1.2,
+            };
+            let mut store = nodex_ia::Store::load(&data);
+            let code = store.add_user("Prueba", 0);
+            store.save_users(&data).unwrap();
+            let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base = format!("http://{}", l.local_addr().unwrap());
+            let st = nodex_ia::state(settings);
+            tokio::spawn(async move { axum::serve(l, nodex_ia::router(st)).await.unwrap() });
+            (base, code)
+        });
+
+        let cfg = Config { proveedor: "notas".into(), codigo_ia: code.clone(), servidor_ia: base.clone(), ..Config::default() };
+        assert_eq!(included_base(&cfg).unwrap(), format!("{base}/v1/"));
+        assert_eq!(complete(&cfg, "sistema", "hola").unwrap(), "hola desde la IA");
+        let usage = fetch_usage(&cfg, eframe::egui::Context::default()).recv().unwrap().unwrap();
+        assert_eq!((usage.usado, usage.limite, usage.pedidos, usage.percent()), (60, 100, 1, 60));
+        // Llega al límite: el segundo pasa (60 < 100) y el tercero se corta con un mensaje claro.
+        complete(&cfg, "sistema", "hola").unwrap();
+        let err = complete(&cfg, "sistema", "hola").unwrap_err();
+        assert!(err.starts_with("Llegaste al límite de IA incluida"), "{err}");
+        // Con un código malo, también se entiende.
+        let bad = Config { codigo_ia: "nx-malo".into(), ..cfg.clone() };
+        assert!(complete(&bad, "s", "u").unwrap_err().contains("Código de IA incluida no válido"));
+        assert!(fetch_usage(&bad, eframe::egui::Context::default()).recv().unwrap().unwrap_err().contains("no válido"));
+        drop(rt);
+        let _ = std::fs::remove_dir_all(&data);
     }
 }

@@ -251,6 +251,51 @@ impl NotesApp {
     }
 
     /// Modelo, qué está haciendo y cuántas notas faltan por organizar.
+    /// IA incluida: pide al servidor cuánto va del mes (al abrir, cada 10 minutos y después de
+    /// usar la IA, no más de una vez por minuto) y avisa una vez al pasar el 80 %.
+    pub(super) fn poll_ai_usage(&mut self) {
+        if !ai::is_included(&self.cfg) {
+            self.ai_usage = None;
+            return;
+        }
+        if let Some(rx) = &self.ai_usage_rx {
+            if let Ok(r) = rx.try_recv() {
+                self.ai_usage_rx = None;
+                if let Ok(u) = &r {
+                    if u.percent() >= 80 && self.ai_usage_warned != u.mes {
+                        self.ai_usage_warned = u.mes.clone();
+                        let when = long_date(&u.renueva);
+                        let text = if u.percent() >= 100 {
+                            format!("Llegaste al límite de IA incluida de este mes; vuelve el {when}. Tus notas se guardan igual.")
+                        } else {
+                            format!("Usaste el {} % de la IA incluida de este mes (vuelve a cero el {when}).", u.percent())
+                        };
+                        self.msg(text);
+                    }
+                }
+                self.ai_usage = Some(r);
+            }
+            return;
+        }
+        let used_ai = self.ai.as_ref().is_ok_and(|a| a.busy) || self.in_flight.is_some();
+        let every = if self.ai_usage.is_none() { Duration::ZERO } else if used_ai { Duration::from_secs(60) } else { Duration::from_secs(600) };
+        if self.ai_usage_at.elapsed() >= every {
+            self.ai_usage_at = Instant::now();
+            self.ai_usage_rx = Some(ai::fetch_usage(&self.cfg, self.ctx.clone()));
+        }
+    }
+
+    /// «IA incluida: 40 % del mes»
+    pub(super) fn usage_label(&self) -> Option<(String, Color32)> {
+        match self.ai_usage.as_ref()? {
+            Ok(u) => {
+                let color = if u.percent() >= 100 { RED } else if u.percent() >= 80 { WARN } else { MUTED };
+                Some((format!("{} % del mes usado · vuelve a cero el {}", u.percent(), long_date(&u.renueva)), color))
+            }
+            Err(e) => Some((format!("no se pudo ver el uso: {e}"), RED)),
+        }
+    }
+
     fn ai_status(&self, ui: &mut Ui, pending: usize) -> Option<Action> {
         let mut action = None;
         ui.horizontal_wrapped(|ui| {
@@ -266,6 +311,9 @@ impl NotesApp {
                 }
             };
             ui.label(RichText::new(&ai.label).size(13.0).color(MUTED));
+            if let Some((text, color)) = self.usage_label() {
+                ui.label(RichText::new(format!("({text})")).size(12.5).color(color));
+            }
             ui.label(RichText::new("·").size(13.0).color(MUTED));
             if let Some(p) = &self.in_flight {
                 ui.spinner();

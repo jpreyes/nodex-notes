@@ -81,6 +81,9 @@ jobs:
                 pkg/main.wixobj -out dist/Notas-windows-x64.msi ;;
             Linux)
               tar -czf dist/Notas-linux-x64.tar.gz -C "$(dirname "$BIN")" nodex-notes
+              # El servidor de la IA incluida (para el VPS; no es para quien usa la app).
+              cargo build --release --locked -p nodex-ia --target ${{ matrix.target }}
+              tar -czf dist/nodex-ia-servidor-linux-x64.tar.gz -C "$(dirname "$BIN")" nodex-ia
               # Paquete .deb
               cargo install cargo-deb --locked
               cargo deb --no-build --target ${{ matrix.target }} --output dist/Notas-linux-x64.deb

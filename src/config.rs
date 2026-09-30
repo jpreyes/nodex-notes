@@ -26,6 +26,9 @@ pub struct Config {
     pub correo_al_llegar: bool,
     /// Revisar una vez al día a esta hora ("07:00"); vacío = no.
     pub correo_diario: String,
+    /// IA incluida (proveedor "notas"): tu código y la dirección del servidor.
+    pub codigo_ia: String,
+    pub servidor_ia: String,
 }
 
 impl Default for Config {
@@ -43,6 +46,8 @@ impl Default for Config {
             correos: Vec::new(),
             correo_al_llegar: true,
             correo_diario: "07:00".into(),
+            codigo_ia: String::new(),
+            servidor_ia: String::new(),
         }
     }
 }
@@ -108,11 +113,14 @@ fn render(c: &Config) -> String {
          # Carpeta de notas (una subcarpeta por espacio de trabajo)\n\
          carpeta_notas = {}\n\
          \n\
-         # Proveedor de IA: opencode (Zen, pago por uso), opencode-go (plan Go), anthropic, openai, gemini u ollama\n\
+         # Proveedor de IA: notas (IA incluida), opencode (Zen, pago por uso), opencode-go (plan Go), anthropic, openai, gemini u ollama\n\
          proveedor = {}\n\
          modelo = {}\n\
          # Clave API (no hace falta para ollama). Este archivo queda solo en este equipo.\n\
          clave_api = {}\n\
+         # IA incluida: tu código y la dirección del servidor de Notas\n\
+         codigo_ia = {}\n\
+         servidor_ia = {}\n\
          \n\
          # Analizar solas las notas al terminar de escribirlas (espacio, etiquetas, tareas, agenda)\n\
          ia_automatica = {}\n\
@@ -128,6 +136,8 @@ fn render(c: &Config) -> String {
         q(&c.proveedor),
         q(&c.modelo),
         q(&c.clave_api),
+        q(&c.codigo_ia),
+        q(&c.servidor_ia),
         c.ia_automatica,
         q(&c.google_client_id),
         q(&c.google_client_secret),

@@ -1,0 +1,17 @@
+[package]
+name = "nodex-ia"
+version = "0.1.0"
+edition = "2024"
+description = "Servidor de la IA incluida de Notas: reenvía a la IA con la clave del servicio y mide el uso de cada persona"
+license = "MIT"
+publish = false
+
+[dependencies]
+axum = "0.8"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+getrandom = "0.3"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "signal", "sync"] }

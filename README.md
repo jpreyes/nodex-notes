@@ -107,13 +107,15 @@ Por debajo se guarda en un archivo de texto que también se puede editar a mano:
 
 ```toml
 carpeta_notas = 'C:\Users\tu-usuario\Dropbox\Notas'  # por defecto: Dropbox/Notas
-proveedor = "opencode"     # opencode (Zen), opencode-go (plan Go), anthropic, openai, gemini u ollama
+proveedor = "opencode"     # notas (IA incluida), opencode (Zen), opencode-go (plan Go), anthropic, openai, gemini u ollama
 modelo = "deepseek-v4.1-flash"
 clave_api = ""             # o variable OPENCODE_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY
 ia_automatica = true
 google_client_id = ""      # Google Calendar (ver más abajo)
 google_client_secret = ""
 ```
+
+**IA incluida:** con el proveedor «IA incluida de Notas» no hace falta una clave de IA: basta el código que entrega el servicio (`codigo_ia`) y la dirección del servidor (`servidor_ia`). La ventana de la IA y la Configuración muestran cuánto va usado del mes (y la app avisa una vez al pasar el 80 %); al llegar al límite, las notas se siguen guardando y la IA vuelve al mes siguiente. El servidor está en [`server/`](server/README.md).
 
 Por defecto la IA usa **DeepSeek V4.1 Flash** a través de [OpenCode Zen](https://opencode.ai/zen): crea tu clave en opencode.ai y pégala en `clave_api`. Se puede usar cualquier otro modelo de Zen cambiando `modelo` (por ejemplo `deepseek-v4-pro`).
 
@@ -221,6 +223,7 @@ Para abrir rápido aunque haya miles de notas, la app guarda una copia de todas 
 | `src/theme.rs` | Colores del tema claro, fuentes e íconos. |
 | `src/tags.rs` | Reconoce las etiquetas `#palabra` (y les cambia el nombre). |
 | `src/app/manage.rs` | Corregir a mano: mover una nota a otro espacio, cambiar el nombre de un espacio o de una etiqueta, una nota como tarea. |
+| `server/` | `nodex-ia`: el servidor de la IA incluida (código por persona, uso medido, límite mensual). Ver su [README](server/README.md). |
 | `src/app/images.rs` | Capturas pegadas en las notas: guardarlas en `Adjuntos/` y mostrarlas en el editor. |
 | `src/app/recurring.rs` | Reuniones y notas que se repiten: se crean solas a su hora, con los pendientes de la anterior. |
 | `src/app/chats.rs` | Historial de conversaciones con la IA: guardar, retomar y borrar. |

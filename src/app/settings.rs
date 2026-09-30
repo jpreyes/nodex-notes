@@ -36,6 +36,8 @@ pub(super) struct Settings {
     // Borradores de texto: se aplican al salir del campo (o al cerrar la ventana).
     key: String,
     model: String,
+    code: String,
+    server: String,
     client_id: String,
     client_secret: String,
     /// Formulario para agregar un calendario (nombre, enlace).
@@ -63,6 +65,8 @@ impl Settings {
             custom_model: !models_for(&cfg.proveedor).contains(&cfg.modelo.as_str()),
             key: cfg.clave_api.clone(),
             model: cfg.modelo.clone(),
+            code: cfg.codigo_ia.clone(),
+            server: cfg.servidor_ia.clone(),
             client_id: cfg.google_client_id.clone(),
             client_secret: cfg.google_client_secret.clone(),
             cal_form: None,
@@ -82,6 +86,9 @@ enum Change {
     Provider(String),
     Model(String),
     Key(String),
+    /// IA incluida: código y dirección del servidor.
+    IncludedCode(String),
+    IncludedServer(String),
     AiAuto(bool),
     GoogleCreds(String, String),
     MailArrive(bool),
@@ -317,6 +324,22 @@ impl NotesApp {
                 self.save_config();
                 self.restart_ai();
             }
+            Change::IncludedCode(c) => {
+                self.cfg.codigo_ia = c.trim().to_string();
+                s.test_result = None;
+                self.save_config();
+                self.restart_ai();
+                self.ai_usage = None;
+                self.ai_usage_at = long_ago();
+            }
+            Change::IncludedServer(u) => {
+                self.cfg.servidor_ia = u.trim().to_string();
+                s.test_result = None;
+                self.save_config();
+                self.restart_ai();
+                self.ai_usage = None;
+                self.ai_usage_at = long_ago();
+            }
             Change::Key(k) => {
                 self.cfg.clave_api = k.trim().to_string();
                 s.test_result = None;
@@ -413,7 +436,31 @@ impl NotesApp {
             });
         });
 
+        let included = ai::is_included(&self.cfg);
+        if included {
+            row(ui, "Tu código", "El que te dimos al suscribirte (nx-…). Se guarda solo en este equipo", |ui| {
+                let r = secret_field(ui, &mut s.code, &mut s.show_key, "nx-…");
+                if (r.lost_focus() || ui.input(|i| i.key_pressed(Key::Enter))) && s.code.trim() != self.cfg.codigo_ia {
+                    changes.push(Change::IncludedCode(s.code.clone()));
+                }
+            });
+            row(ui, "Servidor", "La dirección del servicio de Notas", |ui| {
+                let r = ui.add(egui::TextEdit::singleline(&mut s.server).hint_text("https://…").desired_width(250.0).margin(Margin::symmetric(8, 4)));
+                if (r.lost_focus() || ui.input(|i| i.key_pressed(Key::Enter))) && s.server.trim() != self.cfg.servidor_ia {
+                    changes.push(Change::IncludedServer(s.server.clone()));
+                }
+            });
+            if let Some((text, color)) = self.usage_label() {
+                row(ui, "Uso de este mes", "", |ui| {
+                    if let Some(Ok(u)) = &self.ai_usage {
+                        ui.add(egui::ProgressBar::new(u.percent() as f32 / 100.0).desired_width(120.0));
+                    }
+                    ui.label(RichText::new(text).size(12.5).color(color));
+                });
+            }
+        }
         let models = models_for(&self.cfg.proveedor);
+        if !included {
         row(ui, "Modelo", if models.is_empty() { "Escribe el nombre exacto del modelo" } else { "" }, |ui| {
             if s.custom_model || models.is_empty() {
                 let r = ui.add(
@@ -459,6 +506,7 @@ impl NotesApp {
                 }
             },
         );
+        }
 
         row(ui, "Conexión", "Envía un mensaje corto para comprobar la clave y el modelo", |ui| {
             let b = egui::Button::new(format!("{}  Probar conexión", icon::PLUGS_CONNECTED));

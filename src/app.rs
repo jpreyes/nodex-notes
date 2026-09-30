@@ -405,6 +405,12 @@ pub struct NotesApp {
     tasks_by_due: bool,
     /// Imágenes pegadas en las notas, ya cargadas.
     images: images::Images,
+    /// IA incluida: cuánto va del mes (lo que dijo el servidor), el pedido en curso, cuándo
+    /// se pidió y el mes en que ya se avisó que queda poco.
+    ai_usage: Option<Result<ai::Usage, String>>,
+    ai_usage_rx: Option<std::sync::mpsc::Receiver<Result<ai::Usage, String>>>,
+    ai_usage_at: Instant,
+    ai_usage_warned: String,
     /// Último minuto en que se revisaron las recurrentes, y su ventana (abierta si hay formulario).
     recurring_checked: String,
     recurring_form: Option<recurring::Form>,
@@ -733,6 +739,10 @@ impl NotesApp {
             home_closed,
             tasks_by_due,
             images: images::Images::default(),
+            ai_usage: None,
+            ai_usage_rx: None,
+            ai_usage_at: long_ago(),
+            ai_usage_warned: String::new(),
             recurring_checked: String::new(),
             recurring_form: None,
             followup: followup::FollowUp::default(),
@@ -1234,6 +1244,7 @@ impl NotesApp {
         self.resolve_conflicts(false);
         self.maybe_merge_days();
         self.maybe_create_recurring();
+        self.poll_ai_usage();
         self.maybe_reconcile_tasks();
         let m = vault::modified(&self.note.path);
         if m.is_none() || !self.note.changed_on_disk() {

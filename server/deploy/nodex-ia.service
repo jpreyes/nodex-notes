@@ -1,0 +1,16 @@
+[Unit]
+Description=Notas: servidor de la IA incluida
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=nodex-ia
+EnvironmentFile=/etc/nodex-ia.env
+ExecStart=/opt/nodex-ia/nodex-ia servir
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/nodex-ia
+
+[Install]
+WantedBy=multi-user.target
