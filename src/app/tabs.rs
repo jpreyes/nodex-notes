@@ -37,6 +37,7 @@ pub(super) fn encode(tab: &Tab, root: &Path) -> String {
                 View::Week => "semana".into(),
                 View::Tasks => "tareas".into(),
                 View::Agenda => "agenda".into(),
+                View::Trash => "papelera".into(),
                 View::Tag(t) => format!("#{t}"),
                 View::Editor => "inicio".into(),
             }
@@ -56,6 +57,7 @@ pub(super) fn decode(s: &str, root: &Path) -> Option<Tab> {
         "semana" => View::Week,
         "tareas" => View::Tasks,
         "agenda" => View::Agenda,
+        "papelera" => View::Trash,
         t => View::Tag(t.strip_prefix('#')?.to_string()),
     };
     Some(Tab::View(v))
@@ -69,6 +71,7 @@ fn view_label(v: &View) -> (&'static str, String) {
         View::Week => (icon::CALENDAR_CHECK, "Semana".into()),
         View::Tasks => (icon::CHECK_SQUARE, "Tareas".into()),
         View::Agenda => (icon::CALENDAR_BLANK, "Agenda".into()),
+        View::Trash => (icon::TRASH, "Papelera".into()),
         View::Tag(t) => (icon::HASH, t.clone()),
     }
 }

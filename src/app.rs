@@ -39,6 +39,7 @@ mod settings;
 mod spaces_ui;
 mod tabs;
 mod tasks_sync;
+mod trash_view;
 #[cfg(test)]
 mod two_devices_tests;
 mod today;
@@ -303,6 +304,7 @@ enum View {
     Tag(String),
     Tasks,
     Agenda,
+    Trash,
 }
 
 enum Action {
@@ -319,6 +321,10 @@ enum Action {
     /// Cambiar el nombre de un espacio o de una etiqueta (antes, nombre nuevo).
     RenameWorkspace(String, String),
     RenameTag(String, String),
+    /// Dejar una nota completa como tarea.
+    NoteToTask(PathBuf),
+    /// Devolver algo de la papelera a su lugar.
+    Restore(crate::vault::Trashed),
     ShowTag(String),
     Show(View),
     /// La ventana de la IA, en una de sus secciones.
@@ -342,6 +348,8 @@ enum Action {
     OpenSettings(Section),
     /// Correo.
     AddMailAccount(crate::mail::Account),
+    /// Cambiar la conexión de una cuenta (clave vacía = se mantiene la actual).
+    UpdateMailAccount(usize, crate::mail::Account),
     RemoveMailAccount(usize),
     TestMailAccount(usize),
     CheckMail,
@@ -351,6 +359,8 @@ enum Action {
     OpenMail(String),
     /// Calendarios agregados (enlace ICS).
     AddCalendar(String, String),
+    /// Cambiar el nombre o el enlace de un calendario agregado.
+    EditCalendar(usize, String, String),
     RemoveCalendar(usize),
     RefreshCalendars,
     /// Tomar notas de un evento: una reunión con ese título.
@@ -380,6 +390,10 @@ pub struct NotesApp {
     /// Espacio al que se le está cambiando el nombre (nombre actual, campo), y lo mismo para una etiqueta.
     renaming_ws: Option<(String, String)>,
     renaming_tag: Option<(String, String)>,
+    /// La línea del editor donde se hizo clic derecho (para su menú).
+    menu_line: Option<usize>,
+    /// Borrar para siempre: qué, y si se marcó «Entiendo que no se puede recuperar».
+    forever: Option<(trash_view::Forever, bool)>,
     new_task: String,
     message: Option<(String, Instant)>,
     last_poll: Instant,
@@ -434,7 +448,7 @@ pub struct NotesApp {
     tabs: tabs::Tabs,
     /// Calendarios agregados: lo descargado y el formulario para agregar uno.
     cals: crate::calendars::Calendars,
-    cal_form: Option<(String, String)>,
+    cal_form: Option<(String, String, Option<usize>)>,
     /// Correo: lo leído, lo que falta que lea la IA y su estado.
     mail: mail_ui::MailState,
     /// Espacio que se quiere mover a la papelera (esperando confirmación).
@@ -662,6 +676,8 @@ impl NotesApp {
             new_ws: None,
             renaming_ws: None,
             renaming_tag: None,
+            menu_line: None,
+            forever: None,
             new_task: String::new(),
             message: message.map(|m| (m, Instant::now())),
             last_poll: Instant::now(),
@@ -1869,6 +1885,8 @@ impl NotesApp {
             Action::MoveNote(p, ws) => self.move_note(p, ws),
             Action::RenameWorkspace(old, name) => self.rename_space(old, &name),
             Action::RenameTag(old, name) => self.rename_tag(old, &name),
+            Action::Restore(t) => self.restore(t),
+            Action::NoteToTask(p) => self.note_to_task(p),
             Action::ShowTag(t) => {
                 self.save();
                 self.search.clear();
@@ -1968,6 +1986,20 @@ impl NotesApp {
                     self.msg(format!("Correo {} quitado", a.correo));
                 }
             }
+            Action::UpdateMailAccount(i, mut a) => {
+                if let Some(old) = self.cfg.correos.get(i).cloned() {
+                    if a.clave.trim().is_empty() {
+                        a.clave = old.clave.clone();
+                    }
+                    self.mail.errors.remove(&old.correo);
+                    self.mail.tests.remove(&old.correo);
+                    let email = a.correo.clone();
+                    self.cfg.correos[i] = a;
+                    self.save_config();
+                    self.test_mail_account(i);
+                    self.msg(format!("Correo {email} actualizado; probando la conexión…"));
+                }
+            }
             Action::TestMailAccount(i) => self.test_mail_account(i),
             Action::CheckMail => self.mail.request(),
             Action::MailFulfill(id, i, done) => self.mail_fulfill(&id, i, done),
@@ -1976,6 +2008,7 @@ impl NotesApp {
             Action::OpenMail(id) => self.open_mail(id),
             Action::AddCalendar(name, url) => self.add_calendar(name, url),
             Action::RemoveCalendar(i) => self.remove_calendar(i),
+            Action::EditCalendar(i, name, url) => self.edit_calendar(i, name, url),
             Action::RefreshCalendars => self.cals.last = None,
             Action::StartMeetingNamed(title) => self.start_meeting_as(Some(title)),
             Action::OpenNewTab(p) => self.new_tab(tabs::Tab::Note(p)),
@@ -2105,6 +2138,9 @@ impl NotesApp {
                 if rail_item(ui, icon::GEAR, "Ajustes", "Configuración (Ctrl+,)", self.settings.is_some(), TEXT).clicked() {
                     action = Some(Action::OpenSettings(Section::General));
                 }
+                if rail_item(ui, icon::TRASH, "Papelera", "Lo que borraste: restaurar o borrar para siempre", self.view == View::Trash, TEXT).clicked() {
+                    action = Some(Action::ShowTab(View::Trash));
+                }
                 if rail_item(ui, icon::FOLDER_OPEN, "Carpeta", "Abrir la carpeta de notas", false, TEXT).clicked() {
                     action = Some(Action::OpenExternal(self.vault.root.clone()));
                 }
@@ -2161,6 +2197,10 @@ impl NotesApp {
                                 }
                             }
                         });
+                    }
+                    if ui.button(format!("{}  Convertir en tarea", icon::CHECK_SQUARE)).clicked() {
+                        act = Some(Action::NoteToTask(path.clone()));
+                        ui.close();
                     }
                     if ui.button(format!("{}  Mover a la papelera", icon::TRASH)).clicked() {
                         act = Some(Action::Trash(path.clone()));
@@ -2883,6 +2923,7 @@ impl NotesApp {
                     View::Tag(_) => actions.extend(self.results(ui)),
                     View::Tasks => actions.extend(self.tasks_view(ui)),
                     View::Agenda => actions.extend(self.agenda_view(ui)),
+                    View::Trash => actions.extend(self.trash_view(ui)),
                 }
             }
         });
@@ -2895,6 +2936,7 @@ impl NotesApp {
         self.settings_window(&ctx);
         self.followup_window(&ctx);
         self.confirm_window(&ctx);
+        self.forever_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {
             self.apply(a);
         }

@@ -36,6 +36,20 @@ pub const DEFAULT_WORKSPACE: &str = "General";
 /// La carpeta de las notas del día. No es un espacio: no se lista entre ellos.
 pub const DIARY: &str = "Diario";
 const TRASH: &str = ".papelera";
+/// De dónde vino cada cosa de la papelera (en `.nodex/`): nombre, ruta original y cuándo.
+pub const TRASH_LIST: &str = "papelera.txt";
+
+/// Algo que está en la papelera: una nota u otro archivo, o un espacio completo.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Trashed {
+    pub path: PathBuf,
+    pub name: String,
+    /// Ruta original, relativa a la carpeta de notas ("Obra/Muro.md"); `None` si no se sabe.
+    pub from: Option<String>,
+    /// Cuándo se mandó a la papelera ("2026-09-30 17:06").
+    pub when: String,
+    pub is_dir: bool,
+}
 /// Revisión completa de seguridad, por si se perdió algún aviso.
 const FULL_SCAN_EVERY: Duration = Duration::from_secs(600);
 /// Sin avisos del sistema (p. ej. en una carpeta de red): revisión completa cada tanto.
@@ -587,11 +601,112 @@ impl Vault {
             i += 1;
         }
         fs::rename(path, &dest)?;
+        self.remember_trashed(&dest, path);
         if self.notes.remove(path).is_some() {
             self.cache_dirty = true;
             self.generation += 1;
         }
         Ok(dest)
+    }
+
+    fn trash_list(&self) -> PathBuf {
+        self.root.join(".nodex").join(TRASH_LIST)
+    }
+
+    /// Anota de dónde vino lo que se mandó a la papelera (para restaurarlo a su lugar).
+    fn remember_trashed(&self, dest: &Path, original: &Path) {
+        let (Some(name), Ok(rel)) = (dest.file_name(), original.strip_prefix(&self.root)) else { return };
+        let when = chrono::Local::now().format("%Y-%m-%d %H:%M");
+        let line = format!("{}\t{}\t{when}\n", name.to_string_lossy(), rel.to_string_lossy().replace('\\', "/"));
+        let file = self.trash_list();
+        let _ = fs::create_dir_all(self.root.join(".nodex"));
+        let _ = fs::OpenOptions::new().create(true).append(true).open(&file).and_then(|mut f| f.write_all(line.as_bytes()));
+    }
+
+    /// Quita de la lista lo que ya no está en la papelera.
+    fn forget_trashed(&self, name: &str) {
+        let Ok(text) = read_text(&self.trash_list()) else { return };
+        let keep: Vec<&str> = text.lines().filter(|l| l.split('\t').next() != Some(name) && !l.trim().is_empty()).collect();
+        let _ = fs::write(self.trash_list(), keep.iter().map(|l| format!("{l}\n")).collect::<String>());
+    }
+
+    /// Lo que hay en la papelera, lo más reciente primero.
+    pub fn trashed(&self) -> Vec<Trashed> {
+        let mut known: HashMap<String, (String, String)> = HashMap::new();
+        for l in read_text(&self.trash_list()).unwrap_or_default().lines() {
+            let mut parts = l.split('\t');
+            if let (Some(name), Some(from), Some(when)) = (parts.next(), parts.next(), parts.next()) {
+                known.insert(name.to_string(), (from.to_string(), when.to_string()));
+            }
+        }
+        let mut out: Vec<Trashed> = fs::read_dir(self.root.join(TRASH))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let is_dir = e.file_type().is_ok_and(|t| t.is_dir());
+                let (from, when) = match known.get(&name) {
+                    Some((f, w)) => (Some(f.clone()), w.clone()),
+                    None => {
+                        let m: Option<chrono::DateTime<chrono::Local>> = e.metadata().and_then(|m| m.modified()).ok().map(Into::into);
+                        (None, m.map(|m| m.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default())
+                    }
+                };
+                Trashed { path: e.path(), name, from, when, is_dir }
+            })
+            .collect();
+        out.sort_by(|a, b| b.when.cmp(&a.when).then_with(|| a.name.cmp(&b.name)));
+        out
+    }
+
+    /// Devuelve algo de la papelera a su lugar (si ya hay algo con ese nombre, queda con otro).
+    /// Si no se sabe de dónde vino: una nota del día al Diario, otra nota a `ws`, un espacio
+    /// como espacio. Devuelve dónde quedó.
+    pub fn restore(&mut self, t: &Trashed, ws: &str) -> io::Result<PathBuf> {
+        let rel = match &t.from {
+            Some(f) => f.clone(),
+            None if t.is_dir || !is_md(&t.path) => t.name.clone(),
+            None if crate::agenda::is_date(stem(&t.path).split(' ').next().unwrap_or_default()) => format!("{DIARY}/{}", t.name),
+            None => format!("{ws}/{}", t.name),
+        };
+        let wanted = self.root.join(&rel);
+        let ext = wanted.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+        let base = if t.is_dir { wanted.file_name().unwrap_or_default().to_string_lossy().into_owned() } else { stem(&wanted) };
+        let mut target = wanted.clone();
+        let mut i = 2;
+        while target.exists() {
+            target = wanted.with_file_name(format!("{base} {i}{ext}"));
+            i += 1;
+        }
+        if let Some(dir) = target.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        fs::rename(&t.path, &target)?;
+        self.forget_trashed(&t.name);
+        self.scan();
+        Ok(target)
+    }
+
+    /// Borra para siempre algo de la papelera (no se puede deshacer).
+    pub fn delete_forever(&mut self, t: &Trashed) -> io::Result<()> {
+        if !t.path.starts_with(self.root.join(TRASH)) {
+            return Err(io::Error::other("solo se borra lo que está en la papelera"));
+        }
+        // En Windows, el antivirus o el indexador pueden tener el archivo abierto un momento.
+        let mut tries = 0;
+        loop {
+            let r = if t.is_dir { fs::remove_dir_all(&t.path) } else { fs::remove_file(&t.path) };
+            match r {
+                Err(e) if e.kind() == io::ErrorKind::PermissionDenied && tries < 10 => {
+                    tries += 1;
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                other => break other?,
+            }
+        }
+        self.forget_trashed(&t.name);
+        Ok(())
     }
 
     /// Mueve un espacio completo (con sus notas) a `.papelera`. Devuelve dónde quedó.
@@ -605,6 +720,7 @@ impl Vault {
             i += 1;
         }
         fs::rename(self.root.join(ws), &dest)?;
+        self.remember_trashed(&dest, &self.root.join(ws));
         self.scan();
         Ok(dest)
     }

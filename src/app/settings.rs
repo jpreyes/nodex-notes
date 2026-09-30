@@ -39,9 +39,9 @@ pub(super) struct Settings {
     client_id: String,
     client_secret: String,
     /// Formulario para agregar un calendario (nombre, enlace).
-    cal_form: Option<(String, String)>,
+    cal_form: Option<(String, String, Option<usize>)>,
     /// Formulario para agregar un correo (dirección, contraseña de aplicación, servidor).
-    mail_form: Option<(String, String, String)>,
+    mail_form: Option<(String, String, String, Option<usize>)>,
     /// Hora de la revisión diaria, mientras se escribe.
     mail_hour: String,
     test: Option<Receiver<Result<u128, String>>>,

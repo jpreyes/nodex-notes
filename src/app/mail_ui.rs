@@ -78,7 +78,8 @@ const HELP: [(&str, &str, &str); 3] = [
 ];
 
 /// Cuentas de correo con su estado y el formulario para agregar una (en Configuración → Correo).
-pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailState, form: &mut Option<(String, String, String)>) -> Option<Action> {
+/// `form`: el formulario abierto (correo, clave, servidor, y qué cuenta se edita; `None` = una nueva).
+pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailState, form: &mut Option<(String, String, String, Option<usize>)>) -> Option<Action> {
     let mut action = None;
     for (i, a) in accounts.iter().enumerate() {
         ui.horizontal(|ui| {
@@ -88,6 +89,9 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui.button("Quitar").clicked() {
                     action = Some(Action::RemoveMailAccount(i));
+                }
+                if ui.button("Editar").on_hover_text("Cambiar el correo, la contraseña de aplicación o el servidor").clicked() {
+                    *form = Some((a.correo.clone(), String::new(), a.servidor.clone(), Some(i)));
                 }
                 if ui.button("Probar").clicked() {
                     action = Some(Action::TestMailAccount(i));
@@ -109,21 +113,30 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
     match form {
         None => {
             if ui.button(format!("{}  Agregar correo", icon::PLUS)).clicked() {
-                *form = Some((String::new(), String::new(), String::new()));
+                *form = Some((String::new(), String::new(), String::new(), None));
             }
         }
-        Some((email, pass, server)) => {
+        Some((email, pass, server, editing)) => {
+            let editing = *editing;
             let mut close = false;
             Frame::new().fill(BG_SIDE).stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
+                if editing.is_some() {
+                    ui.label(RichText::new("Cambiar la conexión").font(theme::bold(14.0)));
+                }
                 ui.add(egui::TextEdit::singleline(email).hint_text("tu@gmail.com").desired_width(f32::INFINITY));
-                ui.add(egui::TextEdit::singleline(pass).hint_text("Contraseña de aplicación (no la de siempre)").password(true).desired_width(f32::INFINITY));
+                let hint = if editing.is_some() { "Contraseña de aplicación (vacía = se mantiene la actual)" } else { "Contraseña de aplicación (no la de siempre)" };
+                ui.add(egui::TextEdit::singleline(pass).hint_text(hint).password(true).desired_width(f32::INFINITY));
                 ui.add(egui::TextEdit::singleline(server).hint_text("Servidor IMAP (opcional: se deduce del correo)").desired_width(f32::INFINITY));
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    let ok = email.contains('@') && !pass.trim().is_empty();
-                    if ui.add_enabled(ok, egui::Button::new("Agregar")).clicked() {
-                        action = Some(Action::AddMailAccount(Account { correo: email.trim().to_string(), clave: pass.trim().to_string(), servidor: server.trim().to_string() }));
+                    let ok = email.contains('@') && (editing.is_some() || !pass.trim().is_empty());
+                    if ui.add_enabled(ok, egui::Button::new(if editing.is_some() { "Guardar" } else { "Agregar" })).clicked() {
+                        let a = Account { correo: email.trim().to_string(), clave: pass.trim().to_string(), servidor: server.trim().to_string() };
+                        action = Some(match editing {
+                            Some(i) => Action::UpdateMailAccount(i, a),
+                            None => Action::AddMailAccount(a),
+                        });
                         close = true;
                     }
                     if ui.button("Cancelar").clicked() {

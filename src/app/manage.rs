@@ -224,6 +224,28 @@ impl NotesApp {
         self.msg(format!("#{old} ahora es #{new} en {}", plural(n, "nota")));
     }
 
+    /// Deja una nota completa como tarea (con su título; la tarea abre la nota).
+    pub(super) fn note_to_task(&mut self, path: PathBuf) {
+        if path == self.note.path {
+            self.save();
+        }
+        let stem = vault::stem(&path);
+        let title = if agenda::is_date(&stem) { format!("Revisar la nota del {}", long_date(&stem)) } else { stem };
+        let rel = self.rel(&path);
+        if self.agenda.tasks().iter().any(|t| !t.done && t.note.as_deref() == Some(rel.as_str()) && t.text == title) {
+            self.msg(format!("«{title}» ya es una tarea"));
+            return;
+        }
+        let ws = self.space_of(&path);
+        match self.agenda.add_task(agenda::format_task(&today(), &title, &ws, None, &rel, Some(&new_task_id()))) {
+            Ok(()) => {
+                self.gcal_dirty = true;
+                self.msg(format!("«{title}» quedó como tarea (en Tareas)"));
+            }
+            Err(e) => self.msg(format!("No se pudo escribir tareas.txt: {e}")),
+        }
+    }
+
     /// Ventana para cambiar el nombre de una etiqueta.
     pub(super) fn rename_tag_window(&mut self, ctx: &egui::Context) -> Option<Action> {
         let (old, name) = self.renaming_tag.as_mut()?;
@@ -343,6 +365,55 @@ mod tests {
         assert_eq!(app.ws, "Obra Talca");
         assert_eq!(app.note.path, muro);
         assert!(fs::read_to_string(dir.join("tareas.txt")).unwrap().contains("+Obra_Talca nota:Obra%20Talca/Muro"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Un calendario cambia de nombre sin volver a agregarlo, y una cuenta de correo cambia su
+    /// servidor sin tener que escribir de nuevo la contraseña.
+    #[test]
+    fn edit_calendar_and_mail_account() {
+        let dir = std::env::temp_dir().join(format!("nodex-editar-cuentas-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("General")).unwrap();
+        let mut app = app(&dir);
+        app.cfg.calendarios = vec![crate::calendars::Subscription { nombre: "Trabajo".into(), url: "https://x.cl/a.ics".into() }];
+        app.cfg.correos = vec![crate::mail::Account { correo: "a@x.cl".into(), clave: "secreta".into(), servidor: String::new() }];
+        app.apply(Action::EditCalendar(0, "Universidad".into(), "https://x.cl/a.ics".into()));
+        assert_eq!(app.cfg.calendarios[0].nombre, "Universidad");
+        app.apply(Action::UpdateMailAccount(0, crate::mail::Account { correo: "a@x.cl".into(), clave: String::new(), servidor: "imap.x.cl".into() }));
+        assert_eq!((app.cfg.correos[0].clave.as_str(), app.cfg.correos[0].servidor.as_str()), ("secreta", "imap.x.cl"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Una línea o una nota se vuelven tarea a mano.
+    #[test]
+    fn lines_and_notes_become_tasks() {
+        let dir = std::env::temp_dir().join(format!("nodex-a-tarea-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("Obra")).unwrap();
+        let muro = dir.join("Obra").join("Muro.md");
+        fs::write(&muro, "Revisar #planos del muro
+  detalle
+").unwrap();
+        let mut app = app(&dir);
+        app.open(muro.clone(), None);
+        app.line_to_task(0);
+        let text = fs::read_to_string(&muro).unwrap();
+        let id = lines::id_of(text.lines().next().unwrap()).expect("con identificador");
+        assert!(text.starts_with("- [ ] Revisar #planos del muro ^"), "{text}");
+        let t = app.agenda.tasks().into_iter().find(|t| t.id.as_deref() == Some(id.as_str())).unwrap();
+        assert_eq!((t.text.as_str(), t.project.as_str(), t.note.as_deref()), ("Revisar planos del muro", "Obra", Some("Obra/Muro")));
+        assert_eq!(app.reconcile_tasks(), 0, "la tarea ya calza con su línea");
+        // Otra vez: la marca hecha.
+        app.line_to_task(0);
+        assert!(fs::read_to_string(&muro).unwrap().starts_with("- [x] "));
+        assert!(app.agenda.tasks()[0].done);
+        // La nota completa, como tarea (una sola vez).
+        app.apply(Action::NoteToTask(muro.clone()));
+        app.apply(Action::NoteToTask(muro.clone()));
+        let tasks: Vec<_> = app.agenda.tasks().into_iter().filter(|t| t.text == "Muro").collect();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].note.as_deref(), Some("Obra/Muro"));
         let _ = fs::remove_dir_all(&dir);
     }
 

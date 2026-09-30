@@ -496,6 +496,32 @@ impl NotesApp {
                 .show(ui);
             let decos = decos.into_inner();
 
+            // Clic derecho en una línea: convertirla en tarea (o marcarla hecha).
+            if out.response.secondary_clicked() {
+                self.menu_line = out.response.interact_pointer_pos().map(|p| line_at(&line_starts(&self.note.text), out.galley.cursor_from_pos(p - out.galley_pos).index.0));
+            }
+            let mut to_task = None;
+            out.response.context_menu(|ui| {
+                let Some(l) = self.menu_line else { return };
+                let line = nth_line(&self.note.text, l);
+                if line.trim().is_empty() || lines::is_heading(line) {
+                    ui.label(RichText::new("Haz clic derecho en una línea con texto").size(12.5).color(MUTED));
+                    return;
+                }
+                let label = match lines::parse(line).check {
+                    None => format!("{}  Convertir en tarea   Ctrl+Enter", icon::CHECK_SQUARE),
+                    Some(false) => format!("{}  Marcar hecha   Ctrl+Enter", icon::CHECK_SQUARE),
+                    Some(true) => format!("{}  Marcar pendiente   Ctrl+Enter", icon::SQUARE),
+                };
+                if ui.button(label).clicked() {
+                    to_task = Some(l);
+                    ui.close();
+                }
+            });
+            if let Some(l) = to_task {
+                self.line_to_task(l);
+            }
+
             if out.response.changed() {
                 self.note.dirty = true;
                 self.note.last_edit = Instant::now();
@@ -716,7 +742,48 @@ impl NotesApp {
         self.save();
     }
 
-    /// Tab, Shift+Tab, Enter y Retroceso en líneas con sangría o casilla.
+    /// Convierte una línea en tarea: casilla, identificador y su tarea en Tareas (en el espacio
+    /// de la nota). Si ya era tarea, la marca o desmarca.
+    pub(super) fn line_to_task(&mut self, line_idx: usize) {
+        let old = self.note.text.clone();
+        let line = nth_line(&old, line_idx).to_string();
+        let info = lines::parse(&line);
+        if line[info.prefix..].trim().is_empty() || lines::is_heading(&line) {
+            return;
+        }
+        if info.check.is_some() {
+            self.toggle_line_check(line_idx);
+            return;
+        }
+        let id = new_task_id();
+        let new_line = lines::set_meta(&lines::make_task(&line), None, Some(&id));
+        self.note.text = replace_line(&old, line_idx, &new_line);
+        self.note.dirty = true;
+        self.note.last_edit = Instant::now();
+        // Poner la casilla no es contenido nuevo: la IA no la vuelve a organizar por esto.
+        if self.analyzed.contains(&ai::fnv(&old)) {
+            self.analyzed.insert(ai::fnv(&self.note.text));
+            self.save_analyzed();
+        }
+        // El texto de la tarea: las etiquetas quedan como palabras ("#planos" -> "planos").
+        let text = new_line[lines::parse(&new_line).prefix..]
+            .split_whitespace()
+            .filter(|w| !w.starts_with("due:") && !(w.starts_with('^') && w.len() > 3))
+            .map(|w| w.trim_start_matches(['#', '+']))
+            .filter(|w| !w.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let due = lines::due_of(&new_line).filter(|d| agenda::is_date(d));
+        let (rel, ws) = (self.rel(&self.note.path), self.space_of(&self.note.path));
+        if let Err(e) = self.agenda.add_task(agenda::format_task(&today(), &text, &ws, due.as_deref(), &rel, Some(&id))) {
+            self.msg(format!("No se pudo escribir tareas.txt: {e}"));
+        }
+        self.gcal_dirty = true;
+        self.save();
+        self.msg(format!("Tarea: «{text}» (Ctrl+Enter la marca hecha)"));
+    }
+
+    /// Tab, Shift+Tab, Enter y Retroceso en líneas con sangría o casilla; Ctrl+Enter, tarea.
     fn edit_keys(&mut self, ui: &Ui, id: Id) {
         let ctx = ui.ctx();
         let Some(mut st) = TextEditState::load(ctx, id) else { return };
@@ -728,6 +795,19 @@ impl NotesApp {
             (a.min(b), a.max(b))
         };
         let (la, lb) = (line_at(&starts, lo), line_at(&starts, hi));
+        // Ctrl+Enter: la línea se vuelve tarea (o, si ya lo es, se marca hecha o pendiente).
+        if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Enter)) {
+            let col = range.primary.index.0 - starts[la];
+            let prefix = |l: &str| l[..lines::parse(l).prefix].chars().count();
+            let before = prefix(nth_line(&text, la));
+            self.line_to_task(la);
+            let new_line = nth_line(&self.note.text, la).to_string();
+            // El cursor queda en el mismo lugar del texto (la casilla se agregó adelante).
+            let ci = starts[la] + (col + prefix(&new_line)).saturating_sub(before).min(new_line.chars().count());
+            st.cursor.set_char_range(Some(CCursorRange::one(CCursor::new(ci))));
+            st.store(ctx, id);
+            return;
+        }
         let untab = ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab));
         let tab = !untab && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab));
 
