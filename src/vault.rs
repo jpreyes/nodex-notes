@@ -120,6 +120,34 @@ pub struct Note {
     pub title: String,
     pub modified: SystemTime,
     pub text: String,
+    /// El texto en minúsculas y sin tildes, para buscar (se prepara la primera vez que se busca).
+    folded: std::cell::OnceCell<String>,
+}
+
+impl Note {
+    /// El texto como se compara al buscar (ver `fold`). Tiene las mismas líneas que `text`.
+    pub fn folded(&self) -> &str {
+        self.folded.get_or_init(|| fold(&self.text))
+    }
+}
+
+/// Minúsculas y sin tildes, para buscar: «Cubicación» y «cubicacion» son lo mismo.
+/// La ñ se mantiene (no es una tilde). Los saltos de línea quedan donde estaban.
+pub fn fold(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            'á' | 'à' | 'ä' | 'â' | 'Á' | 'À' | 'Ä' | 'Â' => out.push('a'),
+            'é' | 'è' | 'ë' | 'ê' | 'É' | 'È' | 'Ë' | 'Ê' => out.push('e'),
+            'í' | 'ì' | 'ï' | 'î' | 'Í' | 'Ì' | 'Ï' | 'Î' => out.push('i'),
+            'ó' | 'ò' | 'ö' | 'ô' | 'Ó' | 'Ò' | 'Ö' | 'Ô' => out.push('o'),
+            'ú' | 'ù' | 'ü' | 'û' | 'Ú' | 'Ù' | 'Ü' | 'Û' => out.push('u'),
+            'Ñ' => out.push('ñ'),
+            c if c.is_ascii() => out.push(c.to_ascii_lowercase()),
+            c => out.extend(c.to_lowercase()),
+        }
+    }
+    out
 }
 
 pub struct Vault {
@@ -132,6 +160,8 @@ pub struct Vault {
     last_full: Instant,
     /// Cuántas revisiones completas se hicieron y cuántas notas se leyeron del disco (pruebas).
     pub full_scans: usize,
+    /// Sube cada vez que cambia alguna nota (para saber si hay que volver a buscar).
+    pub generation: u64,
     pub reads: usize,
     /// La copia local cambió desde que se guardó, y cuándo se guardó por última vez.
     cache_dirty: bool,
@@ -177,6 +207,7 @@ impl Vault {
             events: None,
             last_full: Instant::now(),
             full_scans: 0,
+            generation: 0,
             reads: 0,
             cache_dirty: false,
             cache_saved: Instant::now(),
@@ -321,7 +352,10 @@ impl Vault {
                 }
             }
             _ => {
-                self.cache_dirty |= self.notes.remove(path).is_some();
+                if self.notes.remove(path).is_some() {
+                    self.cache_dirty = true;
+                    self.generation += 1;
+                }
             }
         }
     }
@@ -364,7 +398,10 @@ impl Vault {
         }
         let before = self.notes.len();
         self.notes.retain(|p, _| seen.contains(p));
-        self.cache_dirty |= self.notes.len() != before;
+        if self.notes.len() != before {
+            self.cache_dirty = true;
+            self.generation += 1;
+        }
         self.workspaces = ws;
     }
 
@@ -377,7 +414,8 @@ impl Vault {
             .unwrap_or_default();
         let title = stem(&path);
         self.cache_dirty = true;
-        self.notes.insert(path.clone(), Note { path, workspace, title, modified, text });
+        self.generation += 1;
+        self.notes.insert(path.clone(), Note { path, workspace, title, modified, text, folded: std::cell::OnceCell::new() });
     }
 
     /// Notas de un espacio, la más reciente primero.
@@ -445,7 +483,10 @@ impl Vault {
             i += 1;
         }
         fs::rename(path, &dest)?;
-        self.cache_dirty |= self.notes.remove(path).is_some();
+        if self.notes.remove(path).is_some() {
+            self.cache_dirty = true;
+            self.generation += 1;
+        }
         Ok(dest)
     }
 
@@ -561,6 +602,12 @@ mod tests {
         assert_eq!(v.reads, 21);
         let _ = fs::remove_file(cache_file(&root));
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn folds_for_search() {
+        assert_eq!(fold("Cubicación del MURO\nÑandú Über"), "cubicacion del muro\nñandu uber");
+        assert_eq!(fold("a\nb\r\nc").split('\n').count(), 3);
     }
 
     #[test]

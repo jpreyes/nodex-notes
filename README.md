@@ -58,7 +58,7 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 | Ctrl+H | Inicio: tu día y un resumen de todo |
 | Ctrl+K | La IA: conversar con tus notas |
 | Ctrl+R | Nueva reunión |
-| Ctrl+F | Buscar en todas las notas |
+| Ctrl+F | Buscar en todas las notas (sin importar tildes ni mayúsculas) |
 | Ctrl+, | Configuración |
 | Esc | Cerrar la reunión, la búsqueda o la vista |
 | Tab / Shift+Tab | Unir la línea a la nota de arriba o hacerla ítem de lista / quitar un nivel |

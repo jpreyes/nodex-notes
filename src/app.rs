@@ -48,6 +48,8 @@ const POLL: Duration = Duration::from_secs(1);
 const MEETING_IDLE: Duration = Duration::from_secs(30 * 60);
 /// La nota abierta se analiza con IA tras este tiempo sin escribir.
 const AI_IDLE: Duration = Duration::from_secs(45);
+/// Cuántas líneas de resultados se muestran de una vez al buscar.
+const FOUND_PAGE: usize = 300;
 /// Tiempo durante el que se ofrece deshacer lo que hizo la IA.
 const UNDO_WINDOW: Duration = Duration::from_secs(120);
 /// Sincronización periódica con Google Calendar aunque no haya cambios.
@@ -91,6 +93,27 @@ struct Meeting {
     started: DateTime<Local>,
     last_activity: Instant,
     last_time: DateTime<Local>,
+}
+
+/// Una nota con líneas que coinciden con la búsqueda (o con la etiqueta).
+struct Hit {
+    path: PathBuf,
+    title: String,
+    ws: String,
+    /// (posición del cursor al final de la línea, texto de la línea)
+    lines: Vec<(usize, String)>,
+}
+
+/// Resultados guardados de la última búsqueda.
+struct Found {
+    /// Lo buscado (normalizado), la etiqueta y el espacio.
+    key: String,
+    /// Estado de las notas cuando se buscó.
+    generation: u64,
+    tag: Option<String>,
+    hits: Vec<Hit>,
+    /// Cuántas líneas se muestran («Mostrar más» agrega otras).
+    shown: usize,
 }
 
 /// Lo necesario para revertir el último cambio automático de la IA.
@@ -246,6 +269,8 @@ pub struct NotesApp {
     home_question: String,
     /// "Diario" (las notas de días anteriores) abierto en la barra lateral.
     diary_open: bool,
+    /// Resultados de la última búsqueda (se reutilizan mientras no cambie nada).
+    found: Option<Found>,
     /// Ventana de la IA: sección abierta, lo que hizo y cuál de sus cambios se puede deshacer.
     ai_tab: ai_view::AiTab,
     activity: crate::activity::Log,
@@ -474,6 +499,7 @@ impl NotesApp {
             home_capture: String::new(),
             home_question: String::new(),
             diary_open: false,
+            found: None,
             ai_tab: ai_view::AiTab::default(),
             activity: crate::activity::Log::load(&cfg_root),
             undo_entry: None,
@@ -1978,60 +2004,83 @@ impl NotesApp {
             .inner
     }
 
-    /// Lista de líneas que tienen una etiqueta o coinciden con la búsqueda.
-    fn results(&mut self, ui: &mut Ui) -> Option<Action> {
-        let mut action = None;
-        let query = self.search.trim().to_lowercase();
+    /// Resultados de la búsqueda o de una etiqueta. Se calculan una sola vez por texto buscado
+    /// y se vuelven a calcular solo si cambia lo buscado, el espacio o alguna nota.
+    fn found(&mut self) -> &Found {
+        let query = vault::fold(self.search.trim());
         let tag = match &self.view {
             View::Tag(t) if query.is_empty() => Some(t.clone()),
             _ => None,
         };
-
-        struct Hit {
-            path: PathBuf,
-            title: String,
-            ws: String,
-            lines: Vec<(usize, String)>,
-        }
-        let notes = match &tag {
-            Some(_) => self.vault.notes_in(&self.ws),
-            None => self.vault.all_notes(),
-        };
-        let mut hits = Vec::new();
-        for n in notes {
-            let mut lines = Vec::new();
-            let mut offset = 0; // en caracteres
-            for line in n.text.split_inclusive('\n') {
-                let content = line.trim_end();
-                let matches = match &tag {
-                    Some(t) => tags::line_tags(content).contains(t),
-                    None => content.to_lowercase().contains(&query),
+        let key = format!("{query}\u{1}{tag:?}\u{1}{}", self.ws);
+        let fresh = self.found.as_ref().is_some_and(|f| f.key == key && f.generation == self.vault.generation);
+        if !fresh {
+            let notes = match &tag {
+                Some(_) => self.vault.notes_in(&self.ws),
+                None => self.vault.all_notes(),
+            };
+            let mut hits = Vec::new();
+            for n in notes {
+                let title_match = tag.is_none() && vault::fold(&n.title).contains(&query);
+                // Descarte rápido: la nota completa no tiene lo buscado.
+                let may = match &tag {
+                    Some(_) => n.text.contains('#'),
+                    None => n.folded().contains(&query),
                 };
-                if matches {
-                    // Cursor al final de la línea, listo para seguir escribiendo.
-                    lines.push((offset + content.chars().count(), content.trim().to_string()));
+                if !may && !title_match {
+                    continue;
                 }
-                offset += line.chars().count();
+                let mut lines = Vec::new();
+                if may {
+                    let mut offset = 0; // en caracteres
+                    for (line, folded) in n.text.split_inclusive('\n').zip(n.folded().split_inclusive('\n')) {
+                        let content = line.trim_end();
+                        let matches = match &tag {
+                            Some(t) => content.contains('#') && tags::line_tags(content).contains(t),
+                            None => folded.contains(&query),
+                        };
+                        if matches {
+                            // Cursor al final de la línea, listo para seguir escribiendo.
+                            lines.push((offset + content.chars().count(), content.trim().to_string()));
+                        }
+                        offset += line.chars().count();
+                    }
+                }
+                if !lines.is_empty() || title_match {
+                    hits.push(Hit { path: n.path.clone(), title: display_title(&n.title), ws: n.workspace.clone(), lines });
+                }
             }
-            let title_match = tag.is_none() && n.title.to_lowercase().contains(&query);
-            if !lines.is_empty() || title_match {
-                hits.push(Hit { path: n.path.clone(), title: n.title.clone(), ws: n.workspace.clone(), lines });
-            }
+            self.found = Some(Found { key, generation: self.vault.generation, tag, hits, shown: FOUND_PAGE });
         }
+        self.found.as_ref().expect("recién calculado")
+    }
 
+    /// Lista de líneas que tienen una etiqueta o coinciden con la búsqueda.
+    fn results(&mut self, ui: &mut Ui) -> Option<Action> {
+        let mut action = None;
+        let (tag, total, notes) = {
+            let found = self.found();
+            (found.tag.clone(), found.hits.iter().map(|h| h.lines.len()).sum::<usize>(), found.hits.len())
+        };
         let heading = match &tag {
             Some(t) => t.clone(),
             None => format!("Buscar «{}»", self.search.trim()),
         };
-        let total: usize = hits.iter().map(|h| h.lines.len()).sum();
         let scope = if tag.is_some() { format!("en {}", self.ws) } else { "en todos los espacios".into() };
-        let subtitle = format!("{} en {}, {scope}", plural(total, "línea"), plural(hits.len(), "nota"));
+        let subtitle = format!("{} en {}, {scope}", plural(total, "línea"), plural(notes, "nota"));
+        let Some(found) = self.found.take() else { return None };
+        let mut more = false;
         Self::column(ui, "results", |ui, _| {
             view_header(ui, &heading, &subtitle);
-            if hits.is_empty() {
+            if found.hits.is_empty() {
                 ui.label(RichText::new("Sin resultados.").color(MUTED));
             }
-            for h in &hits {
+            // Solo las primeras líneas (dibujar miles es lento); el resto con «Mostrar más».
+            let mut drawn = 0;
+            for h in &found.hits {
+                if drawn >= found.shown {
+                    break;
+                }
                 let r = ui.add(
                     egui::Label::new(RichText::new(&h.title).font(theme::bold(15.0)).color(TEXT)).sense(Sense::click()),
                 );
@@ -2046,9 +2095,22 @@ impl NotesApp {
                         action = Some(Action::Open(h.path.clone(), Some(*offset)));
                     }
                 }
+                drawn += h.lines.len().max(1);
                 ui.add_space(14.0);
             }
+            if drawn < total {
+                ui.add_space(4.0);
+                let rest = total.saturating_sub(drawn);
+                if ui.button(format!("Mostrar más ({})", plural(rest, "línea"))).clicked() {
+                    more = true;
+                }
+            }
         });
+        let mut found = found;
+        if more {
+            found.shown += FOUND_PAGE;
+        }
+        self.found = Some(found);
         if self.esc(ui) {
             action = Some(Action::CloseResults);
         }
@@ -2637,6 +2699,42 @@ fn highlight_line(line: &str, size: f32) -> LayoutJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Buscar: sin tildes ni mayúsculas, una sola vez por texto, y de nuevo si cambia una nota.
+    #[test]
+    fn search_is_cached_and_ignores_accents() {
+        let dir = std::env::temp_dir().join(format!("nodex-buscar-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("General")).unwrap();
+        fs::create_dir_all(dir.join("Obra")).unwrap();
+        fs::write(dir.join("General").join("Muro.md"), "Revisar la Cubicación del muro #obra\notra cosa\n").unwrap();
+        fs::write(dir.join("Obra").join("Losa.md"), "cubicacion de la losa\n").unwrap();
+        fs::write(dir.join("Obra").join("Cubicaciones.md"), "sin la palabra\n").unwrap();
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut app = NotesApp::new(cfg, None, egui::Context::default());
+        app.search = "CUBICACIÓN".into();
+        let f = app.found();
+        let lines: usize = f.hits.iter().map(|h| h.lines.len()).sum();
+        assert_eq!((f.hits.len(), lines), (3, 2), "dos líneas, más la nota que solo coincide en el título");
+        let muro = f.hits.iter().find(|h| h.title == "Muro").unwrap();
+        assert_eq!(muro.lines[0], ("Revisar la Cubicación del muro #obra".chars().count(), "Revisar la Cubicación del muro #obra".to_string()));
+        // Otra vez lo mismo: se reutiliza.
+        let generation = app.found().generation;
+        assert_eq!(app.found().generation, generation);
+        // Cambia una nota: se vuelve a buscar.
+        let path = dir.join("General").join("Otra.md");
+        fs::write(&path, "más cubicaciones").unwrap();
+        app.vault.upsert(path, "más cubicaciones".into(), SystemTime::now());
+        assert_eq!(app.found().hits.len(), 4);
+        // Etiqueta: solo en el espacio actual.
+        app.search.clear();
+        app.ws = "General".into();
+        app.view = View::Tag("obra".into());
+        let f = app.found();
+        assert_eq!((f.hits.len(), f.hits[0].lines.len()), (1, 1));
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn daily_notes_show_friendly_names() {
