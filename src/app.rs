@@ -22,6 +22,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+mod account_ui;
 mod ai_view;
 mod ask_view;
 mod calendars_ui;
@@ -411,6 +412,8 @@ pub struct NotesApp {
     ai_usage_rx: Option<std::sync::mpsc::Receiver<Result<ai::Usage, String>>>,
     ai_usage_at: Instant,
     ai_usage_warned: String,
+    /// Tu cuenta de Notas: sesión, plan y la configuración que viaja con ella.
+    acct: account_ui::AccountState,
     /// Último minuto en que se revisaron las recurrentes, y su ventana (abierta si hay formulario).
     recurring_checked: String,
     recurring_form: Option<recurring::Form>,
@@ -743,6 +746,7 @@ impl NotesApp {
             ai_usage_rx: None,
             ai_usage_at: long_ago(),
             ai_usage_warned: String::new(),
+            acct: account_ui::AccountState::default(),
             recurring_checked: String::new(),
             recurring_form: None,
             followup: followup::FollowUp::default(),
@@ -860,6 +864,8 @@ impl NotesApp {
         if let Err(e) = config::save(&self.cfg) {
             self.msg(format!("No se pudo guardar la configuración: {e}"));
         }
+        // Lo que viaja con la cuenta se sube unos segundos después.
+        self.acct.dirty_at = Some(Instant::now());
     }
 
     fn restart_ai(&mut self) {
@@ -1245,6 +1251,7 @@ impl NotesApp {
         self.maybe_merge_days();
         self.maybe_create_recurring();
         self.poll_ai_usage();
+        self.poll_account();
         self.maybe_reconcile_tasks();
         let m = vault::modified(&self.note.path);
         if m.is_none() || !self.note.changed_on_disk() {

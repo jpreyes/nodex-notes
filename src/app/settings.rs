@@ -6,6 +6,7 @@ use std::sync::mpsc::Receiver;
 
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum Section {
+    Account,
     General,
     Ai,
     Calendar,
@@ -15,7 +16,8 @@ pub(super) enum Section {
     About,
 }
 
-const SECTIONS: [(Section, &str, &str); 7] = [
+const SECTIONS: [(Section, &str, &str); 8] = [
+    (Section::Account, icon::USER_CIRCLE, "Tu cuenta"),
     (Section::General, icon::FOLDER_SIMPLE, "General"),
     (Section::Ai, icon::SPARKLE, "Inteligencia artificial"),
     (Section::Calendar, icon::CALENDAR_BLANK, "Calendar"),
@@ -38,6 +40,11 @@ pub(super) struct Settings {
     model: String,
     code: String,
     server: String,
+    // Tu cuenta: correo, código recibido, pasar a la IA incluida, clave pegada.
+    acct_email: String,
+    acct_code: String,
+    acct_included: bool,
+    acct_key: String,
     client_id: String,
     client_secret: String,
     /// Formulario para agregar un calendario (nombre, enlace).
@@ -67,6 +74,10 @@ impl Settings {
             model: cfg.modelo.clone(),
             code: cfg.codigo_ia.clone(),
             server: cfg.servidor_ia.clone(),
+            acct_email: String::new(),
+            acct_code: String::new(),
+            acct_included: true,
+            acct_key: String::new(),
             client_id: cfg.google_client_id.clone(),
             client_secret: cfg.google_client_secret.clone(),
             cal_form: None,
@@ -86,6 +97,13 @@ enum Change {
     Provider(String),
     Model(String),
     Key(String),
+    /// Tu cuenta.
+    AccountCode(String),
+    AccountSignIn(String, String, bool),
+    AccountMicrosoft(bool),
+    AccountSignOut,
+    AccountSync,
+    AccountKey(String),
     /// IA incluida: código y dirección del servidor.
     IncludedCode(String),
     IncludedServer(String),
@@ -268,6 +286,7 @@ impl NotesApp {
                                 }
                             });
                             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match s.section {
+                                Section::Account => self.section_account(ui, &mut s, &mut changes),
                                 Section::General => self.section_general(ui, &mut changes),
                                 Section::Ai => self.section_ai(ui, &mut s, &mut changes),
                                 Section::Calendar => self.section_calendar(ui, &mut s, &mut changes),
@@ -324,6 +343,22 @@ impl NotesApp {
                 self.save_config();
                 self.restart_ai();
             }
+            Change::AccountCode(email) => self.account_send_code(email),
+            Change::AccountSignIn(email, code, inc) => {
+                s.acct_code.clear();
+                self.account_sign_in(email, code, inc);
+            }
+            Change::AccountMicrosoft(inc) => self.account_sign_in_microsoft(inc),
+            Change::AccountSignOut => self.account_sign_out(),
+            Change::AccountSync => self.account_sync_now(),
+            Change::AccountKey(k) => match crate::account::set_key_text(&self.vault.root, &k) {
+                Ok(()) => {
+                    s.acct_key.clear();
+                    self.msg("Clave guardada; juntando tu configuración…");
+                    self.account_sync_now();
+                }
+                Err(e) => self.msg(e),
+            },
             Change::IncludedCode(c) => {
                 self.cfg.codigo_ia = c.trim().to_string();
                 s.test_result = None;
@@ -376,6 +411,121 @@ impl NotesApp {
             }
             Change::Do(a) => self.apply(a),
             Change::OpenUrl(u) => gcal::open_browser(u),
+        }
+    }
+
+    fn section_account(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {
+        heading(ui, "Tu cuenta", "IA incluida (prueba gratis de 14 días) y tu configuración en todos tus equipos.");
+        let server = crate::account::server(&self.cfg);
+        if server.is_none() || crate::account::BUILT_IN_SERVER.is_none() {
+            row(ui, "Servidor", "La dirección del servicio de Notas", |ui| {
+                let r = ui.add(egui::TextEdit::singleline(&mut s.server).hint_text("https://…").desired_width(250.0).margin(Margin::symmetric(8, 4)));
+                if (r.lost_focus() || ui.input(|i| i.key_pressed(Key::Enter))) && s.server.trim() != self.cfg.servidor_ia {
+                    changes.push(Change::IncludedServer(s.server.clone()));
+                }
+            });
+        }
+        let busy = self.acct.busy;
+        if !self.signed_in() {
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new("Con una cuenta, la IA viene incluida (sin claves ni configuración) y tus calendarios, cuentas de correo, Google Calendar y Microsoft To Do te siguen a cualquier equipo donde entres.")
+                    .size(13.0),
+            );
+            ui.add_space(8.0);
+            match &self.acct.code_sent_to {
+                None => {
+                    row(ui, "Tu correo", "Te mandamos un código de 6 dígitos para entrar (o crear tu cuenta)", |ui| {
+                        let ok = s.acct_email.contains('@') && server.is_some() && !busy;
+                        if ui.add_enabled(ok, egui::Button::new("Enviar código")).clicked() {
+                            changes.push(Change::AccountCode(s.acct_email.clone()));
+                        }
+                        let r = ui.add(egui::TextEdit::singleline(&mut s.acct_email).hint_text("tu@correo.cl").desired_width(200.0).margin(Margin::symmetric(8, 4)));
+                        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && ok {
+                            changes.push(Change::AccountCode(s.acct_email.clone()));
+                        }
+                    });
+                }
+                Some(to) => {
+                    row(ui, "El código", &format!("Lo enviamos a {to} (revisa también el spam)"), |ui| {
+                        let ok = s.acct_code.trim().len() >= 6 && !busy;
+                        if ui.add_enabled(ok, egui::Button::new(RichText::new("Entrar").color(Color32::WHITE)).fill(ACCENT)).clicked() {
+                            changes.push(Change::AccountSignIn(to.clone(), s.acct_code.clone(), s.acct_included));
+                        }
+                        let r = ui.add(egui::TextEdit::singleline(&mut s.acct_code).hint_text("123456").desired_width(90.0).margin(Margin::symmetric(8, 4)));
+                        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && ok {
+                            changes.push(Change::AccountSignIn(to.clone(), s.acct_code.clone(), s.acct_included));
+                        }
+                    });
+                    if ui.link(RichText::new("Usar otro correo o pedir otro código").size(12.5)).clicked() {
+                        changes.push(Change::AccountCode(String::new()));
+                    }
+                }
+            }
+            row(ui, "O entra con Microsoft", "Tu cuenta personal o del trabajo", |ui| {
+                if ui.add_enabled(server.is_some() && !busy, egui::Button::new(format!("{}  Entrar con Microsoft", icon::WINDOWS_LOGO))).clicked() {
+                    changes.push(Change::AccountMicrosoft(s.acct_included));
+                }
+            });
+            ui.add_space(6.0);
+            ui.checkbox(&mut s.acct_included, "Usar la IA incluida (deja guardada tu clave de IA, si tienes una)");
+            if busy {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new("Un momento…").size(12.5).color(MUTED));
+                });
+            }
+            if let Some(e) = &self.acct.error {
+                ui.add_space(6.0);
+                chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false);
+            }
+            return;
+        }
+        row(ui, "Entraste como", "", |ui| {
+            if ui.button("Salir").on_hover_text("Cierra la sesión en este equipo").clicked() {
+                changes.push(Change::AccountSignOut);
+            }
+            ui.label(RichText::new(&self.cfg.cuenta).size(14.0));
+        });
+        match &self.acct.info {
+            Some(Ok(info)) => row(ui, "Plan", "", |ui| {
+                ui.label(RichText::new(info.plan_label()).size(13.5).color(if info.plan == "prueba" && info.dias_prueba <= 3 { WARN } else { TEXT }));
+            }),
+            Some(Err(e)) => chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false),
+            None => {}
+        }
+        if let Some((text, color)) = self.usage_label() {
+            row(ui, "IA incluida este mes", "", |ui| {
+                if let Some(Ok(u)) = self.ai_usage.as_ref().filter(|u| u.as_ref().is_ok_and(|u| u.percent() > 0)) {
+                    ui.add(egui::ProgressBar::new(u.percent() as f32 / 100.0).desired_width(120.0));
+                }
+                ui.label(RichText::new(text).size(12.5).color(color));
+            });
+        }
+        let synced = match &self.acct.synced {
+            Some(Ok(t)) => format!("Al día (a las {t}). Viajan tus calendarios, cuentas de correo, Google Calendar, Microsoft To Do y «organizar sola»."),
+            Some(Err(e)) => e.clone(),
+            None => "Juntando…".into(),
+        };
+        row(ui, "Tu configuración", &synced, |ui| {
+            if ui.button(format!("{}  Juntar ahora", icon::ARROWS_CLOCKWISE)).clicked() {
+                changes.push(Change::AccountSync);
+            }
+        });
+        if matches!(self.acct.synced, Some(Err(_))) {
+            row(ui, "Clave de otro equipo", "Si tus equipos no comparten la carpeta de notas, pega aquí la clave del otro", |ui| {
+                if ui.add_enabled(!s.acct_key.trim().is_empty(), egui::Button::new("Usar")).clicked() {
+                    changes.push(Change::AccountKey(s.acct_key.clone()));
+                }
+                ui.add(egui::TextEdit::singleline(&mut s.acct_key).hint_text("clave").password(true).desired_width(180.0));
+            });
+        } else if let Some(k) = crate::account::key_text(&self.vault.root) {
+            row(ui, "Clave de tu configuración", "Va cifrada con esta clave, que está en tu carpeta de notas. Solo hace falta si otro equipo no comparte la carpeta", |ui| {
+                if ui.button(format!("{}  Copiar", icon::COPY)).clicked() {
+                    ui.ctx().copy_text(k.clone());
+                }
+            });
         }
     }
 

@@ -9,7 +9,12 @@
 //! - suma los tokens que usó (entrada y salida), por persona y por mes.
 //!
 //! `GET /v1/uso` le dice a la app cuánto va del mes. Los datos son archivos JSON en una carpeta
-//! (`usuarios.json` y `uso/AAAA-MM.json`), suficiente para la beta.
+//! (`usuarios.json`, `cuentas.json` y `uso/AAAA-MM.json`), suficiente para la beta.
+//!
+//! Hay dos formas de tener IA incluida: un código entregado a mano (`nodex-ia nuevo`, la beta) o
+//! una cuenta (ver `accounts`): se entra con el correo o con Microsoft y la sesión sirve de clave.
+
+pub mod accounts;
 
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -36,6 +41,35 @@ pub struct Settings {
     /// Precio en USD por millón de tokens (entrada, salida), para estimar el costo por persona.
     pub price_in: f64,
     pub price_out: f64,
+    /// Prueba de las cuentas nuevas: días y tokens al mes.
+    pub trial_days: i64,
+    pub trial_limit: u64,
+    /// Envío de los códigos por correo (API de Resend); sin clave, el código queda en el registro.
+    pub mail_api: String,
+    pub mail_key: String,
+    pub mail_from: String,
+    /// Microsoft Graph (para «Entrar con Microsoft»).
+    pub graph: String,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            upstream: "https://opencode.ai/zen/v1/".into(),
+            key: String::new(),
+            model: "deepseek-v4.1-flash".into(),
+            data: PathBuf::from("datos"),
+            default_limit: 3_000_000,
+            price_in: 0.3,
+            price_out: 1.2,
+            trial_days: 14,
+            trial_limit: 1_000_000,
+            mail_api: "https://api.resend.com/emails".into(),
+            mail_key: String::new(),
+            mail_from: String::new(),
+            graph: "https://graph.microsoft.com/v1.0".into(),
+        }
+    }
 }
 
 impl Settings {
@@ -53,6 +87,12 @@ impl Settings {
             default_limit: var("NOTAS_IA_LIMITE", "3000000").parse().unwrap_or(3_000_000),
             price_in: var("NOTAS_IA_PRECIO_ENTRADA", "0.3").parse().unwrap_or(0.3),
             price_out: var("NOTAS_IA_PRECIO_SALIDA", "1.2").parse().unwrap_or(1.2),
+            trial_days: var("NOTAS_IA_PRUEBA_DIAS", "14").parse().unwrap_or(14),
+            trial_limit: var("NOTAS_IA_LIMITE_PRUEBA", "1000000").parse().unwrap_or(1_000_000),
+            mail_api: var("NOTAS_IA_CORREO_API", "https://api.resend.com/emails"),
+            mail_key: var("NOTAS_IA_CORREO_CLAVE", ""),
+            mail_from: var("NOTAS_IA_CORREO_DE", "Notas <no-responder@notas.invalid>"),
+            graph: var("NOTAS_IA_GRAPH", "https://graph.microsoft.com/v1.0"),
         }
     }
 }
@@ -89,6 +129,8 @@ pub struct Store {
     pub users: BTreeMap<String, User>,
     /// Cuándo cambió `usuarios.json` la última vez que se leyó (para ver altas sin reiniciar).
     users_mtime: Option<std::time::SystemTime>,
+    pub accounts: accounts::Accounts,
+    accounts_mtime: Option<std::time::SystemTime>,
     pub month: String,
     pub usage: BTreeMap<String, Usage>,
 }
@@ -108,7 +150,7 @@ fn next_month(month: &str) -> String {
 }
 
 /// Escribe un archivo sin dejarlo a medias (primero uno temporal, después se renombra).
-fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -132,7 +174,18 @@ impl Store {
         let month = this_month();
         let usage = read(Self::usage_file(data, &month)).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let users_mtime = std::fs::metadata(Self::users_file(data)).and_then(|m| m.modified()).ok();
-        Store { users, users_mtime, month, usage }
+        let accounts = accounts::Accounts::load(data);
+        let accounts_mtime = std::fs::metadata(accounts::Accounts::file(data)).and_then(|m| m.modified()).ok();
+        Store { users, users_mtime, accounts, accounts_mtime, month, usage }
+    }
+
+    /// Relee las cuentas si alguien cambió el archivo (`nodex-ia plan` con el servidor andando).
+    fn refresh_accounts(&mut self, data: &Path) {
+        let now = std::fs::metadata(accounts::Accounts::file(data)).and_then(|m| m.modified()).ok();
+        if now != self.accounts_mtime {
+            self.accounts = accounts::Accounts::load(data);
+            self.accounts_mtime = now;
+        }
     }
 
     /// Relee las personas si alguien cambió el archivo (`nodex-ia nuevo` con el servidor andando).
@@ -181,28 +234,49 @@ impl Store {
 pub struct AppState {
     pub settings: Settings,
     pub store: Mutex<Store>,
+    pub pending: Mutex<accounts::Pending>,
     pub http: reqwest::Client,
 }
 
-fn error(status: StatusCode, message: &str) -> Response {
+pub(crate) fn error(status: StatusCode, message: &str) -> Response {
     (status, Json(serde_json::json!({ "error": { "message": message, "type": "notas" } }))).into_response()
 }
 
-/// La persona del código que viene en `Authorization: Bearer …`.
-async fn who(state: &AppState, headers: &HeaderMap) -> Result<(String, User), Response> {
-    let code = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::trim)
-        .unwrap_or("");
-    let fp = fingerprint(code);
+/// Quién pide (por su código o su sesión): con qué clave se cuenta su uso y cuál es su límite.
+struct Who {
+    key: String,
+    limit: u64,
+}
+
+/// La persona del código o la sesión que viene en `Authorization: Bearer …`.
+async fn who(state: &AppState, headers: &HeaderMap) -> Result<Who, Response> {
+    let fp = fingerprint(&accounts::bearer(headers));
+    let s = &state.settings;
     let mut store = state.store.lock().await;
-    store.refresh_users(&state.settings.data);
-    match store.users.get(&fp) {
-        Some(u) if u.activo => Ok((fp, u.clone())),
-        Some(_) => Err(error(StatusCode::FORBIDDEN, "Este código de IA incluida está desactivado.")),
-        None => Err(error(StatusCode::UNAUTHORIZED, "Código de IA incluida no válido: revísalo en Configuración → Inteligencia artificial.")),
+    store.refresh_users(&s.data);
+    store.refresh_accounts(&s.data);
+    if let Some(u) = store.users.get(&fp) {
+        return if u.activo {
+            Ok(Who { key: fp.clone(), limit: store.limit_of(u, s.default_limit) })
+        } else {
+            Err(error(StatusCode::FORBIDDEN, "Este código de IA incluida está desactivado."))
+        };
+    }
+    let Some(acc) = store.accounts.sesiones.get(&fp).and_then(|id| store.accounts.cuentas.get(id)) else {
+        return Err(error(StatusCode::UNAUTHORIZED, "Código de IA incluida no válido: revísalo en Configuración → Inteligencia artificial."));
+    };
+    let key = format!("cuenta:{}", acc.id);
+    let own = |d: u64| if acc.limite > 0 { acc.limite } else { d };
+    match acc.plan.as_str() {
+        "pro" | "fundador" => Ok(Who { key, limit: own(s.default_limit) }),
+        "prueba" if acc.prueba_hasta >= chrono::Local::now().format("%Y-%m-%d").to_string() => {
+            Ok(Who { key, limit: own(s.trial_limit) })
+        }
+        "prueba" => Err(error(
+            StatusCode::PAYMENT_REQUIRED,
+            &format!("Tu prueba de IA incluida terminó el {}. Para seguir, activa tu plan en Notas; tus notas siguen igual.", acc.prueba_hasta),
+        )),
+        _ => Err(error(StatusCode::PAYMENT_REQUIRED, "Tu plan no incluye IA incluida. Puedes activarlo en Notas, o usar tu propia clave de IA.")),
     }
 }
 
@@ -218,15 +292,15 @@ pub struct UsageReply {
 }
 
 async fn usage(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let (fp, user) = match who(&state, &headers).await {
+    let who = match who(&state, &headers).await {
         Ok(x) => x,
         Err(r) => return r,
     };
     let mut store = state.store.lock().await;
     store.roll();
-    let u = store.usage.get(&fp).cloned().unwrap_or_default();
+    let u = store.usage.get(&who.key).cloned().unwrap_or_default();
     let reply = UsageReply {
-        limite: store.limit_of(&user, state.settings.default_limit),
+        limite: who.limit,
         usado: u.total(),
         pedidos: u.pedidos,
         renueva: next_month(&store.month),
@@ -236,15 +310,16 @@ async fn usage(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respon
 }
 
 async fn chat(State(state): State<Arc<AppState>>, headers: HeaderMap, Json(mut body): Json<serde_json::Value>) -> Response {
-    let (fp, user) = match who(&state, &headers).await {
+    let who = match who(&state, &headers).await {
         Ok(x) => x,
         Err(r) => return r,
     };
+    let fp = who.key.clone();
     {
         let mut store = state.store.lock().await;
         store.roll();
         let used = store.usage.get(&fp).map(Usage::total).unwrap_or(0);
-        if used >= store.limit_of(&user, state.settings.default_limit) {
+        if used >= who.limit {
             let when = next_month(&store.month);
             return error(
                 StatusCode::TOO_MANY_REQUESTS,
@@ -257,7 +332,7 @@ async fn chat(State(state): State<Arc<AppState>>, headers: HeaderMap, Json(mut b
         o.insert("model".into(), serde_json::Value::String(state.settings.model.clone()));
         o.remove("stream");
     }
-    let session = format!("notas-{}", &fp[..16]);
+    let session = format!("notas-{}", fingerprint(&fp).get(..16).unwrap_or(""));
     let sent = state
         .http
         .post(format!("{}chat/completions", state.settings.upstream))
@@ -292,13 +367,19 @@ pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/v1/chat/completions", post(chat))
         .route("/v1/uso", get(usage))
+        .route("/v1/cuenta/codigo", post(accounts::send_code))
+        .route("/v1/cuenta/entrar", post(accounts::sign_in_code))
+        .route("/v1/cuenta/microsoft", post(accounts::sign_in_microsoft))
+        .route("/v1/cuenta", get(accounts::me))
+        .route("/v1/cuenta/salir", post(accounts::sign_out))
+        .route("/v1/cuenta/config", get(accounts::get_config).put(accounts::put_config))
         .route("/salud", get(|| async { "ok" }))
         .with_state(state)
 }
 
 pub fn state(settings: Settings) -> Arc<AppState> {
     let store = Store::load(&settings.data);
-    Arc::new(AppState { settings, store: Mutex::new(store), http: reqwest::Client::new() })
+    Arc::new(AppState { settings, store: Mutex::new(store), pending: Mutex::new(accounts::Pending::default()), http: reqwest::Client::new() })
 }
 
 /// El uso del mes de cada persona, con su costo estimado (para `nodex-ia lista`).
@@ -320,6 +401,13 @@ pub fn report(settings: &Settings) -> String {
             usage.pedidos,
             if u.activo { "" } else { "  (desactivado)" }
         );
+    }
+    for a in store.accounts.cuentas.values() {
+        let usage = store.usage.get(&format!("cuenta:{}", a.id)).cloned().unwrap_or_default();
+        let cost = usage.entrada as f64 / 1e6 * settings.price_in + usage.salida as f64 / 1e6 * settings.price_out;
+        total += cost;
+        let plan = if a.plan == "prueba" { format!("prueba hasta {}", a.prueba_hasta) } else { a.plan.clone() };
+        out += &format!("{:<32} {:<22} {:>10} tokens  {:>5} pedidos  ~{cost:.2} USD\n", a.correo, plan, usage.total(), usage.pedidos);
     }
     out += &format!("Costo estimado del mes: ~{total:.2} USD\n");
     out
@@ -363,15 +451,7 @@ mod tests {
 
         let data = std::env::temp_dir().join(format!("nodex-ia-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&data);
-        let settings = Settings {
-            upstream: fake_url,
-            key: "clave-del-servicio".into(),
-            model: "deepseek-v4.1-flash".into(),
-            data: data.clone(),
-            default_limit: 300,
-            price_in: 0.3,
-            price_out: 1.2,
-        };
+        let settings = Settings { upstream: fake_url, key: "clave-del-servicio".into(), data: data.clone(), default_limit: 300, ..Default::default() };
         let code = {
             let mut s = Store::load(&data);
             let code = s.add_user("Ana", 0);

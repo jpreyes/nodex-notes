@@ -149,7 +149,7 @@ pub fn pkce_challenge(verifier: &str) -> String {
 
 // ---------- Estado guardado ----------
 
-fn token_path() -> PathBuf {
+pub(crate) fn token_path() -> PathBuf {
     crate::config::config_path().with_file_name("google_token.json")
 }
 

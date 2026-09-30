@@ -26,9 +26,11 @@ pub struct Config {
     pub correo_al_llegar: bool,
     /// Revisar una vez al día a esta hora ("07:00"); vacío = no.
     pub correo_diario: String,
-    /// IA incluida (proveedor "notas"): tu código y la dirección del servidor.
+    /// IA incluida (proveedor "notas"): tu código (o la sesión de tu cuenta) y la dirección del servidor.
     pub codigo_ia: String,
     pub servidor_ia: String,
+    /// El correo de tu cuenta de Notas, si entraste en este equipo.
+    pub cuenta: String,
 }
 
 impl Default for Config {
@@ -48,6 +50,7 @@ impl Default for Config {
             correo_diario: "07:00".into(),
             codigo_ia: String::new(),
             servidor_ia: String::new(),
+            cuenta: String::new(),
         }
     }
 }
@@ -121,6 +124,8 @@ fn render(c: &Config) -> String {
          # IA incluida: tu código y la dirección del servidor de Notas\n\
          codigo_ia = {}\n\
          servidor_ia = {}\n\
+         # Tu cuenta de Notas (se entra desde Configuración → Tu cuenta)\n\
+         cuenta = {}\n\
          \n\
          # Analizar solas las notas al terminar de escribirlas (espacio, etiquetas, tareas, agenda)\n\
          ia_automatica = {}\n\
@@ -138,6 +143,7 @@ fn render(c: &Config) -> String {
         q(&c.clave_api),
         q(&c.codigo_ia),
         q(&c.servidor_ia),
+        q(&c.cuenta),
         c.ia_automatica,
         q(&c.google_client_id),
         q(&c.google_client_secret),

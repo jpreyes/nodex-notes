@@ -20,7 +20,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 /// La app "Notas" registrada en Microsoft (cliente público; no es un secreto).
-const CLIENT_ID: &str = "0474f4e6-d59e-48f9-a4c1-60ba8d03a484";
+pub(crate) const CLIENT_ID: &str = "0474f4e6-d59e-48f9-a4c1-60ba8d03a484";
 const SCOPE: &str = "Tasks.ReadWrite offline_access User.Read";
 const LIST_NAME: &str = "Notas";
 
@@ -191,7 +191,7 @@ fn due_from_remote(v: &Value) -> Option<String> {
     Some(date.format("%Y-%m-%d").to_string())
 }
 
-fn token_path() -> PathBuf {
+pub(crate) fn token_path() -> PathBuf {
     crate::config::config_path().with_file_name("microsoft_token.json")
 }
 

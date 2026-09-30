@@ -12,6 +12,14 @@ servidor:
 
 No guarda el texto de las notas: solo pasa por el servidor y se cuentan los tokens.
 
+Hay dos formas de tener IA incluida:
+
+- **Cuentas** (lo normal): en la app, Configuración → Tu cuenta, se entra con el correo (llega un
+  código de 6 dígitos) o con Microsoft. Una cuenta nueva trae una prueba de 14 días; el plan se
+  cambia con `nodex-ia plan`. Con la cuenta también viaja la configuración de la persona
+  (calendarios, correo, To Do…), **cifrada en la app** con una clave que el servidor no tiene.
+- **Códigos** entregados a mano (`nodex-ia nuevo`), para pruebas o casos especiales.
+
 ## Instalar en un VPS (Ubuntu 22.04 o más nuevo)
 
 Hace falta un VPS y un subdominio que apunte a él (por ejemplo `ia.tudominio.cl`).
@@ -41,7 +49,12 @@ Hace falta un VPS y un subdominio que apunte a él (por ejemplo `ia.tudominio.cl
 4. **HTTPS.** Instala [Caddy](https://caddyserver.com/docs/install) y usa `deploy/Caddyfile`
    (cambia el dominio). Caddy saca el certificado solo.
 
-5. **Las personas.** Crea una por cada suscriptor; el código se muestra una sola vez:
+5. **El correo de los códigos.** Crea una cuenta en [Resend](https://resend.com), verifica tu
+   dominio y pon su clave en `NOTAS_IA_CORREO_CLAVE` y el remitente en `NOTAS_IA_CORREO_DE`
+   (por ejemplo `Notas <hola@tudominio.cl>`). Sin clave, el código queda en el registro del
+   servicio (`journalctl -u nodex-ia`), útil para probar.
+
+6. **Códigos a mano (opcional).** El código se muestra una sola vez:
 
    ```bash
    sudo -u nodex-ia bash -c 'set -a; . /etc/nodex-ia.env; /opt/nodex-ia/nodex-ia nuevo "Ana Pérez"'
@@ -49,19 +62,22 @@ Hace falta un VPS y un subdominio que apunte a él (por ejemplo `ia.tudominio.cl
 
    Un límite propio (en tokens al mes) va después del nombre: `nuevo "Ana Pérez" 5000000`.
 
-6. **En la app:** Configuración → Inteligencia artificial → Proveedor «IA incluida de Notas»,
-   pega el código y la dirección (`https://ia.tudominio.cl`).
+7. **En la app:** Configuración → Tu cuenta (o, con un código, Inteligencia artificial → «IA
+   incluida de Notas»), con la dirección `https://ia.tudominio.cl`. Si la app se compila con
+   `NODEX_SERVIDOR_IA=https://ia.tudominio.cl`, esa dirección viene puesta y no hay que escribirla.
 
 ## Día a día
 
 ```bash
 nodex-ia lista                  # uso del mes de cada persona y costo estimado en USD
 nodex-ia desactivar 3fa9c1      # deja sin IA a una persona (las primeras letras de su huella)
+nodex-ia plan ana@correo.cl pro # plan de una cuenta: prueba [días], pro, fundador o gratis
 ```
 
 (con las mismas variables de entorno que el servicio, como en el paso 5).
 
-Los datos están en `NOTAS_IA_DATA`: `usuarios.json` (personas) y `uso/AAAA-MM.json` (uso de cada
+Los datos están en `NOTAS_IA_DATA`: `usuarios.json` (códigos), `cuentas.json` (cuentas y
+sesiones), `config/` (la configuración cifrada de cada cuenta) y `uso/AAAA-MM.json` (uso de cada
 mes). Conviene respaldar esa carpeta.
 
 ## Configuración
@@ -71,7 +87,10 @@ mes). Conviene respaldar esa carpeta.
 | `NOTAS_IA_KEY` | Clave de la IA del servicio (obligatoria) | — |
 | `NOTAS_IA_UPSTREAM` | Dirección de la IA (compatible con OpenAI) | `https://opencode.ai/zen/v1/` |
 | `NOTAS_IA_MODEL` | Modelo que se usa para todos | `deepseek-v4.1-flash` |
-| `NOTAS_IA_LIMITE` | Tokens al mes por persona | `3000000` |
+| `NOTAS_IA_LIMITE` | Tokens al mes por persona (planes pro y fundador) | `3000000` |
+| `NOTAS_IA_PRUEBA_DIAS` / `NOTAS_IA_LIMITE_PRUEBA` | Prueba de las cuentas nuevas: días y tokens al mes | `14` / `1000000` |
+| `NOTAS_IA_CORREO_CLAVE` / `NOTAS_IA_CORREO_DE` | Envío de los códigos (Resend) | — |
+| `NOTAS_IA_CORREO_API` | API de correo (compatible con Resend) | `https://api.resend.com/emails` |
 | `NOTAS_IA_PRECIO_ENTRADA` / `_SALIDA` | USD por millón de tokens, para estimar el costo | `0.3` / `1.2` |
 | `NOTAS_IA_DATA` | Carpeta de datos | `datos` |
 | `NOTAS_IA_DIRECCION` / `NOTAS_IA_PUERTO` | Dónde escucha (detrás de Caddy) | `127.0.0.1` / `8080` |

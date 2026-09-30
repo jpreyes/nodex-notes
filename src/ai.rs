@@ -132,12 +132,7 @@ pub fn is_included(cfg: &Config) -> bool {
 
 /// La dirección de la API del servidor de la IA incluida ("https://ia.ejemplo.cl" -> ".../v1/").
 pub fn included_base(cfg: &Config) -> Option<String> {
-    let s = cfg.servidor_ia.trim().trim_end_matches('/');
-    if s.is_empty() {
-        return None;
-    }
-    let s = if s.starts_with("http://") || s.starts_with("https://") { s.to_string() } else { format!("https://{s}") };
-    Some(if s.ends_with("/v1") { format!("{s}/") } else { format!("{s}/v1/") })
+    crate::account::server(cfg).map(|s| format!("{s}/v1/"))
 }
 
 /// Cuánto va del mes de la IA incluida (lo que responde el servidor en /v1/uso).
@@ -726,15 +721,7 @@ mod included_tests {
             let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let upstream = format!("http://{}/v1/", l.local_addr().unwrap());
             tokio::spawn(async move { axum::serve(l, fake).await.unwrap() });
-            let settings = nodex_ia::Settings {
-                upstream,
-                key: "clave-del-servicio".into(),
-                model: "deepseek-v4.1-flash".into(),
-                data: data.clone(),
-                default_limit: 100,
-                price_in: 0.3,
-                price_out: 1.2,
-            };
+            let settings = nodex_ia::Settings { upstream, key: "clave-del-servicio".into(), data: data.clone(), default_limit: 100, ..Default::default() };
             let mut store = nodex_ia::Store::load(&data);
             let code = store.add_user("Prueba", 0);
             store.save_users(&data).unwrap();

@@ -5,6 +5,7 @@
 //! nodex-ia nuevo "Ana Pérez" [tokens]   crea una persona y muestra su código (una sola vez)
 //! nodex-ia lista                        uso del mes de cada persona y costo estimado
 //! nodex-ia desactivar <huella>          deja sin IA a una persona (las primeras letras de su huella)
+//! nodex-ia plan <correo> <plan> [días]   cambia el plan de una cuenta (prueba, pro, fundador, gratis)
 //! ```
 //!
 //! Configuración (variables de entorno): NOTAS_IA_KEY (clave de la IA, obligatoria para servir),
@@ -14,7 +15,7 @@
 use nodex_ia::{Settings, Store, report, router, state};
 
 fn usage() -> ! {
-    eprintln!("uso: nodex-ia servir | nuevo \"Nombre\" [tokens al mes] | lista | desactivar <huella>");
+    eprintln!("uso: nodex-ia servir | nuevo \"Nombre\" [tokens al mes] | lista | desactivar <huella> | plan <correo> <plan> [días]");
     std::process::exit(2)
 }
 
@@ -50,6 +51,28 @@ async fn main() {
             println!("(El código se muestra solo esta vez. En la app: Configuración → Inteligencia artificial → IA incluida.)");
         }
         Some("lista") => print!("{}", report(&settings)),
+        Some("plan") => {
+            // nodex-ia plan ana@correo.cl pro   (prueba, pro, fundador o gratis)
+            let (Some(correo), Some(plan)) = (args.get(1), args.get(2)) else { usage() };
+            if !["prueba", "pro", "fundador", "gratis"].contains(&plan.as_str()) {
+                eprintln!("Plan desconocido «{plan}»: usa prueba, pro, fundador o gratis");
+                std::process::exit(1);
+            }
+            let mut accounts = nodex_ia::accounts::Accounts::load(&settings.data);
+            let Some(id) = accounts.by_email(correo).map(|a| a.id.clone()) else {
+                eprintln!("No hay una cuenta con el correo {correo}");
+                std::process::exit(1);
+            };
+            if let Some(a) = accounts.cuentas.get_mut(&id) {
+                a.plan = plan.clone();
+                if plan == "prueba" {
+                    let days = args.get(3).and_then(|d| d.parse::<i64>().ok()).unwrap_or(settings.trial_days);
+                    a.prueba_hasta = (chrono::Local::now().date_naive() + chrono::Duration::days(days)).format("%Y-%m-%d").to_string();
+                }
+                println!("{correo}: plan {plan}");
+            }
+            accounts.save(&settings.data).expect("no se pudo guardar cuentas.json");
+        }
         Some("desactivar") => {
             let Some(prefix) = args.get(1) else { usage() };
             let mut store = Store::load(&settings.data);
