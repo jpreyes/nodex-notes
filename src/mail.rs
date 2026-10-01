@@ -64,6 +64,8 @@ pub struct Mail {
     /// "2026-09-26 09:12"
     pub date: String,
     pub message_id: String,
+    /// A qué correos responde (In-Reply-To y References): sus Message-ID.
+    pub reply_to: Vec<String>,
     pub body: String,
     /// Boletín o aviso automático (no lo lee la IA).
     pub bulk: bool,
@@ -187,6 +189,7 @@ pub fn parse(raw: &[u8], id: String, account: &str, sent: bool) -> Option<Mail> 
         subject: msg.subject().unwrap_or("(sin asunto)").to_string(),
         date,
         message_id: msg.message_id().unwrap_or("").to_string(),
+        reply_to: [msg.in_reply_to(), msg.references()].iter().flat_map(|h| h.as_text_list().unwrap_or_default()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
         body: clean.trim().chars().take(MAX_BODY).collect(),
         bulk,
         ..Mail::default()

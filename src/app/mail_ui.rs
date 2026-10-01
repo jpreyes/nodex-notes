@@ -180,6 +180,61 @@ pub(super) fn mail_prefix(m: &Mail) -> String {
     format!("{who} ({d}): {}.", m.subject.trim().trim_end_matches('.'))
 }
 
+/// El asunto sin «Re:», «RE:», «RV:», «Fwd:», «Resp:» (en minúsculas y sin tildes).
+pub(super) fn base_subject(s: &str) -> String {
+    let mut t = s.trim();
+    loop {
+        let lower = t.to_lowercase();
+        let Some(p) = ["re:", "rv:", "fw:", "fwd:", "resp:", "res:", "aw:", "r:"].iter().find(|p| lower.starts_with(*p)) else { break };
+        t = t[p.len()..].trim_start();
+    }
+    vault::fold(t.trim())
+}
+
+/// ¿El asunto dice que es una respuesta? («Re: …», «RV: …»)
+fn is_reply_subject(s: &str) -> bool {
+    base_subject(s) != vault::fold(s.trim())
+}
+
+/// Las direcciones de correo de un «De» o «Para».
+fn addresses(s: &str) -> Vec<String> {
+    s.split([',', ';', '<', '>', ' ']).filter(|w| w.contains('@')).map(|w| w.trim().trim_matches('"').to_lowercase()).collect()
+}
+
+/// Los correos anteriores del mismo hilo que `m` (a los que responde), el más antiguo primero:
+/// por los encabezados de respuesta o, si no los hay, por el asunto («Re: …») y las personas.
+pub(super) fn thread_of<'a>(m: &Mail, all: &'a [Mail]) -> Vec<&'a Mail> {
+    let people: Vec<String> = addresses(&m.from).into_iter().chain(addresses(&m.to)).collect();
+    let base = base_subject(&m.subject);
+    let mut v: Vec<&Mail> = all
+        .iter()
+        .filter(|c| c.id != m.id && c.date <= m.date)
+        .filter(|c| {
+            let by_header = !c.message_id.is_empty() && m.reply_to.iter().any(|r| r.trim_matches(['<', '>']) == c.message_id.trim_matches(['<', '>']));
+            let by_subject = is_reply_subject(&m.subject)
+                && !base.is_empty()
+                && base_subject(&c.subject) == base
+                && addresses(&c.from).iter().chain(addresses(&c.to).iter()).any(|a| people.contains(a));
+            by_header || by_subject
+        })
+        .collect();
+    v.sort_by(|a, b| a.date.cmp(&b.date));
+    v
+}
+
+/// La línea de una nota donde quedó anotado alguno de estos correos (por cómo empieza): la nota
+/// y la línea. Se busca primero el más antiguo.
+fn find_mail_line<'a>(notes: impl Iterator<Item = (&'a Path, &'a str)> + Clone, prefixes: &[String]) -> Option<(PathBuf, String)> {
+    for p in prefixes {
+        for (path, text) in notes.clone() {
+            if let Some(l) = text.lines().find(|l| l.contains(p.as_str()) && !lines::is_follow_up(l)) {
+                return Some((path.to_path_buf(), l.trim_end_matches('\r').to_string()));
+            }
+        }
+    }
+    None
+}
+
 fn short_name(s: &str) -> String {
     let first = s.split(',').next().unwrap_or(s).trim();
     match first.split_once('<') {
@@ -347,6 +402,18 @@ impl NotesApp {
         let me = self.machine.clone();
         let batch = std::mem::take(&mut self.mail.batch);
         let pending = std::mem::take(&mut self.mail.batch_tasks);
+        // De cada correo, cómo empiezan las líneas de los correos a los que responde.
+        let threads: HashMap<String, Vec<String>> = batch
+            .iter()
+            .filter_map(|(_, id)| {
+                let m = self.mail.store.mails.iter().find(|m| m.id == *id)?;
+                let prev: Vec<String> = thread_of(m, &self.mail.store.mails).into_iter().filter(|c| !c.noted.is_empty()).map(mail_prefix).collect();
+                (!prev.is_empty()).then(|| (id.clone(), prev))
+            })
+            .collect();
+        // Respuestas a correos ya anotados: (nota, línea del original, seguimiento, fecha, correo).
+        let mut replies: Vec<(PathBuf, String, String, String, String)> = Vec::new();
+        let root = self.vault.root.clone();
         for (key, id) in &batch {
             let Some(m) = self.mail.store.mails.iter_mut().find(|m| m.id == *id) else { continue };
             m.analyzed = true;
@@ -371,11 +438,25 @@ impl NotesApp {
             if relevant && m.noted.is_empty() && owners.get(&mail_key(m)).is_some_and(|o| *o != me) {
                 m.noted = "otro equipo".into();
             }
-            if relevant && m.noted.is_empty() && !m.summary.is_empty() {
-                let prefix = mail_prefix(m);
-                let line = format!("{prefix} {}", m.summary.replace('\n', " "));
-                prefixes.insert(m.id.clone(), prefix);
-                entries.push((m.workspace.clone(), line, m.id.clone()));
+            // Responde a un correo que ya está en las notas: va como su seguimiento («↳»).
+            let original = threads.get(&m.id).and_then(|prev| {
+                let open = std::iter::once((self.note.path.as_path(), self.note.text.as_str()));
+                let others = self.vault.notes_iter().filter(|n| n.path != self.note.path).map(|n| (n.path.as_path(), n.text.as_str()));
+                find_mail_line(open.chain(others), prev)
+            });
+            // (Una respuesta en un hilo anotado se anota aunque por sí sola no parezca importante.)
+            if (relevant || original.is_some()) && m.noted.is_empty() && !m.summary.is_empty() {
+                if let Some((path, line)) = original {
+                    let who = if m.sent { "Respondiste".to_string() } else { format!("Respuesta de {}", short_name(&m.from)) };
+                    let date = m.date.get(..10).filter(|d| agenda::is_date(d)).map_or_else(today, str::to_string);
+                    replies.push((path.clone(), line, format!("{who}: {}", m.summary.replace('\n', " ")), date, m.id.clone()));
+                    m.noted = path.strip_prefix(&root).unwrap_or(&path).with_extension("").to_string_lossy().replace('\\', "/");
+                } else {
+                    let prefix = mail_prefix(m);
+                    let line = format!("{prefix} {}", m.summary.replace('\n', " "));
+                    prefixes.insert(m.id.clone(), prefix);
+                    entries.push((m.workspace.clone(), line, m.id.clone()));
+                }
             }
             for k in &r.cumple {
                 if let Some((_, t)) = pending.iter().find(|(pk, _)| pk.eq_ignore_ascii_case(k.trim())) {
@@ -386,12 +467,46 @@ impl NotesApp {
                 }
             }
         }
-        if entries.is_empty() {
+        // Las respuestas: un seguimiento bajo la línea del correo original, donde esté.
+        let mut files: Vec<(PathBuf, Option<String>)> = Vec::new();
+        let mut details: Vec<String> = Vec::new();
+        let mut followed = 0;
+        for (path, line, follow, date, _) in &replies {
+            let open = *path == self.note.path;
+            let old = if open { self.note.text.clone() } else { vault::read_text(path).unwrap_or_default() };
+            let Some(idx) = old.split('\n').position(|l| l.trim_end_matches('\r') == line) else { continue };
+            let (new, _) = lines::add_follow_up(&old, idx, date, follow);
+            if self.analyzed.contains(&ai::fnv(&old)) {
+                self.analyzed.insert(ai::fnv(&new));
+                self.save_analyzed();
+            }
+            if open {
+                self.note.text = new;
+                self.note.dirty = true;
+                self.save();
+            } else if fs::write(path, &new).is_ok() {
+                if let Some(mt) = vault::modified(path) {
+                    self.vault.upsert(path.clone(), new, mt);
+                }
+            } else {
+                continue;
+            }
+            if !files.iter().any(|(p, _)| p == path) {
+                files.push((path.clone(), Some(old)));
+            }
+            followed += 1;
+            details.push(format!("↳ en «{}»: {}", vault::stem(path), follow.chars().take(200).collect::<String>()));
+            // Si es una tarea pendiente, ¿la respuesta dice que se terminó?
+            if lines::parse(line).check == Some(false) {
+                let target = super::tracking::Target::Line { note: path.clone(), id: lines::id_of(line), text: line.clone() };
+                self.check_done(target, super::tracking::line_title(line), follow.clone());
+            }
+        }
+        if entries.is_empty() && files.is_empty() {
             self.mail.store.save();
             return;
         }
         // Una línea por correo al final de la nota de hoy (la IA lleva cada una a su espacio).
-        let mut files: Vec<(PathBuf, Option<String>)> = Vec::new();
         for path in [self.today_path()] {
             let lines: Vec<&(String, String, String)> = entries.iter().collect();
             let open = path == self.note.path;
@@ -432,7 +547,9 @@ impl NotesApp {
             }
             // La IA la ordena como cualquier nota del día.
             self.touched.insert(path.clone());
-            files.push((path.clone(), before));
+            if !files.iter().any(|(p, _)| *p == path) {
+                files.push((path.clone(), before));
+            }
             let rel = self.rel(&path);
             for (_, _, id) in lines {
                 if let Some(m) = self.mail.store.mails.iter_mut().find(|m| m.id == *id) {
@@ -446,9 +563,11 @@ impl NotesApp {
         }
         let notes: Vec<String> = files.iter().map(|(p, _)| self.rel(p)).collect();
         self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), relinks: Vec::new() });
-        self.msg(format!("Correo · {} en la nota de hoy; la IA los ordena", plural(entries.len(), "correo anotado")));
-        let details: Vec<String> = entries.iter().map(|(_, l, _)| l.chars().take(220).collect()).collect();
-        let what = format!("Anotó {} en {}", plural(entries.len(), "correo"), notes.join(", "));
+        let replies_text = if followed > 0 { format!("{} como seguimiento del correo original", plural(followed, "respuesta")) } else { String::new() };
+        let new_text = if entries.is_empty() { String::new() } else { format!("{} en la nota de hoy; la IA los ordena", plural(entries.len(), "correo anotado")) };
+        self.msg(format!("Correo · {}", [new_text, replies_text].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")));
+        details.extend(entries.iter().map(|(_, l, _)| l.chars().take(220).collect::<String>()));
+        let what = format!("Anotó {} en {}", plural(entries.len() + followed, "correo"), notes.join(", "));
         self.log_ai(crate::activity::Kind::Correo, notes.first().map_or("", |s| s.as_str()), what, details, true);
     }
 
@@ -746,6 +865,59 @@ mod tests {
         assert!(app.agenda.tasks().iter().find(|t| t.id.as_deref() == Some("cic01")).unwrap().done);
         assert!(app.mail.open_checks().is_empty());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// La respuesta a un correo ya anotado va como seguimiento bajo la línea del original (donde
+    /// la haya llevado la IA), no como una línea nueva en la nota de hoy.
+    #[test]
+    fn replies_become_follow_ups_of_the_original() {
+        let dir = std::env::temp_dir().join(format!("nodex-correo-respuesta-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        fs::create_dir_all(dir.join("Docencia")).unwrap();
+        let taller = dir.join("Docencia").join("Taller.md");
+        fs::write(&taller, "Clases de taller\n- [ ] Correo de Félix Westermeier (28 sep): Horario de consultas. Pide un rato para consultas ^fx001 #taller\nOtra cosa\n").unwrap();
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut app = NotesApp::new(cfg, None, egui::Context::default());
+        app.ai = Err("sin IA".into());
+        let felix = "Félix Westermeier <felix@uni.cl>";
+        let original = Mail {
+            id: "jp:INBOX:1".into(),
+            from: felix.into(),
+            to: "jp@uni.cl".into(),
+            subject: "Horario de consultas".into(),
+            date: "2026-09-28 09:00".into(),
+            message_id: "abc@uni.cl".into(),
+            noted: format!("Diario/2026-09-28"),
+            analyzed: true,
+            ..Mail::default()
+        };
+        // Mi respuesta (con los encabezados) y otra de Félix que solo dice «RE:» en el asunto.
+        let mine = Mail { id: "jp:Sent:2".into(), sent: true, from: "jp@uni.cl".into(), to: felix.into(), subject: "Re: Horario de consultas".into(), date: "2026-09-28 11:00".into(), message_id: "def@uni.cl".into(), reply_to: vec!["abc@uni.cl".into()], ..Mail::default() };
+        let his = Mail { id: "jp:INBOX:3".into(), from: felix.into(), to: "jp@uni.cl".into(), subject: "RE: Horario de consultas".into(), date: "2026-09-28 12:00".into(), ..Mail::default() };
+        app.mail.store.mails = vec![original, mine, his];
+        app.mail.batch = vec![("c1".into(), "jp:Sent:2".into()), ("c2".into(), "jp:INBOX:3".into())];
+        let reply = r#"{"correos": [{"id": "c1", "resumen": "Le confirmé un espacio entre las 15:40 y las 16:20", "importante": true},
+            {"id": "c2", "resumen": "Félix agradece y vendrá a la oficina", "importante": false}]}"#;
+        app.apply_mail_results(mail_ai::parse_reply(reply).unwrap());
+        assert_eq!(
+            fs::read_to_string(&taller).unwrap(),
+            "Clases de taller\n- [ ] Correo de Félix Westermeier (28 sep): Horario de consultas. Pide un rato para consultas ^fx001 #taller\n  ↳ 2026-09-28: Respondiste: Le confirmé un espacio entre las 15:40 y las 16:20\n  ↳ 2026-09-28: Respuesta de Félix Westermeier: Félix agradece y vendrá a la oficina\nOtra cosa\n"
+        );
+        assert!(!dir.join("Diario").join(format!("{}.md", today())).exists(), "no se agregan líneas nuevas a la nota de hoy");
+        assert!(app.mail.store.mails[1..].iter().all(|m| m.noted == "Docencia/Taller"));
+        // Deshacer quita los seguimientos.
+        app.undo_ai();
+        assert!(!fs::read_to_string(&taller).unwrap().contains('↳'));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reply_subjects() {
+        assert_eq!(base_subject("RE: Re: Horario de consultas"), "horario de consultas");
+        assert_eq!(base_subject("RV: Fwd: Planos"), "planos");
+        assert!(is_reply_subject("Re: Planos") && !is_reply_subject("Planos"));
+        assert_eq!(addresses("Félix <felix@uni.cl>, ana@obra.cl"), vec!["felix@uni.cl", "ana@obra.cl"]);
     }
 
     /// Con el correo configurado en dos equipos, el mismo correo no se anota dos veces.

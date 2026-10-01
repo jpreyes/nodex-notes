@@ -578,6 +578,11 @@ impl Vault {
         self.notes.get(path)
     }
 
+    /// Las notas, sin ordenar.
+    pub fn notes_iter(&self) -> impl Iterator<Item = &Note> + Clone {
+        self.notes.values()
+    }
+
     pub fn all_notes(&self) -> Vec<&Note> {
         let mut v: Vec<&Note> = self.notes.values().collect();
         v.sort_by(|a, b| b.modified.cmp(&a.modified));
