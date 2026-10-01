@@ -91,6 +91,9 @@ pub(super) enum Change {
     Key(String),
     /// Tu cuenta.
     Login(super::account_ui::LoginAction),
+    /// Sincronizar las notas con la cuenta; copiarlas antes fuera de Dropbox/OneDrive.
+    Sync(bool),
+    CopyOutOfCloud,
     AccountSignOut,
     AccountSync,
     AccountKey(String),
@@ -116,7 +119,7 @@ fn short(s: &str, n: usize) -> String {
 }
 
 /// Interruptor redondo (estilo iOS/macOS).
-fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
+pub(super) fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
     let size = egui::vec2(38.0, 22.0);
     let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
     if response.clicked() {
@@ -138,7 +141,7 @@ fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
 }
 
 /// Fila de opción: título (y ayuda) a la izquierda, control a la derecha, línea abajo.
-fn row(ui: &mut Ui, title: &str, hint: &str, control: impl FnOnce(&mut Ui)) {
+pub(super) fn row(ui: &mut Ui, title: &str, hint: &str, control: impl FnOnce(&mut Ui)) {
     ui.add_space(10.0);
     // Primero el control (a la derecha); el texto usa solo el ancho que queda.
     ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 0.0), Layout::right_to_left(Align::Center), |ui| {
@@ -303,6 +306,8 @@ impl NotesApp {
                 self.save_config();
                 self.restart_ai();
             }
+            Change::Sync(on) => self.set_sync(on),
+            Change::CopyOutOfCloud => self.copy_out_of_cloud(),
             Change::Login(a) => {
                 s.login.code.clear();
                 self.account_login(a);
@@ -417,6 +422,8 @@ impl NotesApp {
             }
             ui.label(RichText::new(&self.cfg.cuenta).size(14.0));
         });
+        // Tus notas, sincronizadas con la cuenta.
+        self.sync_settings(ui, changes);
         // Qué IA se usa: la de Notas o la propia.
         let included = self.cfg.proveedor == "notas";
         row(ui, "La IA", if included { "La de Notas, incluida con tu cuenta" } else { "Tu propia clave (en Inteligencia artificial)" }, |ui| {

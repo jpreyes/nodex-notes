@@ -101,8 +101,18 @@ nodex-ia rechazar ana@correo.cl # no la aprueba
 (con las mismas variables de entorno que el servicio, como en el paso 6).
 
 Los datos están en `NOTAS_IA_DATA`: `usuarios.json` (códigos), `cuentas.json` (cuentas y
-sesiones), `config/` (la configuración cifrada de cada cuenta) y `uso/AAAA-MM.json` (uso de cada
-mes). Conviene respaldar esa carpeta.
+sesiones), `config/` (la configuración cifrada de cada cuenta), `uso/AAAA-MM.json` (uso de cada
+mes) y `sync/<cuenta>/` (las notas sincronizadas: `diario.jsonl`, una línea por cambio, y `blobs/`,
+el contenido de cada versión por su huella; nada se borra, es el historial). Conviene respaldar
+esa carpeta.
+
+## Sincronización de las notas
+
+La app sincroniza la carpeta de notas de cada cuenta (si la persona lo enciende): cada archivo
+tiene un número de versión; un cambio se acepta solo si parte de la versión vigente (si no, 409 y
+la app junta y reintenta). `GET /v1/sync/cambios?desde=N`, `GET /v1/sync/esperar?desde=N` (responde
+apenas hay algo nuevo, o a los 25 s), `GET /v1/sync/blob/<huella>`, `PUT` y `DELETE
+/v1/sync/archivo?ruta=…&base=N` (hasta 50 MB por archivo).
 
 ## Configuración
 
@@ -116,6 +126,7 @@ mes). Conviene respaldar esa carpeta.
 | `NOTAS_IA_CORREO_CLAVE` / `NOTAS_IA_CORREO_DE` | Envío de los códigos (Resend) | — |
 | `NOTAS_IA_CORREO_API` | API de correo (compatible con Resend) | `https://api.resend.com/emails` |
 | `NOTAS_IA_AVISAR` | Correo al que se avisa de cada cuenta nueva por aprobar | — |
+| `NOTAS_IA_SYNC_LIMITE` | Espacio por cuenta para sincronizar las notas (MB) | `2048` |
 | `NOTAS_IA_PRECIO_ENTRADA` / `_SALIDA` | USD por millón de tokens, para estimar el costo | `0.3` / `1.2` |
 | `NOTAS_IA_DATA` | Carpeta de datos | `datos` |
 | `NOTAS_IA_DIRECCION` / `NOTAS_IA_PUERTO` | Dónde escucha (detrás de Caddy) | `127.0.0.1` / `8080` |

@@ -233,6 +233,7 @@ impl NotesApp {
         self.restart_ai();
         self.acct = AccountState::default();
         self.ai_usage = None;
+        self.restart_sync();
         self.msg(format!("Saliste de la cuenta {who} en este equipo (tu configuración queda como está)"));
     }
 
@@ -289,6 +290,7 @@ impl NotesApp {
                     self.acct.info = Some(Ok(s.cuenta));
                     self.acct.info_at = Some(Instant::now());
                     self.account_sync_now();
+                    self.restart_sync();
                 }
                 // Espera aprobación: no es un error.
                 Err(e) => match e.strip_prefix(account::PENDING) {

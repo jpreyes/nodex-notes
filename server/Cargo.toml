@@ -1,6 +1,6 @@
 [package]
 name = "nodex-ia"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Servidor de la IA incluida de Notas: reenvía a la IA con la clave del servicio y mide el uso de cada persona"
 license = "MIT"

@@ -25,6 +25,7 @@ mod merge;
 mod organize;
 mod shared;
 mod spaces;
+mod sync;
 mod tags;
 mod todo;
 mod update;

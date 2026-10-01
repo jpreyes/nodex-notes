@@ -15,6 +15,7 @@
 //! una cuenta (ver `accounts`): se entra con el correo o con Microsoft y la sesión sirve de clave.
 
 pub mod accounts;
+pub mod sync;
 
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -52,6 +53,8 @@ pub struct Settings {
     pub graph: String,
     /// A quién avisar por correo cuando alguien crea una cuenta (para aprobarla).
     pub admin: String,
+    /// Espacio para sincronizar las notas de cada cuenta, en bytes.
+    pub sync_limit: u64,
 }
 
 impl Default for Settings {
@@ -71,6 +74,7 @@ impl Default for Settings {
             mail_from: String::new(),
             graph: "https://graph.microsoft.com/v1.0".into(),
             admin: String::new(),
+            sync_limit: 2048 * 1024 * 1024,
         }
     }
 }
@@ -97,6 +101,7 @@ impl Settings {
             mail_from: var("NOTAS_IA_CORREO_DE", "Notas <no-responder@notas.invalid>"),
             graph: var("NOTAS_IA_GRAPH", "https://graph.microsoft.com/v1.0"),
             admin: var("NOTAS_IA_AVISAR", ""),
+            sync_limit: var("NOTAS_IA_SYNC_LIMITE", "2048").parse::<u64>().unwrap_or(2048) * 1024 * 1024,
         }
     }
 }
@@ -240,6 +245,8 @@ pub struct AppState {
     pub store: Mutex<Store>,
     pub pending: Mutex<accounts::Pending>,
     pub http: reqwest::Client,
+    /// La sincronización de las notas de cada cuenta.
+    pub sync: sync::Hub,
 }
 
 pub(crate) fn error(status: StatusCode, message: &str) -> Response {
@@ -380,13 +387,20 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/cuenta", get(accounts::me))
         .route("/v1/cuenta/salir", post(accounts::sign_out))
         .route("/v1/cuenta/config", get(accounts::get_config).put(accounts::put_config))
+        .route("/v1/sync/cambios", get(sync::changes))
+        .route("/v1/sync/esperar", get(sync::wait))
+        .route("/v1/sync/blob/{hash}", get(sync::blob))
+        .route(
+            "/v1/sync/archivo",
+            axum::routing::put(sync::put).delete(sync::delete).layer(axum::extract::DefaultBodyLimit::max(sync::MAX_FILE + 1024)),
+        )
         .route("/salud", get(|| async { "ok" }))
         .with_state(state)
 }
 
 pub fn state(settings: Settings) -> Arc<AppState> {
     let store = Store::load(&settings.data);
-    Arc::new(AppState { settings, store: Mutex::new(store), pending: Mutex::new(accounts::Pending::default()), http: reqwest::Client::new() })
+    Arc::new(AppState { settings, store: Mutex::new(store), pending: Mutex::new(accounts::Pending::default()), http: reqwest::Client::new(), sync: sync::Hub::default() })
 }
 
 /// El uso del mes de cada persona, con su costo estimado (para `nodex-ia lista`).

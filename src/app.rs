@@ -46,6 +46,7 @@ mod recurring;
 mod rendimiento;
 mod settings;
 mod spaces_ui;
+mod sync_ui;
 mod tabs;
 mod tasks_sync;
 mod templates;
@@ -551,6 +552,8 @@ pub struct NotesApp {
     history: Option<history_ui::HistoryView>,
     /// El Bloc (texto libre).
     bloc: bloc::Bloc,
+    /// La sincronización propia (con la cuenta).
+    sync: sync_ui::SyncUi,
     /// «¿Qué se hizo?» (seguimiento) y los seguimientos de las tareas, guardados.
     follow_ask: Option<tracking::Ask>,
     follow_cache: Option<((u64, Option<SystemTime>), std::rc::Rc<tracking::FollowUps>)>,
@@ -834,6 +837,7 @@ impl NotesApp {
             link_pick_closed: None,
             history: None,
             bloc: bloc::Bloc::default(),
+            sync: sync_ui::SyncUi::default(),
             follow_ask: None,
             follow_cache: None,
             done_suggest: None,
@@ -880,6 +884,7 @@ impl NotesApp {
         app.activate_tab(active);
         app.focus_editor = app.view == View::Editor;
         app.take_update_news();
+        app.restart_sync();
         // Solo en compilaciones de prueba: abrir Preguntar con una pregunta (para capturas).
         #[cfg(debug_assertions)]
         if let Ok(q) = std::env::var("NODEX_DEMO_ASK") {
@@ -1000,6 +1005,7 @@ impl NotesApp {
         self.restart_gcal();
         self.todo = crate::todo::ToDo::start(self.vault.root.clone(), self.ctx.clone());
         self.todo_hash = 0;
+        self.restart_sync();
         let ws = self.vault.workspaces.first().cloned().unwrap_or_else(|| vault::DEFAULT_WORKSPACE.into());
         self.note.dirty = false;
         self.select_workspace(ws);
@@ -1354,6 +1360,7 @@ impl NotesApp {
         self.poll_ai_usage();
         self.poll_account();
         self.poll_update();
+        self.poll_sync();
         self.poll_done_checks();
         self.maybe_reconcile_tasks();
         let m = vault::modified(&self.note.path);
@@ -2625,6 +2632,8 @@ impl NotesApp {
             if let Some(a) = self.update_status(ui) {
                 action = Some(a);
             }
+            // La sincronización con la cuenta.
+            self.sync_status(ui);
             // Dropbox cerrado: se puede seguir trabajando, pero no se sincroniza.
             if self.dropbox.as_ref().is_some_and(|d| d.closed()) {
                 let text = RichText::new(format!("{} Dropbox no está abierto", icon::CLOUD_SLASH)).size(12.5).color(WARN);

@@ -121,6 +121,7 @@ En `%APPDATA%\nodex-notes\` (Windows), `~/Library/Application Support/nodex-note
 | `correos.json` | Los correos leídos y lo que la IA sacó de ellos. |
 | `google_token.json`, `microsoft_token.json` | Los permisos de Google Calendar y Microsoft To Do. |
 | `cuenta-sincronizada.json` | Cuándo cambió cada dato de la configuración que viaja con la cuenta. |
+| `sincronizacion-….json` | Con la sincronización propia: la versión de cada archivo de la carpeta que tiene este equipo (para saber qué subir, qué bajar y qué juntar). Se puede borrar: se rehace (juntando). |
 | `equipo.txt` | El identificador de este equipo. |
 | `ia-ultima.txt`, `ia-pregunta.txt` | El último intercambio con la IA, para diagnosticar. |
 | `actualizando.txt`, `novedades.txt` | Solo durante una actualización: la versión nueva espera a que la anterior termine de guardar, y después muestra qué trae. |

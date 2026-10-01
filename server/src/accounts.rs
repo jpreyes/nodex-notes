@@ -233,7 +233,7 @@ pub(crate) fn bearer(headers: &HeaderMap) -> String {
 }
 
 /// La cuenta de la sesión que viene en `Authorization`.
-async fn account_of(state: &AppState, headers: &HeaderMap) -> Result<Account, Response> {
+pub(crate) async fn account_of(state: &AppState, headers: &HeaderMap) -> Result<Account, Response> {
     let fp = fingerprint(&bearer(headers));
     let mut store = state.store.lock().await;
     store.refresh_accounts(&state.settings.data);

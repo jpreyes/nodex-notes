@@ -35,6 +35,8 @@ pub struct Config {
     pub cuenta: String,
     /// Buscar y bajar sola las versiones nuevas (se instalan con un clic en «Actualizar»).
     pub actualizar_sola: bool,
+    /// Sincronizar la carpeta de notas con la cuenta (sin Dropbox). Solo en este equipo.
+    pub sincronizar: bool,
     /// Se abrió la app por primera vez en este equipo (no había config.toml): se muestra el asistente.
     #[serde(skip)]
     pub first_run: bool,
@@ -76,6 +78,7 @@ impl Default for Config {
             servidor_ia: String::new(),
             cuenta: String::new(),
             actualizar_sola: true,
+            sincronizar: false,
             first_run: false,
         }
     }
@@ -172,7 +175,10 @@ fn render(c: &Config) -> String {
          correo_diario = {}\n\
          \n\
          # Buscar y bajar sola las versiones nuevas (se instalan cuando haces clic en «Actualizar»)\n\
-         actualizar_sola = {}\n",
+         actualizar_sola = {}\n\
+         \n\
+         # Sincronizar la carpeta de notas con tu cuenta (sin Dropbox)\n\
+         sincronizar = {}\n",
         q(&c.carpeta_notas.to_string_lossy()),
         q(&c.proveedor),
         q(&c.modelo),
@@ -187,6 +193,7 @@ fn render(c: &Config) -> String {
         c.correo_al_llegar,
         q(&c.correo_diario),
         c.actualizar_sola,
+        c.sincronizar,
     );
     main + &calendars
 }

@@ -1,6 +1,6 @@
 [package]
 name = "nodex-notes"
-version = "0.35.0"
+version = "0.36.0"
 edition = "2024"
 description = "Notas rápidas estilo Notepad con espacios de trabajo, reuniones e IA que organiza sola"
 license = "MIT"
@@ -29,7 +29,7 @@ imap = { version = "3.0.0-alpha.15", default-features = false }
 mail-parser = "0.11"
 notify = "8"
 png = "0.18"
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "form"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "form", "query"] }
 rfd = "0.17.2"
 rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
