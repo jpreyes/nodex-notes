@@ -26,10 +26,13 @@ mod shared;
 mod spaces;
 mod tags;
 mod todo;
+mod update;
 mod theme;
 mod vault;
 
 fn main() -> eframe::Result {
+    // Recién actualizada: la versión anterior termina de guardar antes de leer nada.
+    update::wait_for_previous();
     let (cfg, cfg_msg) = config::load();
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()

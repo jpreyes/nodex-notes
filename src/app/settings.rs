@@ -55,8 +55,6 @@ pub(super) struct Settings {
     mail_hour: String,
     test: Option<Receiver<Result<u128, String>>>,
     test_result: Option<Result<u128, String>>,
-    update: Option<Receiver<Result<Option<String>, String>>>,
-    update_result: Option<Result<Option<String>, String>>,
 }
 
 fn models_for(provider: &str) -> &'static [&'static str] {
@@ -85,14 +83,12 @@ impl Settings {
             mail_hour: cfg.correo_diario.clone(),
             test: None,
             test_result: None,
-            update: None,
-            update_result: None,
         }
     }
 }
 
 /// Cambios pedidos desde la ventana; se aplican después de dibujarla.
-enum Change {
+pub(super) enum Change {
     Folder(PathBuf),
     Provider(String),
     Model(String),
@@ -113,36 +109,9 @@ enum Change {
     MailArrive(bool),
     MailDaily(String),
     TestConnection,
-    CheckUpdate,
+    UpdateAuto(bool),
     Do(Action),
     OpenUrl(&'static str),
-}
-
-/// ¿Hay una versión publicada más nueva que esta? Devuelve la etiqueta si la hay.
-fn check_update(ctx: egui::Context) -> Receiver<Result<Option<String>, String>> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let result = (|| -> Result<Option<String>, String> {
-            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
-            let v: serde_json::Value = rt.block_on(async {
-                reqwest::Client::new()
-                    .get("https://api.github.com/repos/jpreyes/nodex-notes/releases/latest")
-                    .header("User-Agent", "nodex-notes")
-                    .send()
-                    .await
-                    .map_err(|e| format!("sin conexión ({e})"))?
-                    .json()
-                    .await
-                    .map_err(|e| e.to_string())
-            })?;
-            let tag = v["tag_name"].as_str().ok_or("GitHub no respondió la versión")?.to_string();
-            let num = |s: &str| s.trim_start_matches('v').split('.').map(|p| p.parse::<u32>().unwrap_or(0)).collect::<Vec<_>>();
-            Ok((num(&tag) > num(env!("CARGO_PKG_VERSION"))).then_some(tag))
-        })();
-        let _ = tx.send(result);
-        ctx.request_repaint();
-    });
-    rx
 }
 
 // ---------- Widgets ----------
@@ -199,7 +168,7 @@ fn heading(ui: &mut Ui, title: &str, subtitle: &str) {
     ui.separator();
 }
 
-fn chip(ui: &mut Ui, text: &str, ok: bool) {
+pub(super) fn chip(ui: &mut Ui, text: &str, ok: bool) {
     let (fg, bg) = if ok {
         (SUCCESS, Color32::from_rgb(230, 244, 231))
     } else {
@@ -236,10 +205,6 @@ impl NotesApp {
         if let Some(r) = s.test.as_ref().and_then(|rx| rx.try_recv().ok()) {
             s.test_result = Some(r);
             s.test = None;
-        }
-        if let Some(r) = s.update.as_ref().and_then(|rx| rx.try_recv().ok()) {
-            s.update_result = Some(r);
-            s.update = None;
         }
 
         let mut changes: Vec<Change> = Vec::new();
@@ -294,7 +259,7 @@ impl NotesApp {
                                 Section::Tasks => self.section_tasks(ui, &mut changes),
                                 Section::Mail => self.section_mail(ui, &mut s, &mut changes),
                                 Section::Shortcuts => section_shortcuts(ui),
-                                Section::About => section_about(ui, &mut s, &mut changes),
+                                Section::About => self.section_about(ui, &mut changes),
                             });
                         });
                     });
@@ -410,9 +375,12 @@ impl NotesApp {
                 s.test_result = None;
                 s.test = Some(ai::test_connection(&self.cfg, self.ctx.clone()));
             }
-            Change::CheckUpdate => {
-                s.update_result = None;
-                s.update = Some(check_update(self.ctx.clone()));
+            Change::UpdateAuto(on) => {
+                self.cfg.actualizar_sola = on;
+                self.save_config();
+                if on {
+                    self.check_update(false);
+                }
             }
             Change::Do(a) => self.apply(a),
             Change::OpenUrl(u) => gcal::open_browser(u),
@@ -978,35 +946,26 @@ fn section_shortcuts(ui: &mut Ui) {
     });
 }
 
-fn section_about(ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {
-    heading(ui, "Acerca de", "Notas rápidas con espacios de trabajo, reuniones e IA que organiza sola.");
-    ui.add_space(12.0);
-    ui.label(RichText::new(format!("Notas {}", env!("CARGO_PKG_VERSION"))).font(theme::bold(17.0)));
-    ui.label(RichText::new("Código abierto (MIT) · hecho en Rust con egui").size(12.5).color(MUTED));
-    ui.add_space(10.0);
-    if ui.link(RichText::new(format!("{}  {REPO}", icon::GITHUB_LOGO)).size(13.0)).clicked() {
-        changes.push(Change::OpenUrl(REPO));
-    }
-    ui.add_space(14.0);
-    ui.horizontal(|ui| {
-        let b = egui::Button::new(format!("{}  Buscar actualizaciones", icon::ARROW_CLOCKWISE));
-        if ui.add_enabled(s.update.is_none(), b).clicked() {
-            changes.push(Change::CheckUpdate);
-        }
+impl NotesApp {
+    fn section_about(&self, ui: &mut Ui, changes: &mut Vec<Change>) {
+        heading(ui, "Acerca de", "Notas rápidas con espacios de trabajo, reuniones e IA que organiza sola.");
+        ui.add_space(12.0);
+        ui.label(RichText::new(format!("Notas {}", env!("CARGO_PKG_VERSION"))).font(theme::bold(17.0)));
+        ui.label(RichText::new("Código abierto (MIT) · hecho en Rust con egui").size(12.5).color(MUTED));
         ui.add_space(10.0);
-        match (&s.update, &s.update_result) {
-            (Some(_), _) => {
-                ui.add(egui::Spinner::new().size(14.0));
-            }
-            (None, Some(Ok(None))) => chip(ui, &format!("{} Tienes la última versión", icon::CHECK_CIRCLE), true),
-            (None, Some(Ok(Some(tag)))) => {
-                ui.label(RichText::new(format!("Hay una versión nueva: {tag}")).size(13.0).color(ACCENT));
-                if ui.link("Descargar").clicked() {
-                    changes.push(Change::OpenUrl("https://github.com/jpreyes/nodex-notes/releases/latest"));
-                }
-            }
-            (None, Some(Err(e))) => chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false),
-            (None, None) => {}
+        if ui.link(RichText::new(format!("{}  {REPO}", icon::GITHUB_LOGO)).size(13.0)).clicked() {
+            changes.push(Change::OpenUrl(REPO));
         }
-    });
+        ui.add_space(14.0);
+        ui.separator();
+        ui.add_space(4.0);
+        row(ui, "Actualizar sola", "Busca y baja las versiones nuevas; se instalan cuando haces clic en «Actualizar», abajo", |ui| {
+            let mut on = self.cfg.actualizar_sola;
+            if toggle(ui, &mut on).changed() {
+                changes.push(Change::UpdateAuto(on));
+            }
+        });
+        ui.add_space(6.0);
+        self.update_settings(ui, changes);
+    }
 }

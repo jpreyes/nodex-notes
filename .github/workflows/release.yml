@@ -21,9 +21,11 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
+      # El texto de la versión («qué hay de nuevo») es el mensaje de la etiqueta: la app lo
+      # muestra al actualizarse. Se crea con: git tag -a vX.Y.Z -F novedades.txt
       - name: Crear release (borrador)
         run: |
-          gh release create "$TAG" --draft --repo "$GITHUB_REPOSITORY" --title "Notas $TAG" --notes "Descargas para Windows, macOS y Linux. Instrucciones en el README."
+          gh release create "$TAG" --draft --repo "$GITHUB_REPOSITORY" --title "Notas $TAG" --notes-from-tag
 
   build:
     needs: create

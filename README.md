@@ -22,6 +22,8 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 - **Debian / Ubuntu:** `sudo apt install ./Notas-linux-x64.deb` (queda en el menú de aplicaciones como "Notas").
 - **Otras distribuciones Linux:** `tar -xzf Notas-linux-x64.tar.gz && ./nodex-notes`
 
+**Actualizar:** se instala una sola vez. Después, la app busca y baja sola las versiones nuevas (revisa que lleguen enteras) y abajo aparece **Actualizar a la X**: un clic, Notas se cierra y se abre con la versión nueva, sin perder nada, y muestra qué trae. Con el `.msi`, Windows pide permiso; con el `.deb`, la contraseña. Se puede apagar en Configuración → Acerca de («Actualizar sola»).
+
 ## Uso
 
 - **La barra izquierda** tiene seis accesos, cada uno con su nombre: Inicio, Reunión, Tareas, Agenda, Correo e IA (abajo, la carpeta de notas y los Ajustes).
@@ -99,7 +101,7 @@ Cuando la IA cambia algo por su cuenta (ordena una nota, anota correos), aparece
 
 ## Configuración
 
-Todo se configura desde la ventana **Configuración** (botón ⚙ abajo a la izquierda, o **Ctrl+,**): carpeta de notas, proveedor y modelo de IA, clave API, prueba de conexión, Google Calendar y búsqueda de actualizaciones. Cada cambio se guarda y se aplica al instante.
+Todo se configura desde la ventana **Configuración** (botón ⚙ abajo a la izquierda, o **Ctrl+,**): carpeta de notas, proveedor y modelo de IA, clave API, prueba de conexión, Google Calendar y actualizaciones. Cada cambio se guarda y se aplica al instante.
 
 Por debajo se guarda en un archivo de texto que también se puede editar a mano:
 

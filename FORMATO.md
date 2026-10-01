@@ -111,9 +111,11 @@ En `%APPDATA%\nodex-notes\` (Windows), `~/Library/Application Support/nodex-note
 | `cuenta-sincronizada.json` | Cuándo cambió cada dato de la configuración que viaja con la cuenta. |
 | `equipo.txt` | El identificador de este equipo. |
 | `ia-ultima.txt`, `ia-pregunta.txt` | El último intercambio con la IA, para diagnosticar. |
+| `actualizando.txt`, `novedades.txt` | Solo durante una actualización: la versión nueva espera a que la anterior termine de guardar, y después muestra qué trae. |
 
 Además, una copia rápida de las notas para abrir al instante (`notas-….cache`) en la carpeta
 local del sistema (`%LOCALAPPDATA%\nodex-notes\` en Windows). Se puede borrar: se vuelve a crear.
+Ahí también, en `actualizacion/`, se baja la versión nueva hasta instalarla.
 
 ## Llevarse las notas
 

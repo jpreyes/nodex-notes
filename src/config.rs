@@ -33,6 +33,8 @@ pub struct Config {
     pub servidor_ia: String,
     /// El correo de tu cuenta de Notas, si entraste en este equipo.
     pub cuenta: String,
+    /// Buscar y bajar sola las versiones nuevas (se instalan con un clic en «Actualizar»).
+    pub actualizar_sola: bool,
     /// Se abrió la app por primera vez en este equipo (no había config.toml): se muestra el asistente.
     #[serde(skip)]
     pub first_run: bool,
@@ -73,6 +75,7 @@ impl Default for Config {
             codigo_ia: String::new(),
             servidor_ia: String::new(),
             cuenta: String::new(),
+            actualizar_sola: true,
             first_run: false,
         }
     }
@@ -166,7 +169,10 @@ fn render(c: &Config) -> String {
          \n\
          # Correo: revisar al llegar un correo nuevo, y una vez al día a esta hora (\"\" = no)\n\
          correo_al_llegar = {}\n\
-         correo_diario = {}\n",
+         correo_diario = {}\n\
+         \n\
+         # Buscar y bajar sola las versiones nuevas (se instalan cuando haces clic en «Actualizar»)\n\
+         actualizar_sola = {}\n",
         q(&c.carpeta_notas.to_string_lossy()),
         q(&c.proveedor),
         q(&c.modelo),
@@ -180,6 +186,7 @@ fn render(c: &Config) -> String {
         q(&c.google_client_secret),
         c.correo_al_llegar,
         q(&c.correo_diario),
+        c.actualizar_sola,
     );
     main + &calendars
 }

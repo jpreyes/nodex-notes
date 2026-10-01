@@ -50,6 +50,7 @@ mod trash_view;
 mod two_devices_tests;
 mod today;
 mod todo_ui;
+mod update_ui;
 mod week;
 use settings::Section;
 
@@ -345,6 +346,9 @@ enum Action {
     CloseMeeting,
     Organize,
     Undo,
+    /// Buscar una versión nueva / instalar la que ya se bajó.
+    CheckUpdate,
+    ApplyUpdate,
     GoogleConnect,
     GoogleSync,
     GoogleDisconnect,
@@ -524,6 +528,8 @@ pub struct NotesApp {
     ai_error: Option<String>,
     /// Aviso de lo que la IA acaba de hacer sola.
     toast: Option<ai_view::Toast>,
+    /// Versiones nuevas de la app.
+    updater: update_ui::Updater,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -792,6 +798,7 @@ impl NotesApp {
             undo_entry: None,
             ai_error: None,
             toast: None,
+            updater: update_ui::Updater::default(),
         };
         // Pestañas de la sesión anterior (o la nota que estaba abierta).
         let decoded: Vec<tabs::Tab> = estado_tabs.iter().filter_map(|t| tabs::decode(t, &app.vault.root)).collect();
@@ -831,6 +838,7 @@ impl NotesApp {
         let active = app.tabs.active;
         app.activate_tab(active);
         app.focus_editor = app.view == View::Editor;
+        app.take_update_news();
         // Solo en compilaciones de prueba: abrir Preguntar con una pregunta (para capturas).
         #[cfg(debug_assertions)]
         if let Ok(q) = std::env::var("NODEX_DEMO_ASK") {
@@ -847,8 +855,8 @@ impl NotesApp {
             app.view = View::Ai;
         }
         #[cfg(debug_assertions)]
-        if std::env::var("NODEX_DEMO_SETTINGS").is_ok() {
-            app.open_settings(Section::Tasks);
+        if let Ok(s) = std::env::var("NODEX_DEMO_SETTINGS") {
+            app.open_settings(if s == "acerca" { Section::About } else { Section::Tasks });
         }
         #[cfg(debug_assertions)]
         if std::env::var("NODEX_DEMO_TOAST").is_ok() {
@@ -1268,6 +1276,7 @@ impl NotesApp {
         self.maybe_create_recurring();
         self.poll_ai_usage();
         self.poll_account();
+        self.poll_update();
         self.maybe_reconcile_tasks();
         let m = vault::modified(&self.note.path);
         if m.is_none() || !self.note.changed_on_disk() {
@@ -1989,6 +1998,8 @@ impl NotesApp {
             Action::CloseMeeting => self.close_meeting(Local::now()),
             Action::Organize => self.start_organize(),
             Action::Undo => self.undo_ai(),
+            Action::CheckUpdate => self.check_update(true),
+            Action::ApplyUpdate => self.apply_update(),
             Action::GoogleConnect => match &mut self.gcal {
                 Some(g) => {
                     g.connect();
@@ -2471,6 +2482,10 @@ impl NotesApp {
                 }
                 ui.add_space(12.0);
             }
+            // Versión nueva lista para instalar.
+            if let Some(a) = self.update_status(ui) {
+                action = Some(a);
+            }
             // Dropbox cerrado: se puede seguir trabajando, pero no se sincroniza.
             if self.dropbox.as_ref().is_some_and(|d| d.closed()) {
                 let text = RichText::new(format!("{} Dropbox no está abierto", icon::CLOUD_SLASH)).size(12.5).color(WARN);
@@ -2938,6 +2953,8 @@ impl eframe::App for NotesApp {
         self.save();
         self.save_estado();
         self.vault.save_cache_now();
+        // Si se está actualizando, la versión nueva esperaba esto para abrir.
+        crate::update::finished_closing();
     }
 }
 
@@ -3032,6 +3049,7 @@ impl NotesApp {
         self.recurring_window(&ctx);
         self.onboarding_window(&ctx);
         self.reject_window(&ctx);
+        self.update_news_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {
             self.apply(a);
         }
