@@ -1,4 +1,5 @@
-//! Reuniones y notas recurrentes: «Reunión de equipo, todos los lunes a las 9:00».
+//! Reuniones y notas recurrentes: «Reunión de equipo, todos los lunes a las 9:00», «cada dos
+//! semanas, los jueves», «el día 5 de cada mes» o «el primer lunes de cada mes».
 //!
 //! A esa hora (con la app abierta ese día) se crea sola su nota del día, con los acuerdos que
 //! quedaron pendientes de la anterior al comienzo (líneas «↻ …», que la IA no vuelve a
@@ -27,32 +28,84 @@ pub(super) struct Recurring {
     /// Último día en que se creó, y su nota (relativa, sin ".md").
     pub ultima: String,
     pub ultima_nota: String,
+    /// Cada cuánto: "" o "semanal" (los `dias` de cada semana), "quincenal" (los `dias`, una semana
+    /// sí y otra no, contando desde `desde`), "mensual-dia" (el día `dia_mes` de cada mes; si el mes
+    /// es más corto, el último) o "mensual-semana" (el `semana_mes`-ésimo `dias[0]` del mes; 5 = el
+    /// último).
+    pub frecuencia: String,
+    pub desde: String,
+    pub dia_mes: u32,
+    pub semana_mes: u32,
+}
+
+/// Cada cuánto se repite (en el formulario).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(super) enum Freq {
+    Weekly,
+    Biweekly,
+    MonthDay,
+    MonthWeekday,
+}
+
+const ORDINALES: [&str; 5] = ["primer", "segundo", "tercer", "cuarto", "último"];
+
+/// El último día del mes de `d`.
+fn last_day(d: NaiveDate) -> u32 {
+    let (y, m) = if d.month() == 12 { (d.year() + 1, 1) } else { (d.year(), d.month() + 1) };
+    NaiveDate::from_ymd_opt(y, m, 1).map_or(28, |n| n.pred_opt().map_or(28, |p| p.day()))
 }
 
 impl Recurring {
-    /// "todos los lunes y jueves a las 9:00", "todos los días a las 8:30"
+    /// "todos los lunes y jueves a las 9:00", "cada dos semanas, los jueves a las 9:00",
+    /// "el día 5 de cada mes a las 9:00", "el primer lunes de cada mes a las 9:00"
     pub(super) fn describe(&self) -> String {
         let mut d = self.dias.clone();
         d.sort();
         d.dedup();
-        let days = match d.len() {
-            7 => "todos los días".to_string(),
-            5 if d == [0, 1, 2, 3, 4] => "de lunes a viernes".to_string(),
-            _ => {
-                let names: Vec<String> = d.iter().filter_map(|i| DIAS.get(*i as usize)).map(|n| if n.ends_with('s') { n.to_string() } else { format!("{n}s") }).collect();
-                match names.split_last() {
-                    Some((last, rest)) if !rest.is_empty() => format!("todos los {} y {last}", rest.join(", ")),
-                    Some((last, _)) => format!("todos los {last}"),
-                    None => "ningún día".to_string(),
-                }
+        let names: Vec<String> = d.iter().filter_map(|i| DIAS.get(*i as usize)).map(|n| if n.ends_with('s') { n.to_string() } else { format!("{n}s") }).collect();
+        let listed = match names.split_last() {
+            Some((last, rest)) if !rest.is_empty() => format!("los {} y {last}", rest.join(", ")),
+            Some((last, _)) => format!("los {last}"),
+            None => "ningún día".to_string(),
+        };
+        let days = match self.frecuencia.as_str() {
+            "quincenal" => format!("cada dos semanas, {listed}"),
+            "mensual-dia" => format!("el día {} de cada mes", self.dia_mes),
+            "mensual-semana" => {
+                let which = ORDINALES[(self.semana_mes.clamp(1, 5) - 1) as usize];
+                format!("el {which} {} de cada mes", d.first().and_then(|i| DIAS.get(*i as usize)).unwrap_or(&"lunes"))
             }
+            _ => match d.len() {
+                7 => "todos los días".to_string(),
+                5 if d == [0, 1, 2, 3, 4] => "de lunes a viernes".to_string(),
+                _ => format!("todos {listed}"),
+            },
         };
         format!("{days} a las {}", self.hora)
     }
 
     /// ¿Toca este día?
     fn on(&self, day: NaiveDate) -> bool {
-        self.dias.contains(&day.weekday().num_days_from_monday())
+        let wd = day.weekday().num_days_from_monday();
+        match self.frecuencia.as_str() {
+            "quincenal" => {
+                let Ok(start) = NaiveDate::parse_from_str(&self.desde, "%Y-%m-%d") else { return self.dias.contains(&wd) };
+                let monday = |d: NaiveDate| d - chrono::Duration::days(d.weekday().num_days_from_monday() as i64);
+                day >= start && self.dias.contains(&wd) && ((monday(day) - monday(start)).num_days() / 7) % 2 == 0
+            }
+            "mensual-dia" => self.dia_mes > 0 && day.day() == self.dia_mes.min(last_day(day)),
+            "mensual-semana" => {
+                if self.dias.first() != Some(&wd) {
+                    return false;
+                }
+                if self.semana_mes >= 5 {
+                    day.day() + 7 > last_day(day)
+                } else {
+                    (day.day() - 1) / 7 + 1 == self.semana_mes
+                }
+            }
+            _ => self.dias.contains(&wd),
+        }
     }
 }
 
@@ -67,6 +120,25 @@ pub(super) struct Form {
     pub dias: [bool; 7],
     pub hora: String,
     pub reunion: bool,
+    pub freq: Freq,
+    /// Día del mes (texto, mientras se escribe) y cuál semana del mes (1 a 5; 5 = la última).
+    pub month_day: String,
+    pub nth: u32,
+}
+
+impl Form {
+    pub(super) fn new(espacio: String) -> Form {
+        Form { titulo: String::new(), espacio, dias: [false; 7], hora: "09:00".into(), reunion: true, freq: Freq::Weekly, month_day: "1".into(), nth: 1 }
+    }
+
+    /// ¿Está todo lo necesario?
+    fn complete(&self) -> bool {
+        let days = match self.freq {
+            Freq::MonthDay => self.month_day.trim().parse::<u32>().is_ok_and(|d| (1..=31).contains(&d)),
+            _ => self.dias.iter().any(|d| *d),
+        };
+        !self.titulo.trim().is_empty() && days && agenda::is_time(self.hora.trim())
+    }
 }
 
 impl NotesApp {
@@ -89,14 +161,34 @@ impl NotesApp {
 
     pub(super) fn add_recurring(&mut self, f: Form) {
         let titulo = vault::sanitize(f.titulo.trim());
-        let dias: Vec<u32> = (0..7).filter(|i| f.dias[*i as usize]).collect();
+        let mut dias: Vec<u32> = (0..7).filter(|i| f.dias[*i as usize]).collect();
         let hora = f.hora.trim().to_string();
-        if f.titulo.trim().is_empty() || dias.is_empty() || !agenda::is_time(&hora) {
-            self.msg("Falta el nombre, algún día o la hora (HH:MM)");
+        if !f.complete() {
+            self.msg("Falta el nombre, el día o la hora (HH:MM)");
             return;
         }
+        let frecuencia = match f.freq {
+            Freq::Weekly => "semanal",
+            Freq::Biweekly => "quincenal",
+            Freq::MonthDay => "mensual-dia",
+            Freq::MonthWeekday => "mensual-semana",
+        };
+        if f.freq == Freq::MonthWeekday {
+            dias.truncate(1); // un solo día de la semana
+        }
         let mut s = self.recurring();
-        let r = Recurring { titulo: titulo.clone(), espacio: f.espacio, dias, hora, reunion: f.reunion, ..Default::default() };
+        let r = Recurring {
+            titulo: titulo.clone(),
+            espacio: f.espacio,
+            dias,
+            hora,
+            reunion: f.reunion,
+            frecuencia: frecuencia.into(),
+            desde: today(),
+            dia_mes: f.month_day.trim().parse().unwrap_or(1),
+            semana_mes: f.nth.clamp(1, 5),
+            ..Default::default()
+        };
         let what = r.describe();
         s.insert(new_task_id(), r);
         self.save_recurring(&s);
@@ -297,8 +389,45 @@ impl NotesApp {
                 });
             });
             ui.horizontal(|ui| {
-                for (i, d) in DIAS_CORTOS.iter().enumerate() {
-                    ui.toggle_value(&mut form.dias[i], *d);
+                ui.label("Cada");
+                let label = |f: Freq| match f {
+                    Freq::Weekly => "semana",
+                    Freq::Biweekly => "dos semanas",
+                    Freq::MonthDay => "mes (un día del mes)",
+                    Freq::MonthWeekday => "mes (un día de la semana)",
+                };
+                egui::ComboBox::from_id_salt("recurrente-cada").selected_text(label(form.freq)).show_ui(ui, |ui| {
+                    for f in [Freq::Weekly, Freq::Biweekly, Freq::MonthDay, Freq::MonthWeekday] {
+                        ui.selectable_value(&mut form.freq, f, label(f));
+                    }
+                });
+            });
+            ui.horizontal(|ui| {
+                match form.freq {
+                    Freq::MonthDay => {
+                        ui.label("el día");
+                        ui.add(egui::TextEdit::singleline(&mut form.month_day).hint_text("5").desired_width(32.0));
+                    }
+                    Freq::MonthWeekday => {
+                        ui.label("el");
+                        egui::ComboBox::from_id_salt("recurrente-semana").selected_text(ORDINALES[(form.nth.clamp(1, 5) - 1) as usize]).width(80.0).show_ui(ui, |ui| {
+                            for (i, o) in ORDINALES.iter().enumerate() {
+                                ui.selectable_value(&mut form.nth, i as u32 + 1, *o);
+                            }
+                        });
+                        // Un solo día de la semana.
+                        for (i, d) in DIAS_CORTOS.iter().enumerate() {
+                            if ui.selectable_label(form.dias[i], *d).clicked() {
+                                form.dias = [false; 7];
+                                form.dias[i] = true;
+                            }
+                        }
+                    }
+                    _ => {
+                        for (i, d) in DIAS_CORTOS.iter().enumerate() {
+                            ui.toggle_value(&mut form.dias[i], *d);
+                        }
+                    }
                 }
                 ui.add_space(8.0);
                 ui.label("a las");
@@ -306,7 +435,7 @@ impl NotesApp {
             });
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                let ok = !form.titulo.trim().is_empty() && form.dias.iter().any(|d| *d) && agenda::is_time(form.hora.trim());
+                let ok = form.complete();
                 if ui.add_enabled(ok, egui::Button::new(RichText::new("Agregar").color(Color32::WHITE)).fill(ACCENT)).clicked() {
                     add = true;
                 }
@@ -325,7 +454,7 @@ impl NotesApp {
             if let Some(f) = self.recurring_form.clone() {
                 let ws = f.espacio.clone();
                 self.add_recurring(f);
-                self.recurring_form = Some(Form { titulo: String::new(), espacio: ws, dias: [false; 7], hora: "09:00".into(), reunion: true });
+                self.recurring_form = Some(Form::new(ws));
             }
         }
         if close {
@@ -335,7 +464,7 @@ impl NotesApp {
 
     /// Abre la ventana de recurrentes.
     pub(super) fn open_recurring(&mut self) {
-        self.recurring_form = Some(Form { titulo: String::new(), espacio: self.ws.clone(), dias: [false; 7], hora: "09:00".into(), reunion: true });
+        self.recurring_form = Some(Form::new(self.ws.clone()));
     }
 }
 
@@ -350,6 +479,30 @@ mod tests {
         assert_eq!(r(vec![0, 3]).describe(), "todos los lunes y jueves a las 09:00");
         assert_eq!(r(vec![0, 1, 2, 3, 4]).describe(), "de lunes a viernes a las 09:00");
         assert_eq!(r((0..7).collect()).describe(), "todos los días a las 09:00");
+    }
+
+    /// Cada dos semanas, un día de cada mes, o el n-ésimo día de la semana del mes.
+    #[test]
+    fn biweekly_and_monthly() {
+        let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        // Cada dos semanas los jueves, desde el miércoles 30 sep 2026.
+        let bi = Recurring { dias: vec![3], hora: "09:00".into(), frecuencia: "quincenal".into(), desde: "2026-09-30".into(), ..Default::default() };
+        assert!(bi.on(d("2026-10-01")) && !bi.on(d("2026-10-08")) && bi.on(d("2026-10-15")) && !bi.on(d("2026-09-24")));
+        assert_eq!(bi.describe(), "cada dos semanas, los jueves a las 09:00");
+        // El día 31 de cada mes: en febrero, el último día.
+        let m = Recurring { hora: "09:00".into(), frecuencia: "mensual-dia".into(), dia_mes: 31, ..Default::default() };
+        assert!(m.on(d("2026-10-31")) && m.on(d("2027-02-28")) && !m.on(d("2026-10-30")));
+        assert_eq!(m.describe(), "el día 31 de cada mes a las 09:00");
+        // El primer lunes y el último viernes.
+        let first = Recurring { dias: vec![0], hora: "09:00".into(), frecuencia: "mensual-semana".into(), semana_mes: 1, ..Default::default() };
+        assert!(first.on(d("2026-10-05")) && !first.on(d("2026-10-12")));
+        assert_eq!(first.describe(), "el primer lunes de cada mes a las 09:00");
+        let last = Recurring { dias: vec![4], hora: "09:00".into(), frecuencia: "mensual-semana".into(), semana_mes: 5, ..Default::default() };
+        assert!(last.on(d("2026-10-30")) && !last.on(d("2026-10-23")));
+        assert_eq!(last.describe(), "el último viernes de cada mes a las 09:00");
+        // Las de antes (sin frecuencia) siguen siendo semanales.
+        let old = Recurring { dias: vec![0], hora: "09:00".into(), ..Default::default() };
+        assert!(old.on(d("2026-10-05")));
     }
 
     /// Se crea sola a su hora, con los acuerdos pendientes de la anterior; «Tomar notas» la
@@ -368,7 +521,7 @@ mod tests {
         fs::write(dir.join("tareas.txt"), format!("2026-09-28 Enviar planos @Juan +Obra due:2026-10-02 nota:{} id:a1\n", agenda::encode_note(prev))).unwrap();
 
         // Todos los días a las 00:00, para que toque hoy y ya sea la hora.
-        app.add_recurring(Form { titulo: "Reunión de equipo".into(), espacio: "Obra".into(), dias: [true; 7], hora: "00:00".into(), reunion: true });
+        app.add_recurring(Form { titulo: "Reunión de equipo".into(), espacio: "Obra".into(), dias: [true; 7], hora: "00:00".into(), ..Form::new(String::new()) });
         let mut s = app.recurring();
         let id = s.keys().next().unwrap().clone();
         s.get_mut(&id).unwrap().ultima_nota = prev.into();

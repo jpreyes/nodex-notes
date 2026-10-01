@@ -36,6 +36,51 @@ pub(super) fn resolve(note: &Path, rel: &str) -> PathBuf {
     out
 }
 
+/// ¿Está apretada la tecla V? (Windows, Mac y Linux con X11; en Wayland no se puede saber:
+/// ahí se pega con clic derecho → «Pegar imagen del portapapeles».)
+#[cfg(windows)]
+fn v_key_down() -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_V};
+    unsafe { GetAsyncKeyState(VK_V as i32) < 0 }
+}
+
+#[cfg(target_os = "macos")]
+fn v_key_down() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGEventSourceKeyState(state: i32, key: u16) -> bool;
+    }
+    // kCGEventSourceStateCombinedSessionState = 0; la V es la tecla 9 (kVK_ANSI_V).
+    unsafe { CGEventSourceKeyState(0, 0x09) }
+}
+
+#[cfg(target_os = "linux")]
+fn v_key_down() -> bool {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::ConnectionExt;
+    use x11rb::rust_connection::RustConnection;
+    // Una conexión con X11 (la primera vez) y el código de la tecla de la «v».
+    static X: std::sync::OnceLock<Option<(RustConnection, u8)>> = std::sync::OnceLock::new();
+    let Some((conn, code)) = X.get_or_init(|| {
+        let (conn, _) = x11rb::connect(None).ok()?;
+        let (min, max) = (conn.setup().min_keycode, conn.setup().max_keycode);
+        let map = conn.get_keyboard_mapping(min, max - min + 1).ok()?.reply().ok()?;
+        let per = map.keysyms_per_keycode.max(1) as usize;
+        // XK_v = 0x76, XK_V = 0x56
+        let i = map.keysyms.chunks(per).position(|k| k.contains(&0x76) || k.contains(&0x56))?;
+        Some((conn, min + i as u8))
+    }) else {
+        return false;
+    };
+    let Ok(Ok(keys)) = conn.query_keymap().map(|c| c.reply()) else { return false };
+    keys.keys.get(*code as usize / 8).is_some_and(|b| b & (1 << (code % 8)) != 0)
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+fn v_key_down() -> bool {
+    false
+}
+
 fn decode_png(bytes: &[u8]) -> Option<egui::ColorImage> {
     let mut dec = png::Decoder::new(std::io::Cursor::new(bytes));
     dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
@@ -96,21 +141,13 @@ impl Images {
         self.loaded.get(path)?.as_ref().map(|(t, _)| t.id())
     }
 
-    /// ¿Se presionó Ctrl+V recién? (egui no avisa si el portapapeles solo tiene una imagen.)
+    /// ¿Se presionó Ctrl+V (Cmd+V en Mac) recién? egui no avisa si el portapapeles solo tiene
+    /// una imagen, así que se mira el estado de la tecla V en el sistema.
     pub(super) fn ctrl_v_pressed(&mut self, ui: &Ui) -> bool {
-        #[cfg(windows)]
-        {
-            use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_V};
-            let down = ui.input(|i| i.modifiers.command) && unsafe { GetAsyncKeyState(VK_V as i32) } < 0;
-            let pressed = down && !self.v_down;
-            self.v_down = down;
-            pressed
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = ui;
-            false
-        }
+        let down = ui.input(|i| i.modifiers.command) && v_key_down();
+        let pressed = down && !self.v_down;
+        self.v_down = down;
+        pressed
     }
 }
 

@@ -15,8 +15,9 @@ const ORPHAN: Duration = Duration::from_secs(600);
 /// Cada cuánto se buscan copias aunque no haya cambiado ninguna nota (las de tareas.txt).
 const LOOK_EVERY: Duration = Duration::from_secs(30);
 /// Datos internos (`.nodex/`) cuyas copias en conflicto se saben juntar.
-const INTERNAL: [&str; 10] = [
+const INTERNAL: [&str; 11] = [
     "sugerencias.json",
+    "recurrentes.json",
     "dudas.json",
     "espacios.json",
     "actividad.json",

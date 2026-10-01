@@ -2448,7 +2448,7 @@ dependencies = [
 
 [[package]]
 name = "nodex-notes"
-version = "0.26.0"
+version = "0.26.1"
 dependencies = [
  "arboard",
  "axum",
@@ -2477,6 +2477,7 @@ dependencies = [
  "webpki-roots",
  "windows-sys 0.60.2",
  "winresource",
+ "x11rb",
 ]
 
 [[package]]

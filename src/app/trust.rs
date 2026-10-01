@@ -179,14 +179,19 @@ impl NotesApp {
                     }
                 };
                 let _ = doubts::learn(&root, &fact);
+                // Un correo anotado hace tiempo: se quita igual su línea (donde la haya llevado la
+                // IA) y lo que se sacó de él (tareas y eventos). Se puede deshacer.
+                let removed = if !can_undo && e.kind == Kind::Correo { self.remove_noted_mails(&e) } else { 0 };
                 if let Some(x) = self.activity.entries.iter_mut().find(|x| x.id == id) {
                     x.rechazado = true;
-                    x.undone |= can_undo;
+                    x.undone |= can_undo || removed > 0;
                 }
                 let _ = self.activity.save(&root);
                 self.toast = None;
                 self.msg(if can_undo {
                     "Deshecho. La IA lo tendrá en cuenta la próxima vez".to_string()
+                } else if removed > 0 {
+                    format!("Se quitó {} de tus notas, con sus tareas. La IA lo tendrá en cuenta la próxima vez", plural(removed, "correo"))
                 } else {
                     "Ya no se puede deshacer solo (hubo otros cambios después), pero la IA lo tendrá en cuenta la próxima vez".to_string()
                 });
@@ -213,6 +218,77 @@ impl NotesApp {
                 self.msg("Sugerencia descartada");
             }
         }
+    }
+
+    /// Quita de las notas los correos de una entrada «Anotó N correos»: su línea (y sus detalles),
+    /// la tarea de esa línea y lo que se sacó del correo. Deja un Deshacer. Devuelve cuántos.
+    fn remove_noted_mails(&mut self, e: &crate::activity::Entry) -> usize {
+        let mails: Vec<(String, String)> = self
+            .mail
+            .store
+            .mails
+            .iter()
+            .filter(|m| m.noted == e.note)
+            .map(|m| (m.id.clone(), super::mail_ui::mail_prefix(m)))
+            .filter(|(_, p)| e.details.iter().any(|d| d.starts_with(p.as_str())))
+            .collect();
+        if mails.is_empty() {
+            return 0;
+        }
+        self.save();
+        let snapshot = self.agenda.snapshot();
+        let mut files = Vec::new();
+        let paths: Vec<PathBuf> = self.vault.all_notes().iter().filter(|n| mails.iter().any(|(_, p)| n.text.contains(p.as_str()))).map(|n| n.path.clone()).collect();
+        for path in paths {
+            let Ok(text) = vault::read_text(&path) else { continue };
+            let all: Vec<&str> = text.split('\n').collect();
+            let mut drop = vec![false; all.len()];
+            for u in lines::units(&text) {
+                let first = all.get(u.first).copied().unwrap_or("");
+                if mails.iter().any(|(_, p)| first.contains(p.as_str())) {
+                    for d in drop.iter_mut().take(u.last + 1).skip(u.first) {
+                        *d = true;
+                    }
+                    if let Some(id) = lines::id_of(first) {
+                        let _ = self.agenda.remove_by_id(&id);
+                    }
+                }
+            }
+            let kept: Vec<&str> = all.iter().zip(&drop).filter(|(_, d)| !**d).map(|(l, _)| *l).collect();
+            let new = kept.join("\n");
+            if new == text {
+                continue;
+            }
+            if fs::write(&path, &new).is_ok() {
+                if self.analyzed.contains(&ai::fnv(&text)) {
+                    self.analyzed.insert(ai::fnv(&new));
+                }
+                if path == self.note.path {
+                    self.note = OpenNote::load(path.clone());
+                }
+                files.push((path, Some(text)));
+            }
+        }
+        for (id, _) in &mails {
+            let mut ids = Vec::new();
+            if let Some(m) = self.mail.store.mails.iter_mut().find(|m| m.id == *id) {
+                m.important = false;
+                ids = std::mem::take(&mut m.task_ids);
+                let events = std::mem::take(&mut m.event_lines);
+                m.items.clear();
+                let _ = self.agenda.remove_events(&events);
+            }
+            for t in ids {
+                let _ = self.agenda.remove_by_id(&t);
+            }
+        }
+        self.mail.store.save();
+        self.save_analyzed();
+        self.vault.scan();
+        self.gcal_dirty = true;
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), relinks: Vec::new() });
+        self.undo_entry = None;
+        mails.len()
     }
 
     /// La ventana de «No, gracias»: qué debió hacer (opcional).
@@ -343,6 +419,47 @@ mod tests {
         let e = app.activity.entries.iter().find(|e| e.id == id).unwrap();
         assert!(e.rechazado && e.undone);
         assert_eq!(month_accuracy(&app.activity), (1, 1));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// «No, gracias» en un correo anotado hace tiempo (ya no se puede deshacer): se quita su
+    /// línea, aunque la IA la haya llevado a otra nota, y su tarea.
+    #[test]
+    fn no_thanks_on_an_old_mail_removes_it() {
+        let dir = std::env::temp_dir().join(format!("nodex-correo-viejo-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        for w in ["General", "Obra", "Diario"] {
+            fs::create_dir_all(dir.join(w)).unwrap();
+        }
+        let mut app = app(&dir);
+        let mail = crate::mail::Mail {
+            id: "m1".into(),
+            from: "Banco <info@banco.cl>".into(),
+            subject: "Oferta".into(),
+            date: "2026-09-28 10:00".into(),
+            noted: "Diario/2026-09-28".into(),
+            important: true,
+            ..Default::default()
+        };
+        let prefix = super::super::mail_ui::mail_prefix(&mail);
+        assert_eq!(prefix, "Correo de Banco (28 sep): Oferta.");
+        app.mail.store.mails = vec![mail];
+        // La IA llevó la línea a otra nota y le puso casilla; también hay otra línea que queda.
+        let obra = dir.join("Obra").join("Banco.md");
+        fs::write(&obra, format!("Otra cosa\n- [ ] {prefix} Revisar la oferta ^of001\n  detalle de la oferta\nSigue\n")).unwrap();
+        fs::write(dir.join("tareas.txt"), "2026-09-28 Revisar la oferta +Obra nota:Obra/Banco id:of001\n").unwrap();
+        app.vault.scan();
+        app.log_ai(Kind::Correo, "Diario/2026-09-28", "Anotó 1 correo".into(), vec![format!("{prefix} Revisar la oferta")], false);
+        let id = app.activity.entries.last().unwrap().id.clone();
+
+        app.reject(Rejected::Done(id), "");
+        assert_eq!(fs::read_to_string(&obra).unwrap(), "Otra cosa\nSigue\n");
+        assert!(app.agenda.tasks().is_empty(), "su tarea también se quitó");
+        assert!(!app.mail.store.mails[0].important);
+        assert!(doubts::learned(&dir).iter().any(|f| f.contains("Correo de Banco")));
+        // Y se puede deshacer.
+        app.apply(Action::Undo);
+        assert!(fs::read_to_string(&obra).unwrap().contains("Revisar la oferta"));
         let _ = fs::remove_dir_all(&dir);
     }
 

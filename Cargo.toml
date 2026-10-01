@@ -1,6 +1,6 @@
 [package]
 name = "nodex-notes"
-version = "0.26.0"
+version = "0.26.1"
 edition = "2024"
 description = "Notas rápidas estilo Notepad con espacios de trabajo, reuniones e IA que organiza sola"
 license = "MIT"
@@ -47,6 +47,10 @@ axum = "0.8"
 # Saber si se presionó Ctrl+V cuando el portapapeles solo tiene una imagen (egui no lo avisa).
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
+# Lo mismo en Linux (X11).
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = "0.13"
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

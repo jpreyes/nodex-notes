@@ -171,6 +171,15 @@ fn mail_key(m: &Mail) -> String {
     if id.is_empty() { format!("{}|{}|{}", m.account, m.date, m.subject.trim()) } else { id.to_string() }
 }
 
+/// Cómo empieza la línea de un correo en la nota de hoy: "Correo de Ana (26 sep): Visita."
+pub(super) fn mail_prefix(m: &Mail) -> String {
+    let d = NaiveDate::parse_from_str(m.date.get(..10).unwrap_or(""), "%Y-%m-%d")
+        .map(|d| format!("{} {}", d.day(), MESES[d.month0() as usize]))
+        .unwrap_or_default();
+    let who = if m.sent { format!("Correo a {}", short_name(&m.to)) } else { format!("Correo de {}", short_name(&m.from)) };
+    format!("{who} ({d}): {}.", m.subject.trim().trim_end_matches('.'))
+}
+
 fn short_name(s: &str) -> String {
     let first = s.split(',').next().unwrap_or(s).trim();
     match first.split_once('<') {
@@ -363,13 +372,9 @@ impl NotesApp {
                 m.noted = "otro equipo".into();
             }
             if relevant && m.noted.is_empty() && !m.summary.is_empty() {
-                let d = NaiveDate::parse_from_str(m.date.get(..10).unwrap_or(""), "%Y-%m-%d")
-                    .map(|d| format!("{} {}", d.day(), MESES[d.month0() as usize]))
-                    .unwrap_or_default();
-                let who = if m.sent { format!("Correo a {}", short_name(&m.to)) } else { format!("Correo de {}", short_name(&m.from)) };
-                let subject = m.subject.trim().trim_end_matches('.');
-                let line = format!("{who} ({d}): {subject}. {}", m.summary.replace('\n', " "));
-                prefixes.insert(m.id.clone(), format!("{who} ({d}): {subject}."));
+                let prefix = mail_prefix(m);
+                let line = format!("{prefix} {}", m.summary.replace('\n', " "));
+                prefixes.insert(m.id.clone(), prefix);
                 entries.push((m.workspace.clone(), line, m.id.clone()));
             }
             for k in &r.cumple {
