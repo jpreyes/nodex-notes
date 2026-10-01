@@ -97,6 +97,7 @@ impl NotesApp {
         let meetings = notes.iter().filter(|n| n.3).count();
         let asks = self.doubts.pending.len() + self.ideas.ready().count();
         let root = self.vault.root.clone();
+        let follows = self.follow_up_map();
         let busy = self.week.rx.is_some();
         let mut ask_ai = false;
         let mut save = false;
@@ -167,7 +168,7 @@ impl NotesApp {
                 ui.label(RichText::new(title).font(theme::bold(15.0)).color(color));
                 ui.add_space(4.0);
                 for t in list.iter().take(limit) {
-                    if let Some(a) = task_row(ui, t, &to, &root) {
+                    if let Some(a) = task_row(ui, t, &to, &root, &follows) {
                         action = Some(a);
                     }
                 }

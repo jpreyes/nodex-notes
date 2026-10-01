@@ -405,6 +405,18 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
             }
             pos = 8;
         }
+        // Seguimiento ("↳ 2026-10-01: …"): la fecha, como etiqueta verde.
+        if !is_active {
+            if let Some((date, at)) = lines::follow_up(&line[pos..]) {
+                let day = if date.is_empty() { "Seguimiento".to_string() } else { super::tracking::short_day(date) };
+                let label = format!("{} {day}", icon::ARROW_ELBOW_DOWN_RIGHT);
+                let w = measure(&label, &FontId::proportional(LABEL_SIZE)) + 16.0;
+                job.append(&line[pos..pos + at], w, hidden.clone());
+                let (fg, bg) = (Color32::from_rgb(46, 98, 56), Color32::from_rgb(228, 243, 230));
+                decos.push(Deco { kind: Kind::Date { label, fg, bg }, chars: ci + n_chars(0, pos)..ci + n_chars(0, pos + at), line: li, lead: w });
+                pos += at;
+            }
+        }
 
         // Enlaces escritos ([[Nota]], [texto](archivo)), rutas y webs, etiquetas, fechas e identificadores.
         enum Span {
@@ -629,6 +641,7 @@ impl NotesApp {
         let mut attach_now = false;
         let mut table_now = false;
         let mut template_now = false;
+        let mut follow_now: Option<usize> = None;
         let backlinks = self.backlinks();
         Self::column(ui, "editor", |ui, col_w| {
             // Título = nombre del archivo; las notas del día muestran su fecha ("Hoy, domingo 27 sep").
@@ -860,6 +873,10 @@ impl NotesApp {
                     to_task = Some(l);
                     ui.close();
                 }
+                if !lines::is_follow_up(line) && ui.button(format!("{}  Seguimiento   Ctrl+Shift+Enter", icon::ARROW_ELBOW_DOWN_RIGHT)).on_hover_text("Anotar debajo qué se hizo, con la fecha (la IA lo tiene en cuenta)").clicked() {
+                    follow_now = Some(l);
+                    ui.close();
+                }
             });
             if paste_now {
                 self.paste_image(self.menu_line);
@@ -869,6 +886,9 @@ impl NotesApp {
             }
             if template_now {
                 self.save_as_template();
+            }
+            if let Some(l) = follow_now {
+                self.start_follow_up_line(l);
             }
             if table_now {
                 // El cursor queda en la primera celda.
@@ -1187,6 +1207,11 @@ impl NotesApp {
             }
         }
         self.save();
+        // Recién hecha: ¿qué se hizo? (fuera de las plantillas)
+        if lines::parse(&new_line).check == Some(true) && !vault::in_templates(&self.note.path) {
+            let target = super::tracking::Target::Line { note: self.note.path.clone(), id: lines::id_of(&new_line), text: new_line.clone() };
+            self.ask_follow_up(super::tracking::line_title(&new_line), target, true);
+        }
     }
 
     /// Convierte una línea en tarea: casilla, identificador y su tarea en Tareas (en el espacio
@@ -1249,6 +1274,11 @@ impl NotesApp {
             (a.min(b), a.max(b))
         };
         let (la, lb) = (line_at(&starts, lo), line_at(&starts, hi));
+        // Ctrl+Shift+Enter: un seguimiento debajo de la línea.
+        if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Enter)) {
+            self.start_follow_up_line(la);
+            return;
+        }
         // Ctrl+Enter: la línea se vuelve tarea (o, si ya lo es, se marca hecha o pendiente).
         if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Enter)) {
             let col = range.primary.index.0 - starts[la];

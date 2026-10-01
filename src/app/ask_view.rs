@@ -128,7 +128,7 @@ impl NotesApp {
     }
 
     /// Arma la pregunta con las notas (todas, o solo las editadas desde `since`), tareas y agenda.
-    pub(super) fn build_request(&self, question: String, history: Vec<(String, String)>, since: Option<&str>) -> (ask::Input, Turn) {
+    pub(super) fn build_request(&mut self, question: String, history: Vec<(String, String)>, since: Option<&str>) -> (ask::Input, Turn) {
         let mut sources = HashMap::new();
         let mut notes: Vec<&vault::Note> = self.vault.all_notes().into_iter().filter(|n| since.is_none_or(|s| n.day() >= s)).collect();
         // Con muchas notas no se mandan todas: la app se queda con las más relevantes para la
@@ -168,12 +168,18 @@ impl NotesApp {
         let (pending, done): (Vec<_>, Vec<_>) = all.into_iter().partition(|t| !t.done);
         let chosen: Vec<agenda::Task> = pending.into_iter().chain(done.into_iter().rev().take(30)).collect();
         let mut tasks = HashMap::new();
+        let follows = self.follow_up_map();
         let task_list: Vec<(String, agenda::Task)> = chosen
             .into_iter()
             .enumerate()
-            .map(|(i, t)| {
+            .map(|(i, mut t)| {
                 let key = format!("t{}", i + 1);
                 tasks.insert(key.clone(), TaskKey { id: t.id.clone(), text: t.text.clone(), note: t.note.clone() });
+                // Su seguimiento (lo que se hizo) va con la tarea, para que la IA lo sepa.
+                if let Some(f) = follows.get(&super::tracking::task_key(&t)) {
+                    let done: Vec<String> = f.iter().map(|(d, x)| if d.is_empty() { x.clone() } else { format!("{d}: {x}") }).collect();
+                    t.text = format!("{} (seguimiento: {})", t.text, done.join("; "));
+                }
                 (key, t)
             })
             .collect();

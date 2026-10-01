@@ -46,6 +46,7 @@ Es Markdown, con unas pocas convenciones:
 | `due:2026-10-02` | Fecha de la tarea. |
 | `^k3f9a` | Identificador que une la línea con su tarea en `tareas.txt`. |
 | `## Reunión de obra · 2026-09-30 10:00` … `## fin · 10:42` | Una reunión; en medio, cada línea `- 10:05 texto` lleva su hora. Al cerrarla, la IA agrega `### Resumen`, decisiones y acuerdos. |
+| `␣␣↳ 2026-10-01: Se pidió a Gerdau` | Seguimiento de la línea de arriba: qué se hizo y cuándo. |
 | `↻ Juan: enviar planos · vie 2 oct` | Acuerdo pendiente de la reunión anterior (en las reuniones que se repiten). |
 | `![Captura 30 sep 17:12](../Adjuntos/captura-….png)` | Una imagen; la ruta es relativa a la nota. |
 | `[Acta visita.pdf](../Adjuntos/Acta%20visita.pdf)` | Un archivo adjunto (los espacios del nombre van como `%20`). También `[texto](https://…)`. |
@@ -93,6 +94,7 @@ La IA las lee en cada análisis. Puedes editarlas o borrarlas.
 | `espacios.json` | Los temas sin espacio que la IA va juntando para sugerir uno nuevo. |
 | `sugerencias.json` | Con «sugerir antes de aplicar»: lo que propone la IA y espera tu visto bueno. |
 | `conversaciones/*.json` | Las conversaciones con la IA (una por archivo). |
+| `seguimiento.txt` | El seguimiento de las tareas que no tienen una línea en una nota (`clave⇥fecha⇥texto`; la clave es el `id:` de la tarea o `tarea:` y su texto). |
 | `historial/<Espacio>/<Nota>/` | Versiones anteriores de cada nota: `AAAA-MM-DD HH.MM.SS huella.md`, el texto tal cual estaba. Se pueden abrir con cualquier editor. |
 | `recurrentes.json` | Las reuniones y notas que se repiten. |
 | `papelera.txt` | De dónde vino cada cosa de la papelera (`nombre⇥ruta original⇥fecha`). |

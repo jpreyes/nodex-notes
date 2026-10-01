@@ -114,7 +114,7 @@ impl NotesApp {
                             ui.label(RichText::new(title).font(theme::bold(14.0)).color(TEXT));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 let b = egui::Button::new(RichText::new(icon::X).size(13.0).color(MUTED)).frame(false);
-                                if ui.add(b).on_hover_text("Cerrar").clicked() {
+                                if ui.add(b).on_hover_text("Cerrar el aviso (lo que hizo la IA se queda; se puede deshacer en «Lo que hizo»)").clicked() {
                                     close = true;
                                 }
                             });
@@ -135,7 +135,7 @@ impl NotesApp {
                             if can_undo {
                                 ui.add_space(8.0);
                                 let b = egui::Button::new(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(13.0));
-                                if ui.add(b).clicked() {
+                                if ui.add(b).on_hover_text("Vuelve a como estaba. La IA no lo intenta de nuevo con este texto, pero no aprende nada (para que aprenda: «No, gracias»)").clicked() {
                                     action = Some(Action::Undo);
                                     close = true;
                                 }
@@ -144,7 +144,7 @@ impl NotesApp {
                             if matches!(t.kind, Kind::Organizar | Kind::Correo) {
                                 ui.add_space(4.0);
                                 let b = egui::Button::new(RichText::new("No, gracias").size(13.0));
-                                if ui.add(b).on_hover_text("Deshace esto y la IA aprende a no repetirlo").clicked() {
+                                if ui.add(b).on_hover_text("Deshace esto y además la IA aprende a no repetirlo (te pregunta qué debería hacer)").clicked() {
                                     action = Some(Action::Reject(t.entry.clone()));
                                     close = true;
                                 }

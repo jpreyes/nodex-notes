@@ -241,6 +241,73 @@ pub fn is_block_end(line: &str) -> bool {
 }
 
 /// Línea hecha solo de etiquetas ("#reunión #vigas").
+// ---------- Seguimiento ----------
+
+/// Marca de una línea de seguimiento (lo que se hizo con la línea de arriba):
+/// "  ↳ 2026-10-01: Se pidió a Gerdau, llega el lunes".
+pub const FOLLOW_MARK: &str = "↳";
+
+/// Si el texto de una línea (sin su sangría) es un seguimiento: su fecha ("" si no tiene) y
+/// dónde empieza lo escrito (en bytes).
+pub fn follow_up(content: &str) -> Option<(&str, usize)> {
+    let rest = content.strip_prefix(FOLLOW_MARK)?;
+    let rest = rest.trim_start();
+    let mut at = content.len() - rest.len();
+    let date = rest.get(..10).filter(|d| crate::agenda::is_date(d)).unwrap_or("");
+    if !date.is_empty() {
+        let after = &rest[10..];
+        let after = after.strip_prefix(':').unwrap_or(after);
+        at = content.len() - after.trim_start().len();
+    }
+    Some((date, at))
+}
+
+/// ¿Es una línea de seguimiento?
+pub fn is_follow_up(line: &str) -> bool {
+    follow_up(&line[parse(line).prefix..]).is_some()
+}
+
+/// Los seguimientos que tiene la línea `idx` (las líneas «↳» con más sangría justo debajo):
+/// (fecha, texto).
+pub fn follow_ups_after(text: &str, idx: usize) -> Vec<(String, String)> {
+    let ls: Vec<&str> = text.lines().collect();
+    let Some(base) = ls.get(idx).map(|l| parse(l).level) else { return Vec::new() };
+    let mut out = Vec::new();
+    for l in ls.iter().skip(idx + 1) {
+        let info = parse(l);
+        if info.level <= base {
+            break;
+        }
+        if let Some((date, at)) = follow_up(&l[info.prefix..]) {
+            out.push((date.to_string(), l[info.prefix + at..].trim().to_string()));
+        }
+    }
+    out
+}
+
+/// `text` con un seguimiento nuevo bajo la línea `idx` (después de los que ya tenga). Devuelve el
+/// texto y en qué línea quedó.
+pub fn add_follow_up(text: &str, idx: usize, date: &str, what: &str) -> (String, usize) {
+    let mut ls: Vec<&str> = text.split('\n').collect();
+    let base = ls.get(idx).map_or(0, |l| parse(l.trim_end_matches('\r')).level);
+    let mut at = idx + 1;
+    while at < ls.len() {
+        let l = ls[at].trim_end_matches('\r');
+        if l.trim().is_empty() || parse(l).level <= base || !is_follow_up(l) {
+            break;
+        }
+        at += 1;
+    }
+    let cr = if ls.get(idx).is_some_and(|l| l.ends_with('\r')) { "\r" } else { "" };
+    let line = format!("{}{FOLLOW_MARK} {date}: {}{cr}", prefix_for((base + 1).min(MAX_LEVEL), None), what.trim());
+    ls.insert(at.min(ls.len()), &line);
+    let mut out = ls.join("\n");
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    (out, at)
+}
+
 // ---------- Tablas ----------
 
 /// ¿Es una fila de una tabla? ("| Material | Cantidad |")
@@ -494,6 +561,25 @@ pub fn units(text: &str) -> Vec<Unit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn follow_ups() {
+        assert_eq!(follow_up("↳ 2026-10-01: Se pidió a Gerdau"), Some(("2026-10-01", 16)));
+        assert_eq!(follow_up("↳ sin fecha"), Some(("", 4)));
+        assert_eq!(follow_up("otra cosa"), None);
+        let t = "- [x] Pedir acero ^ab12c\n  ↳ 2026-09-30: Cotizado\nOtra\n";
+        assert_eq!(follow_ups_after(t, 0), vec![("2026-09-30".to_string(), "Cotizado".to_string())]);
+        // El nuevo va después de los que ya hay, con un nivel más de sangría.
+        let (t2, at) = add_follow_up(t, 0, "2026-10-01", "Pedido a Gerdau");
+        assert_eq!(t2, "- [x] Pedir acero ^ab12c\n  ↳ 2026-09-30: Cotizado\n  ↳ 2026-10-01: Pedido a Gerdau\nOtra\n");
+        assert_eq!(at, 2);
+        assert!(is_follow_up("  ↳ 2026-10-01: x"));
+        // Es parte de la nota de arriba.
+        assert_eq!(units(&t2).iter().map(|u| (u.first, u.last)).collect::<Vec<_>>(), vec![(0, 2), (3, 3)]);
+        // Bajo un detalle (nivel 1), va como ítem.
+        let (t3, _) = add_follow_up("Nota\n  detalle\n", 1, "2026-10-01", "listo");
+        assert_eq!(t3, "Nota\n  detalle\n  - ↳ 2026-10-01: listo\n");
+    }
 
     #[test]
     fn tables() {

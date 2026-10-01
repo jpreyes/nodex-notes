@@ -65,6 +65,7 @@ impl NotesApp {
         let ev_tomorrow = ev(&|d| d == tomorrow);
         let ev_week = ev(&|d| d > tomorrow.as_str() && d <= week.as_str());
         let root = self.vault.root.clone();
+        let follows = self.follow_up_map();
         let nothing = overdue.is_empty() && for_today.is_empty() && for_tomorrow.is_empty() && this_week.is_empty()
             && ev_today.is_empty() && ev_tomorrow.is_empty() && ev_week.is_empty();
 
@@ -80,7 +81,7 @@ impl NotesApp {
                 }
             }
             for t in tasks {
-                if let Some(a) = task_row(ui, t, &today, &root) {
+                if let Some(a) = task_row(ui, t, &today, &root, &follows) {
                     action = Some(a);
                 }
             }

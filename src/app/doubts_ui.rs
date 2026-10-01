@@ -428,7 +428,7 @@ impl NotesApp {
                     if ui.link(RichText::new("Otra respuesta…").size(12.5)).clicked() {
                         self.doubt_reply = Some((d.id.clone(), String::new()));
                     }
-                    if ui.link(RichText::new("Ignorar").size(12.5).color(MUTED)).on_hover_text("No volver a preguntar esto").clicked() {
+                    if ui.link(RichText::new("Ignorar").size(12.5).color(MUTED)).on_hover_text("Descarta la pregunta: no se aplica nada y no se vuelve a preguntar").clicked() {
                         reply = Some(Reply::Ignore(d.id.clone()));
                     }
                 });

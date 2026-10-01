@@ -48,6 +48,7 @@ mod spaces_ui;
 mod tabs;
 mod tasks_sync;
 mod templates;
+mod tracking;
 mod trust;
 mod trash_view;
 #[cfg(test)]
@@ -361,6 +362,8 @@ enum Action {
     TodoSync,
     TodoDisconnect,
     ToggleTask(String),
+    /// Anotar un seguimiento de una tarea (por su línea en tareas.txt).
+    FollowUp(String),
     AddTask(String),
     OpenExternal(PathBuf),
     OpenSettings(Section),
@@ -541,6 +544,9 @@ pub struct NotesApp {
     link_pick_closed: Option<usize>,
     /// La ventana «Historial» de la nota abierta.
     history: Option<history_ui::HistoryView>,
+    /// «¿Qué se hizo?» (seguimiento) y los seguimientos de las tareas, guardados.
+    follow_ask: Option<tracking::Ask>,
+    follow_cache: Option<((u64, Option<SystemTime>), std::rc::Rc<tracking::FollowUps>)>,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -814,6 +820,8 @@ impl NotesApp {
             link_pick: None,
             link_pick_closed: None,
             history: None,
+            follow_ask: None,
+            follow_cache: None,
         };
         // Pestañas de la sesión anterior (o la nota que estaba abierta).
         let decoded: Vec<tabs::Tab> = estado_tabs.iter().filter_map(|t| tabs::decode(t, &app.vault.root)).collect();
@@ -885,6 +893,13 @@ impl NotesApp {
             app.note.text.push_str(&t);
             app.pending_cursor = Some(app.note.text.chars().count());
             app.focus_editor = true;
+        }
+        // La pregunta «¿Qué se hizo?» de la primera tarea pendiente (para capturas).
+        #[cfg(debug_assertions)]
+        if std::env::var("NODEX_DEMO_SEGUIMIENTO").is_ok() {
+            if let Some(t) = app.agenda.tasks().into_iter().find(|t| !t.done) {
+                app.ask_task_follow_up(&t, true);
+            }
         }
         #[cfg(debug_assertions)]
         if std::env::var("NODEX_DEMO_HISTORIAL").is_ok() {
@@ -2073,9 +2088,18 @@ impl NotesApp {
                 }
                 // La casilla de su línea en la nota también.
                 if let Some(t) = agenda::parse_task(&raw) {
-                    if let (Some(id), Some(note)) = (t.id, t.note) {
-                        self.sync_task_line(&note, &id, !t.done);
+                    if let (Some(id), Some(note)) = (&t.id, &t.note) {
+                        self.sync_task_line(note, id, !t.done);
                     }
+                    // Recién hecha: ¿qué se hizo?
+                    if !t.done {
+                        self.ask_task_follow_up(&t, true);
+                    }
+                }
+            }
+            Action::FollowUp(raw) => {
+                if let Some(t) = agenda::parse_task(&raw) {
+                    self.ask_task_follow_up(&t, false);
                 }
             }
             Action::AddTask(text) => {
@@ -2207,7 +2231,7 @@ impl NotesApp {
         }
         // Esc cierra la reunión (si no hay una búsqueda o vista abierta que cerrar primero).
         let esc = ctx.input(|i| i.key_pressed(Key::Escape));
-        if esc && self.settings.is_none() && self.meeting.is_some() && self.search.is_empty() && self.view == View::Editor && self.new_ws.is_none() && self.link_pick.is_none() {
+        if esc && self.settings.is_none() && self.meeting.is_some() && self.search.is_empty() && self.view == View::Editor && self.new_ws.is_none() && self.link_pick.is_none() && self.follow_ask.is_none() {
             return Some(Action::CloseMeeting);
         }
         None
@@ -2741,6 +2765,7 @@ impl NotesApp {
         done.sort_by(|a, b| b.done_on.cmp(&a.done_on));
         let subtitle = format!("{} · marca la casilla cuando la termines", plural(pending.len(), "pendiente"));
         let root = self.vault.root.clone();
+        let follows = self.follow_up_map();
         let mut typing = false;
         Self::column(ui, "tasks", |ui, _| {
             view_header(ui, "Tareas", &subtitle);
@@ -2774,7 +2799,7 @@ impl NotesApp {
                 ui.label(RichText::new("No hay tareas pendientes. La IA las encuentra en tus notas, o agrégalas arriba.").color(MUTED));
             }
             for t in &pending {
-                if let Some(a) = task_row(ui, t, &today, &root) {
+                if let Some(a) = task_row(ui, t, &today, &root, &follows) {
                     action = Some(a);
                 }
             }
@@ -2784,7 +2809,7 @@ impl NotesApp {
                     .default_open(false)
                     .show(ui, |ui| {
                         for t in done.iter().take(50) {
-                            if let Some(a) = task_row(ui, t, &today, &root) {
+                            if let Some(a) = task_row(ui, t, &today, &root, &follows) {
                                 action = Some(a);
                             }
                         }
@@ -2891,6 +2916,7 @@ impl NotesApp {
         items.sort();
 
         let root = self.vault.root.clone();
+        let follows = self.follow_up_map();
         Self::column(ui, "agenda", |ui, _| {
             let subtitle = "Tus calendarios, los eventos de tus notas y las tareas con fecha".to_string();
             view_header(ui, "Agenda", &subtitle);
@@ -2909,7 +2935,7 @@ impl NotesApp {
                 ui.label(RichText::new("Atrasadas").font(theme::bold(15.0)).color(RED));
                 ui.add_space(4.0);
                 for t in &overdue {
-                    if let Some(a) = task_row(ui, t, &today, &root) {
+                    if let Some(a) = task_row(ui, t, &today, &root, &follows) {
                         action = Some(a);
                     }
                 }
@@ -3094,6 +3120,7 @@ impl NotesApp {
         self.reject_window(&ctx);
         self.update_news_window(&ctx);
         self.history_window(&ctx);
+        self.follow_up_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {
             self.apply(a);
         }
@@ -3188,8 +3215,9 @@ fn sort_tasks(tasks: Vec<agenda::Task>, by_due: bool, today: &str) -> Vec<agenda
     v.into_iter().map(|(_, t)| t).collect()
 }
 
-fn task_row(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path) -> Option<Action> {
+fn task_row(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follows: &tracking::FollowUps) -> Option<Action> {
     let mut action = None;
+    let follow = follows.get(&tracking::task_key(t));
     ui.horizontal(|ui| {
         let (glyph, color) = if t.done { (icon::CHECK_SQUARE, ACCENT) } else { (icon::SQUARE, MUTED) };
         let check = egui::Button::new(RichText::new(glyph).size(18.0).color(color)).frame(false);
@@ -3226,7 +3254,19 @@ fn task_row(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path) -> Option<A
                 action = Some(Action::OpenMail(m.clone()));
             }
         }
+        let b = egui::Button::new(RichText::new(icon::ARROW_ELBOW_DOWN_RIGHT).size(14.0).color(MUTED)).frame(false);
+        if ui.add(b).on_hover_text("Anotar un seguimiento: qué se hizo (la IA lo tiene en cuenta)").clicked() {
+            action = Some(Action::FollowUp(t.raw.clone()));
+        }
     });
+    // Sus seguimientos, debajo.
+    for (date, text) in follow.into_iter().flatten() {
+        let when = if date.is_empty() { String::new() } else { format!("{}  ·  ", tracking::short_day(date)) };
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(30.0);
+            ui.label(RichText::new(format!("{}  {when}{text}", icon::ARROW_ELBOW_DOWN_RIGHT)).size(12.5).color(Color32::from_rgb(70, 110, 75)));
+        });
+    }
     action
 }
 
