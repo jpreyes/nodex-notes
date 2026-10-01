@@ -24,6 +24,8 @@ pub enum Kind {
     Error,
     /// Se juntaron dos versiones de un archivo (copia en conflicto de Dropbox).
     Sincronizar,
+    /// Hizo algo que se le pidió en la conversación (marcar hecha, crear un evento…).
+    Pedido,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

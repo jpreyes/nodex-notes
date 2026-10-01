@@ -35,6 +35,7 @@ fn kind_icon(k: Kind) -> (&'static str, Color32) {
         Kind::Espacio => (icon::FOLDER_SIMPLE_PLUS, SUCCESS),
         Kind::Error => (icon::WARNING_CIRCLE, RED),
         Kind::Sincronizar => (icon::ARROWS_MERGE, SUCCESS),
+        Kind::Pedido => (icon::CHECK_CIRCLE, SUCCESS),
     }
 }
 

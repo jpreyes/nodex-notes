@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 mod account_ui;
+mod ai_actions;
 mod ai_view;
 mod attachments;
 mod bloc;

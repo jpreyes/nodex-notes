@@ -28,6 +28,10 @@ pub(super) struct Turn {
     pub(super) progress: String,
     pub(super) sources: HashMap<String, Source>,
     pub(super) tasks: HashMap<String, TaskKey>,
+    /// Lo que pidió hacer (por hacer), lo que se hizo y su entrada en «Lo que hizo».
+    pub(super) actions: Vec<ask::Accion>,
+    pub(super) done: Vec<String>,
+    pub(super) entry: Option<String>,
 }
 
 impl Turn {
@@ -38,6 +42,12 @@ impl Turn {
             match m {
                 ask::Msg::Progress(p) => self.progress = p,
                 ask::Msg::Done(r) => {
+                    // Las acciones que trae la respuesta se separan del texto.
+                    let r = r.map(|a| {
+                        let (text, actions) = ask::split_actions(&a);
+                        self.actions = actions;
+                        text
+                    });
                     if let Ok(a) = &r {
                         self.blocks = ask::parse_answer(a);
                     }
@@ -192,7 +202,7 @@ impl NotesApp {
         let month_ago = (Local::now() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
         let events: Vec<agenda::Event> = self.all_events().into_iter().filter(|e| e.date >= month_ago).collect();
         let input = ask::Input { question: question.clone(), history, docs, tasks: task_list, events, mails: self.mail_context(), today: today() };
-        let turn = Turn { question, answer: None, blocks: Vec::new(), progress: "Buscando en tus notas…".into(), sources, tasks };
+        let turn = Turn { question, answer: None, blocks: Vec::new(), progress: "Buscando en tus notas…".into(), sources, tasks, actions: Vec::new(), done: Vec::new(), entry: None };
         (input, turn)
     }
 
@@ -210,6 +220,15 @@ impl NotesApp {
         };
         if finished {
             self.ask.rx = None;
+            // Lo que pidió hacer, se hace.
+            let todo = self.ask.turns.last_mut().map(|t| (std::mem::take(&mut t.actions), t.tasks.clone(), t.sources.clone()));
+            if let Some((acts, tasks, sources)) = todo.filter(|(a, _, _)| !a.is_empty()) {
+                let (done, entry) = self.apply_ai_actions(&acts, &tasks, &sources);
+                if let Some(t) = self.ask.turns.last_mut() {
+                    t.done = done;
+                    t.entry = entry;
+                }
+            }
             self.save_chat();
         }
     }
@@ -335,6 +354,22 @@ impl NotesApp {
                             Some(Ok(_)) => {
                                 if let Some(a) = self.answer_ui(ui, turn, &tasks_now) {
                                     action = Some(a);
+                                }
+                                // Lo que hizo, con Deshacer mientras se pueda.
+                                if !turn.done.is_empty() {
+                                    ui.add_space(6.0);
+                                    Frame::new().fill(Color32::from_rgb(232, 245, 234)).corner_radius(8).inner_margin(Margin::symmetric(10, 6)).show(ui, |ui| {
+                                        ui.set_width(ui.available_width());
+                                        for d in &turn.done {
+                                            ui.label(RichText::new(format!("{} {d}", icon::CHECK)).size(13.0).color(Color32::from_rgb(46, 98, 56)));
+                                        }
+                                        let can_undo = turn.entry.is_some()
+                                            && self.undo_entry == turn.entry
+                                            && self.undo.as_ref().is_some_and(|u| u.at.elapsed() < UNDO_WINDOW);
+                                        if can_undo && ui.add(egui::Button::new(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5))).clicked() {
+                                            action = Some(Action::Undo);
+                                        }
+                                    });
                                 }
                                 ui.add_space(6.0);
                                 ui.horizontal(|ui| {
@@ -564,6 +599,9 @@ mod tests {
             progress: String::new(),
             sources,
             tasks: HashMap::new(),
+            actions: Vec::new(),
+            done: Vec::new(),
+            entry: None,
         };
         assert_eq!(plain(&turn), "Quedan 2:\n- Entregar informe\n- Revisar taludes (Consorcio/Trincheras)\n");
     }

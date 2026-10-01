@@ -152,6 +152,9 @@ impl NotesApp {
                 progress: String::new(),
                 sources: t.sources.into_iter().map(|(k, (rel, label))| (k, Source { path: root.join(format!("{rel}.md")), label })).collect(),
                 tasks: t.tasks.into_iter().map(|(k, x)| (k, TaskKey { id: x.id, text: x.text, note: x.note })).collect(),
+                actions: Vec::new(),
+                done: Vec::new(),
+                entry: None,
             })
             .collect();
         self.ask.chat_id = Some(chat.id);

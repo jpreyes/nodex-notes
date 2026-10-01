@@ -350,7 +350,12 @@ Reglas:
 - Después de cada dato, cita de dónde sale: [n3:12] = nota n3, línea 12 (o [n3] si es la nota completa). Una tarea de la lista de tareas se cita con su clave: [t4]. Puedes citar varias: [n3:12][n5:2].
 - Para listar tareas pendientes usa "- [ ] texto [t4]" (y "- [x] texto [t4]" para las hechas).
 - Interpreta las fechas relativas ("la semana pasada", "ayer", "el lunes") con la fecha de hoy y las fechas de las notas (el título de las notas del día es su fecha).
-- Si la respuesta no está en lo que recibes, dilo claramente ("No encontré…") y, si puedes, di qué nota se acerca más."#,
+- Si la respuesta no está en lo que recibes, dilo claramente ("No encontré…") y, si puedes, di qué nota se acerca más.
+- Puedes HACER cosas cuando la persona lo pide o lo da por hecho («ya subí la presentación», «créame un evento…», «anota que…»): marcar una tarea hecha, crear una tarea, crear un evento en la agenda, anotar algo en una nota, anotar un seguimiento de una tarea (lo que se hizo) o cambiar la fecha de una tarea. Para eso, al final de la respuesta agrega un bloque así (solo las acciones que corresponden):
+```acciones
+{{"acciones": [{{"tipo": "hecha", "tarea": "t4"}}, {{"tipo": "tarea", "texto": "Enviar planos", "fecha": "AAAA-MM-DD o vacío", "espacio": ""}}, {{"tipo": "evento", "titulo": "Congreso", "fecha": "AAAA-MM-DD", "hora": "HH:MM o vacío", "lugar": "", "espacio": ""}}, {{"tipo": "anotar", "nota": "n3 o hoy", "texto": "…"}}, {{"tipo": "seguimiento", "tarea": "t4", "texto": "lo que se hizo"}}, {{"tipo": "fecha", "tarea": "t4", "fecha": "AAAA-MM-DD"}}]}}
+```
+  En el texto di en pasado lo que hiciste («Listo: marqué hecha…, creé el evento…»); nunca digas que no puedes hacerlo. Un evento sin hora es de todo el día: no pidas la hora. Si falta algo imprescindible (por ejemplo, la fecha de un evento), pregúntalo y no agregues esa acción; no inventes datos. "espacio" es uno de los espacios de la persona si se deduce de las notas; si no, vacío. Si no pidió hacer nada, no agregues el bloque."#,
         today_long(&input.today)
     );
     let mut user = history_text(input);
@@ -427,6 +432,52 @@ pub enum Inline {
     Text(String),
     /// "[n3:12]" -> ("n3", Some(12)); "[t4]" -> ("t4", None).
     Cite(String, Option<usize>),
+}
+
+/// Algo que la persona pidió hacer (lo trae la respuesta en un bloque ```acciones).
+#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
+pub struct Accion {
+    /// hecha | tarea | evento | anotar | seguimiento | fecha
+    pub tipo: String,
+    /// Clave de la tarea («t4»).
+    pub tarea: String,
+    pub texto: String,
+    pub titulo: String,
+    pub fecha: String,
+    pub hora: String,
+    pub lugar: String,
+    pub espacio: String,
+    /// Clave de la nota («n3») o «hoy».
+    pub nota: String,
+}
+
+/// Separa de la respuesta el bloque de acciones (si lo trae): el texto sin él y las acciones.
+pub fn split_actions(answer: &str) -> (String, Vec<Accion>) {
+    #[derive(serde::Deserialize)]
+    struct Wrap {
+        acciones: Vec<Accion>,
+    }
+    let mut rest = answer;
+    let mut text = String::new();
+    let mut actions = Vec::new();
+    while let Some(start) = rest.find("```") {
+        let after = &rest[start + 3..];
+        let Some(end) = after.find("```") else { break };
+        let block = &after[..end];
+        // El contenido: después de la primera línea («acciones», «json» o nada).
+        let body = block.split_once('\n').map_or(block, |(first, b)| if first.trim().starts_with('{') { block } else { b });
+        match serde_json::from_str::<Wrap>(body.trim()) {
+            Ok(w) => {
+                text += &rest[..start];
+                actions.extend(w.acciones.into_iter().filter(|a| !a.tipo.trim().is_empty()));
+            }
+            Err(_) => text += &rest[..start + 3 + end + 3],
+        }
+        rest = &after[end + 3..];
+    }
+    text += rest;
+    (text.trim_end().to_string(), actions)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -525,6 +576,20 @@ mod tests {
 
     fn doc(key: &str, title: &str, text: &str) -> Doc {
         Doc { key: key.into(), path: PathBuf::from(format!("{title}.md")), workspace: "Consorcio".into(), title: title.into(), date: "2026-09-24".into(), text: text.into() }
+    }
+
+    #[test]
+    fn actions_come_apart_from_the_text() {
+        let a = "Listo: marqué hecha la presentación [t2] y creé el evento.\n\n```acciones\n{\"acciones\": [{\"tipo\": \"hecha\", \"tarea\": \"t2\"}, {\"tipo\": \"evento\", \"titulo\": \"18° Congreso AICE\", \"fecha\": \"2026-10-02\", \"lugar\": \"Villarrica\"}]}\n```";
+        let (text, acts) = split_actions(a);
+        assert_eq!(text, "Listo: marqué hecha la presentación [t2] y creé el evento.");
+        assert_eq!(acts.len(), 2);
+        assert_eq!((acts[0].tipo.as_str(), acts[0].tarea.as_str()), ("hecha", "t2"));
+        assert_eq!((acts[1].fecha.as_str(), acts[1].hora.as_str(), acts[1].lugar.as_str()), ("2026-10-02", "", "Villarrica"));
+        // Otros bloques de código se quedan en el texto.
+        let (text, acts) = split_actions("Usa:\n```\ncargo build\n```\nfin");
+        assert_eq!(text, "Usa:\n```\ncargo build\n```\nfin");
+        assert!(acts.is_empty());
     }
 
     #[test]
