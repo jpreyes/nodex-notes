@@ -55,6 +55,8 @@ Todas las versiones están en [Releases](https://github.com/jpreyes/nodex-notes/
 - **Tus calendarios:** en la Agenda (o en Configuración → Calendar), **+ Agregar calendario** y pega el enlace ICS de tu calendario. Google Calendar lo da en su configuración como «Dirección secreta en formato iCal», Outlook en «Publicar un calendario → ICS», e iCloud como enlace público (webcal://). Puedes agregar varios, cada uno con su color; un clic en uno permite cambiarle el nombre o el enlace. Sus eventos aparecen en Agenda, Inicio y Semana, y Preguntar también los conoce. Se leen al abrir la app y cada 15 minutos (solo se leen; la app no los cambia). En un evento de hoy, **Tomar notas** abre una reunión con su nombre.
 - **Tareas y Agenda:** las tareas tienen la misma casilla en la nota, en Tareas, en Inicio, en la Semana y en la Agenda; un clic la marca como hecha en todas partes. Al agregar una tarea puedes escribir la fecha como la dirías: «Enviar planos el viernes», «Llamar a Pedro mañana», «Informe 30 sep» o «antes del 3 de octubre». La agenda muestra eventos y tareas con fecha. Las tareas de otros se leen «Juan Pérez: enviar planos». En Tareas, **Recientes primero** (lo último que se agregó arriba, con las atrasadas antes que todo) o **Por fecha**; la app recuerda cuál elegiste.
 - **Capturas de pantalla:** copia una captura (por ejemplo con Win+Shift+S) y pégala en la nota con **Ctrl+V** (Cmd+V en Mac; en Linux con Wayland, clic derecho → «Pegar imagen del portapapeles»). Se guarda en tamaño real, como PNG, en la carpeta `Adjuntos/`, y en la nota queda una línea `![Captura 30 sep 17:12](../Adjuntos/captura-….png)` que se ve como la imagen; un clic la abre en tamaño real. Aunque la IA lleve esa línea a otra nota, la imagen se sigue viendo.
+- **Enlaces entre notas:** escribe `[[` y elige una nota de la lista (↑ ↓ y Enter), o escribe el nombre: `[[Muro sur]]`. Se ve solo el nombre, subrayado; un clic abre la nota y, si todavía no existe, la crea. Con `[[Muro sur|el muro]]` se ve «el muro»; si hay dos notas con el mismo nombre, `[[Obra Talca/Muro sur]]`. Arriba de cada nota, **«Enlazada desde N notas»** muestra cuáles la mencionan. Si renombras o mueves una nota, sus enlaces se actualizan solos. Es el mismo formato de Obsidian.
+- **Adjuntar archivos:** arrastra archivos (PDF, planillas, fotos, planos…) a la ventana, o clic derecho → «Adjuntar archivo…». Se copian a `Adjuntos/` y la nota gana una línea por archivo: las fotos e imágenes (JPG, PNG, GIF, WebP) se ven dentro de la nota; los demás se ven con su ícono y un clic los abre con su programa.
 - **Microsoft To Do:** en Configuración → Tareas (o en Tareas), **Conectar** abre el navegador para entrar con tu cuenta Microsoft (personal o del trabajo, si tu organización lo permite) y aceptar el permiso; no hay que configurar nada más. Tus tareas quedan en una lista **«Notas»** de To Do, en los dos sentidos: lo que la IA saca de tus notas llega a To Do con su fecha; lo que marcas hecho (o le cambias la fecha) en un lado se refleja en el otro, también en la casilla de la nota; y lo que agregas a esa lista desde To Do (por ejemplo, desde el celular) aparece en Tareas. Borrar una tarea en Notas la borra en To Do; borrarla en To Do la deja en Notas. Se sincroniza al cambiar algo y cada 2 minutos. El permiso queda solo en este equipo (`microsoft_token.json`, junto a `config.toml`), y `.nodex/todo.json` recuerda qué tarea es cuál.
 
 | Atajo | Acción |
@@ -154,7 +156,7 @@ El detalle de cada archivo (y cómo llevarte tus datos) está en [FORMATO.md](FO
 
 ```text
 Notas/
-  Adjuntos/              ← capturas pegadas en las notas (PNG)
+  Adjuntos/              ← capturas, fotos y archivos adjuntos a las notas
   Diario/
     2026-09-24.md        ← la nota de ese día (una sola, fuera de los espacios)
   Proyecto Edificio A/
@@ -237,7 +239,10 @@ Para abrir rápido aunque haya miles de notas, la app guarda una copia de todas 
 | `src/account.rs`, `src/app/account_ui.rs` | Tu cuenta: entrar (código por correo o Microsoft), el plan y la configuración que viaja con la cuenta (cifrada). |
 | `src/app/onboarding.rs` | El asistente de la primera vez: carpeta, cuenta y cómo se usa. |
 | `src/app/trust.rs` | Confianza en la IA: «No, gracias», sugerir antes de aplicar y cuánto acierta. |
-| `src/app/images.rs` | Capturas pegadas en las notas: guardarlas en `Adjuntos/` y mostrarlas en el editor. |
+| `src/app/images.rs` | Capturas pegadas en las notas: guardarlas en `Adjuntos/` y mostrar las imágenes en el editor. |
+| `src/app/attachments.rs` | Adjuntar archivos (arrastrándolos o con «Adjuntar archivo…»). |
+| `src/app/notelinks.rs` | Enlaces entre notas `[[…]]`: abrir, crear, sugerir al escribir, «Enlazada desde» y actualizarlos al renombrar o mover. |
+| `src/update.rs`, `src/app/update_ui.rs` | Actualizar desde la app: buscar, bajar, revisar e instalar la versión nueva. |
 | `src/app/recurring.rs` | Reuniones y notas que se repiten: se crean solas a su hora, con los pendientes de la anterior. |
 | `src/app/chats.rs` | Historial de conversaciones con la IA: guardar, retomar y borrar. |
 | `src/app/trash_view.rs` | La Papelera: restaurar o borrar para siempre (con confirmación). |

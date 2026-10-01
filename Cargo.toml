@@ -1,6 +1,6 @@
 [package]
 name = "nodex-notes"
-version = "0.27.0"
+version = "0.28.0"
 edition = "2024"
 description = "Notas rápidas estilo Notepad con espacios de trabajo, reuniones e IA que organiza sola"
 license = "MIT"
@@ -23,6 +23,8 @@ eframe = { version = "0.36.2", default-features = false, features = ["default_fo
 egui-phosphor = "0.14.0"
 genai = "0.6.5"
 getrandom = "0.3"
+# Fotos y otras imágenes adjuntas (JPG, GIF, WebP…), además de las capturas PNG.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 imap = { version = "3.0.0-alpha.15", default-features = false }
 mail-parser = "0.11"
 notify = "8"

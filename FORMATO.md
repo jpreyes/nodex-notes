@@ -12,6 +12,7 @@ Notas/
     2026-09-30.md          la nota de ese día («Hoy»)
   Adjuntos/
     captura-2026-09-30-171200.png   capturas pegadas en las notas
+    Acta visita.pdf                 archivos adjuntos (arrastrados a la nota)
   Obra Talca/              un espacio de trabajo = una carpeta
     Muro.md                una nota = un archivo Markdown
   General/
@@ -44,6 +45,8 @@ Es Markdown, con unas pocas convenciones:
 | `## Reunión de obra · 2026-09-30 10:00` … `## fin · 10:42` | Una reunión; en medio, cada línea `- 10:05 texto` lleva su hora. Al cerrarla, la IA agrega `### Resumen`, decisiones y acuerdos. |
 | `↻ Juan: enviar planos · vie 2 oct` | Acuerdo pendiente de la reunión anterior (en las reuniones que se repiten). |
 | `![Captura 30 sep 17:12](../Adjuntos/captura-….png)` | Una imagen; la ruta es relativa a la nota. |
+| `[Acta visita.pdf](../Adjuntos/Acta%20visita.pdf)` | Un archivo adjunto (los espacios del nombre van como `%20`). También `[texto](https://…)`. |
+| `[[Muro sur]]`, `[[Obra/Muro sur]]`, `[[Muro sur\|el muro]]` | Enlace a otra nota, por su nombre (como en Obsidian). |
 | `# Título`, `### Subtítulo` | Títulos. |
 
 Un bloque que empieza con `## Título` va junto hasta `## fin`, el siguiente `##` o una línea en

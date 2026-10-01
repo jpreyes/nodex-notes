@@ -24,6 +24,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 mod account_ui;
 mod ai_view;
+mod attachments;
 mod ask_view;
 mod calendars_ui;
 mod chats;
@@ -36,6 +37,7 @@ mod followup;
 mod home;
 mod images;
 mod mail_ui;
+mod notelinks;
 mod onboarding;
 mod recurring;
 #[cfg(test)]
@@ -530,6 +532,11 @@ pub struct NotesApp {
     toast: Option<ai_view::Toast>,
     /// Versiones nuevas de la app.
     updater: update_ui::Updater,
+    /// Las notas por nombre (para los enlaces `[[…]]`).
+    note_index: notelinks::NoteIndex,
+    /// Sugerencias mientras se escribe `[[…`; y dónde se cerraron con Esc.
+    link_pick: Option<notelinks::LinkPick>,
+    link_pick_closed: Option<usize>,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -799,6 +806,9 @@ impl NotesApp {
             ai_error: None,
             toast: None,
             updater: update_ui::Updater::default(),
+            note_index: notelinks::NoteIndex::default(),
+            link_pick: None,
+            link_pick_closed: None,
         };
         // Pestañas de la sesión anterior (o la nota que estaba abierta).
         let decoded: Vec<tabs::Tab> = estado_tabs.iter().filter_map(|t| tabs::decode(t, &app.vault.root)).collect();
@@ -863,6 +873,13 @@ impl NotesApp {
             let details = vec!["→ Consorcio/Trincheras".to_string(), "Etiquetas: planos".into(), "Tarea: Enviar planos corregidos · martes 29 sep".into()];
             let text = "Organizó «2026-09-27»: 1 etiqueta · 1 nota → Consorcio/Trincheras · 1 tarea".to_string();
             app.log_ai(crate::activity::Kind::Organizar, "Consorcio/Trincheras", text, details, false);
+        }
+        // Escribir algo al final de la nota abierta, con el cursor ahí (para capturas).
+        #[cfg(debug_assertions)]
+        if let Ok(t) = std::env::var("NODEX_DEMO_ESCRIBIR") {
+            app.note.text.push_str(&t);
+            app.pending_cursor = Some(app.note.text.chars().count());
+            app.focus_editor = true;
         }
         #[cfg(debug_assertions)]
         if std::env::var("NODEX_DEMO_WEEK").is_ok() {
@@ -1140,6 +1157,14 @@ impl NotesApp {
         }
         let old_path = std::mem::replace(&mut self.note.path, new_path);
         self.note.title = vault::stem(&self.note.path);
+        let (old_rel, new_rel) = (self.rel(&old_path), self.rel(&self.note.path));
+        self.relink(&old_rel, &new_rel);
+        // `[[Nombre]]` también, salvo que quede otra nota con el nombre de antes.
+        let bare = self.note_index().resolve(&current, None).is_none();
+        let n = self.update_links(&old_rel, &new_rel, bare);
+        if n > 0 {
+            self.msg(format!("Se actualizaron los enlaces a «{}» en {}", self.note.title, plural(n, "nota")));
+        }
         // El encabezado de una reunión lleva el mismo título.
         if let Some((_, when)) = meeting_header(&self.note.text) {
             if let Some(end) = self.note.text.find('\n') {
@@ -2169,7 +2194,7 @@ impl NotesApp {
         }
         // Esc cierra la reunión (si no hay una búsqueda o vista abierta que cerrar primero).
         let esc = ctx.input(|i| i.key_pressed(Key::Escape));
-        if esc && self.settings.is_none() && self.meeting.is_some() && self.search.is_empty() && self.view == View::Editor && self.new_ws.is_none() {
+        if esc && self.settings.is_none() && self.meeting.is_some() && self.search.is_empty() && self.view == View::Editor && self.new_ws.is_none() && self.link_pick.is_none() {
             return Some(Action::CloseMeeting);
         }
         None
@@ -3037,6 +3062,11 @@ impl NotesApp {
             }
         });
         actions.extend(self.toast_ui(&ctx));
+        // Archivos arrastrados a la ventana: se adjuntan a la nota abierta, donde está el cursor.
+        let cursor_line = egui::text_edit::TextEditState::load(&ctx, Id::new(("editor", &self.note.path)))
+            .and_then(|s| s.cursor.char_range())
+            .map(|r| self.note.text.chars().take(r.primary.index.0).filter(|c| *c == '\n').count());
+        self.handle_dropped_files(&ctx, cursor_line);
 
         for a in actions {
             self.apply(a);

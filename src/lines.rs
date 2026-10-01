@@ -118,6 +118,103 @@ pub fn make_task(line: &str) -> String {
     format!("{}[ ] {}", &line[..info.prefix], &line[info.prefix..])
 }
 
+/// Un enlace escrito en una línea.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Link {
+    /// `[[Muro]]`, `[[Obra/Muro]]` o `[[Muro|el muro]]`: la nota a la que apunta.
+    Note(String),
+    /// `[informe.pdf](../Adjuntos/informe.pdf)` o `[sitio](https://…)`: el destino tal cual.
+    Markdown(String),
+}
+
+/// Enlaces de una línea: (inicio, fin) en bytes de todo el enlace, el rango que se ve
+/// (el nombre o el texto) y a dónde apunta. Las imágenes (`![…](…)`) no cuentan.
+pub fn links(line: &str) -> Vec<(usize, usize, (usize, usize), Link)> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < line.len() {
+        let rest = &line[i..];
+        if let Some(inner) = rest.strip_prefix("[[") {
+            if let Some(j) = inner.find("]]") {
+                let body = &inner[..j];
+                let (target, alias) = match body.split_once('|') {
+                    Some((t, a)) => (t, Some(a).filter(|a| !a.trim().is_empty())),
+                    None => (body, None),
+                };
+                if !target.trim().is_empty() && !body.contains('[') && !body.contains(']') {
+                    // Se ve el texto después de «|», o si no, el nombre.
+                    let (at, s) = match alias {
+                        Some(a) => (i + 2 + target.len() + 1, a),
+                        None => (i + 2, target),
+                    };
+                    let lead = s.len() - s.trim_start().len();
+                    let end = i + 2 + j + 2;
+                    out.push((i, end, (at + lead, at + lead + s.trim().len()), Link::Note(target.trim().to_string())));
+                    i = end;
+                    continue;
+                }
+            }
+            i += 2;
+            continue;
+        }
+        if rest.starts_with('[') && !line[..i].ends_with('!') {
+            if let Some(k) = rest.find("](") {
+                let text = &rest[1..k];
+                let after = &rest[k + 2..];
+                if let Some(m) = after.find(')') {
+                    let dest = &after[..m];
+                    if !text.trim().is_empty() && !text.contains('[') && !text.contains(']') && !dest.is_empty() && !dest.contains(char::is_whitespace) {
+                        let end = i + k + 2 + m + 1;
+                        out.push((i, end, (i + 1, i + k), Link::Markdown(dest.to_string())));
+                        i = end;
+                        continue;
+                    }
+                }
+            }
+        }
+        i += rest.chars().next().map_or(1, char::len_utf8);
+    }
+    out
+}
+
+/// El nombre de un archivo para usarlo en un enlace: sin espacios ni paréntesis
+/// ("Informe (final).pdf" -> "Informe%20%28final%29.pdf"), como lo entienden otros editores.
+pub fn encode_path(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        match c {
+            ' ' => out += "%20",
+            '(' => out += "%28",
+            ')' => out += "%29",
+            '[' => out += "%5B",
+            ']' => out += "%5D",
+            '#' => out += "%23",
+            '%' => out += "%25",
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Al revés de `encode_path` (cualquier %XX).
+pub fn decode_path(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Some(Ok(v)) = s.get(i + 1..i + 3).filter(|h| h.bytes().all(|c| c.is_ascii_hexdigit())).map(|h| u8::from_str_radix(h, 16)) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_string())
+}
+
 /// Una línea que es solo una imagen: "![Captura 30 sep](../Adjuntos/captura.png)" -> (texto, ruta).
 /// Después pueden venir etiquetas o metadatos (los que agrega la IA), pero no más texto.
 pub fn image_of(line: &str) -> Option<(&str, &str)> {
@@ -342,6 +439,25 @@ pub fn units(text: &str) -> Vec<Unit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn note_and_file_links() {
+        let l = "Ver [[Muro]] y [[Obra/Planos|los planos]] o [informe.pdf](../Adjuntos/informe%20final.pdf) ![x](a.png)";
+        let found = links(l);
+        assert_eq!(found.len(), 3);
+        let (a, b, shown, link) = &found[0];
+        assert_eq!((&l[*a..*b], &l[shown.0..shown.1], link), ("[[Muro]]", "Muro", &Link::Note("Muro".into())));
+        let (_, _, shown, link) = &found[1];
+        assert_eq!((&l[shown.0..shown.1], link), ("los planos", &Link::Note("Obra/Planos".into())));
+        let (a, b, shown, link) = &found[2];
+        assert_eq!(&l[*a..*b], "[informe.pdf](../Adjuntos/informe%20final.pdf)");
+        assert_eq!(&l[shown.0..shown.1], "informe.pdf");
+        assert_eq!(link, &Link::Markdown("../Adjuntos/informe%20final.pdf".into()));
+        assert!(links("[[ ]] [sin destino]() [[a]b]]").is_empty());
+        assert_eq!(decode_path("informe%20final.pdf"), "informe final.pdf");
+        assert_eq!(decode_path(&encode_path("Acta (1) #2 100%.pdf")), "Acta (1) #2 100%.pdf");
+        assert_eq!(encode_path("Acta técnica.pdf"), "Acta%20técnica.pdf");
+    }
 
     #[test]
     fn levels_and_prefixes() {

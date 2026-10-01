@@ -5,7 +5,9 @@
 //! - la sangría y las listas se dibujan con viñetas; las tareas, con casilla;
 //! - "due:2026-09-26" se ve como una fecha ("mañana") y "^k3f9a" no se ve;
 //! - en las reuniones, la hora de cada línea, el inicio y el fin se ven como etiquetas;
-//! - las rutas y direcciones web se abren con un clic.
+//! - las rutas y direcciones web se abren con un clic;
+//! - `[[Nota]]` es un enlace a otra nota y `[informe.pdf](../Adjuntos/informe.pdf)`, un archivo
+//!   adjunto: se ve solo el nombre (con su ícono) y se abren con un clic.
 //!
 //! En la línea donde está el cursor se ve el texto tal cual, para poder editarlo.
 //! Tab / Shift+Tab cambian la sangría; Enter la mantiene.
@@ -26,6 +28,8 @@ const PILL_RIGHT: f32 = 9.0;
 /// Dónde empieza el texto según el nivel de sangría.
 const LEVEL_X: [f32; 5] = [0.0, 22.0, 42.0, 62.0, 82.0];
 const CHECK_W: f32 = 25.0;
+/// Espacio para el ícono de un archivo adjunto.
+const FILE_ICON_W: f32 = 19.0;
 const LABEL_SIZE: f32 = 12.5;
 
 /// Algo que se dibuja sobre el texto; `chars` son posiciones en el texto completo.
@@ -38,6 +42,34 @@ enum Kind {
     Link(Target),
     /// Una línea que es una imagen: su ruta (como está escrita), ancho y alto en pantalla.
     Image(String, f32, f32),
+    /// `[[Nota]]`: a qué nota apunta (como está escrito) y si existe.
+    NoteLink(String, bool),
+    /// `[texto](archivo)`: el archivo, su ícono y si existe.
+    FileLink(Target, &'static str, bool),
+}
+
+/// Qué hacer con un clic sobre el texto.
+enum Click {
+    Check,
+    Open(Target),
+    Note(String),
+}
+
+/// Cómo se ve un enlace escrito (`[[Nota]]` o `[texto](destino)`), desde la nota `note`.
+fn link_kind(link: &lines::Link, note: &Path, note_exists: &dyn Fn(&str) -> bool) -> Kind {
+    match link {
+        lines::Link::Note(t) => Kind::NoteLink(t.clone(), note_exists(t)),
+        lines::Link::Markdown(dest) if dest.starts_with("http://") || dest.starts_with("https://") || dest.starts_with("www.") => {
+            let url = if dest.starts_with("www.") { format!("https://{dest}") } else { dest.clone() };
+            Kind::Link(Target::Url(url))
+        }
+        lines::Link::Markdown(dest) => {
+            let path = super::images::resolve(note, dest);
+            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let exists = path.exists();
+            Kind::FileLink(Target::Path(path), super::attachments::file_icon(&name), exists)
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -171,6 +203,7 @@ fn build(
     cache: &mut LinkCache,
     measure: &dyn Fn(&str) -> f32,
     image: &dyn Fn(&str) -> Option<(f32, f32)>,
+    link: &dyn Fn(&lines::Link) -> Kind,
 ) -> (LayoutJob, Vec<Deco>) {
     let size = EDITOR_SIZE;
     let mut job = LayoutJob::default();
@@ -260,21 +293,28 @@ fn build(
             pos = 8;
         }
 
-        // Etiquetas, fechas, identificadores y enlaces.
-        let found = cache.get(line);
-        let mut spans: Vec<(usize, usize, Option<Token>, Option<Target>)> = found
-            .into_iter()
-            .filter(|(a, _, _)| *a >= pos)
-            .map(|(a, b, t)| (a, b, None, Some(t)))
-            .collect();
+        // Enlaces escritos ([[Nota]], [texto](archivo)), rutas y webs, etiquetas, fechas e identificadores.
+        enum Span {
+            Written((usize, usize), Kind),
+            Found(Target),
+            Tok(Token),
+        }
+        let mut spans: Vec<(usize, usize, Span)> =
+            lines::links(line).into_iter().filter(|(a, ..)| *a >= pos).map(|(a, b, shown, l)| (a, b, Span::Written(shown, link(&l)))).collect();
+        let overlaps = |spans: &[(usize, usize, Span)], a: usize, b: usize| spans.iter().any(|(x, y, _)| a < *y && b > *x);
+        for (a, b, t) in cache.get(line) {
+            if a >= pos && !overlaps(&spans, a, b) {
+                spans.push((a, b, Span::Found(t)));
+            }
+        }
         for (a, b, t) in lines::tokens(line) {
-            if a >= pos && !spans.iter().any(|(x, y, _, _)| a < *y && b > *x) {
-                spans.push((a, b, Some(t), None));
+            if a >= pos && !overlaps(&spans, a, b) {
+                spans.push((a, b, Span::Tok(t)));
             }
         }
         spans.sort_by_key(|s| s.0);
 
-        for (a, b, token, target) in spans {
+        for (a, b, span) in spans {
             if a < pos {
                 continue;
             }
@@ -282,19 +322,37 @@ fn build(
                 job.append(&line[pos..a], lead, body.clone());
                 lead = 0.0;
             }
-            if token.is_some() {
+            if matches!(span, Span::Tok(_)) {
                 // Tachado solo en el texto de una tarea hecha, no entre sus etiquetas.
                 body.strikethrough = Stroke::NONE;
             }
             let chars = ci + n_chars(0, a)..ci + n_chars(0, b);
-            match (token, target) {
-                (_, Some(t)) => {
+            match span {
+                Span::Written((s0, s1), kind) => {
+                    if is_active {
+                        job.append(&line[a..b], lead, fmt(FontId::proportional(size), ACCENT));
+                    } else {
+                        // Solo se ve el nombre (con el ícono, si es un archivo); lo demás, oculto.
+                        let icon_w = if matches!(kind, Kind::FileLink(..)) { FILE_ICON_W } else { 0.0 };
+                        let color = match &kind {
+                            Kind::NoteLink(_, false) | Kind::FileLink(_, _, false) => MUTED,
+                            _ => ACCENT,
+                        };
+                        let mut f = fmt(FontId::proportional(size), color);
+                        f.underline = Stroke::new(1.0, color.gamma_multiply(0.45));
+                        job.append(&line[a..s0], lead + icon_w, hidden.clone());
+                        job.append(&line[s0..s1], 0.0, f);
+                        job.append(&line[s1..b], 0.0, hidden.clone());
+                        decos.push(Deco { kind, chars: ci + n_chars(0, s0)..ci + n_chars(0, s1), line: li, lead: icon_w });
+                    }
+                }
+                Span::Found(t) => {
                     job.append(&line[a..b], lead, fmt(FontId::proportional(size), ACCENT));
                     if !is_active {
                         decos.push(Deco { kind: Kind::Link(t), chars, line: li, lead: 0.0 });
                     }
                 }
-                (Some(Token::Tag(tag)), _) => {
+                Span::Tok(Token::Tag(tag)) => {
                     let c = theme::tag_colors(&tag);
                     if is_active {
                         job.append(&line[a..b], lead, fmt(FontId::proportional(size), c.text));
@@ -307,7 +365,7 @@ fn build(
                         continue;
                     }
                 }
-                (Some(Token::Due(d)), _) => {
+                Span::Tok(Token::Due(d)) => {
                     if is_active {
                         job.append(&line[a..b], lead, fmt(FontId::proportional(size - 2.0), MUTED));
                     } else {
@@ -317,11 +375,10 @@ fn build(
                         decos.push(Deco { kind: Kind::Date { label, fg, bg }, chars, line: li, lead: w });
                     }
                 }
-                (Some(Token::Id), _) => {
+                Span::Tok(Token::Id) => {
                     let f = if is_active { fmt(FontId::proportional(size - 2.5), MUTED) } else { hidden.clone() };
                     job.append(&line[a..b], lead, f);
                 }
-                (None, None) => job.append(&line[a..b], lead, body.clone()),
             }
             lead = 0.0;
             pos = b;
@@ -336,6 +393,11 @@ fn build(
         job.append("", 0.0, fmt(FontId::proportional(size), TEXT));
     }
     (job, decos)
+}
+
+/// Los rectángulos de los caracteres `chars` en pantalla.
+fn char_rects(boxes: &[CharBox], o: egui::Pos2, chars: Range<usize>) -> Vec<egui::Rect> {
+    chars.filter_map(|i| boxes.get(i)).map(|b| egui::Rect::from_min_size(egui::pos2(o.x + b.x, o.y + b.top), egui::vec2(b.w, b.h))).collect()
 }
 
 /// Líneas del texto con su posición (en caracteres) de inicio.
@@ -381,6 +443,10 @@ impl NotesApp {
         let mut reply = None;
         let mut followup = false;
         let mut move_to: Option<String> = None;
+        let mut follow: Option<String> = None;
+        let mut open_backlink: Option<PathBuf> = None;
+        let mut attach_now = false;
+        let backlinks = self.backlinks();
         Self::column(ui, "editor", |ui, col_w| {
             // Título = nombre del archivo; las notas del día muestran su fecha ("Hoy, domingo 27 sep").
             if let Some(h) = day_heading(&vault::stem(&self.note.path)) {
@@ -443,6 +509,22 @@ impl NotesApp {
                     });
                 }
                 ui.label(RichText::new(format!("{notes}   ·   {when}")).size(12.5).color(MUTED));
+                // Las notas que enlazan a esta.
+                if !backlinks.is_empty() {
+                    ui.label(RichText::new("   ·   ").size(12.5).color(MUTED));
+                    let r = ui
+                        .add(egui::Label::new(RichText::new(format!("{} Enlazada desde {}", icon::LINK_SIMPLE, plural(backlinks.len(), "nota"))).size(12.5).color(ACCENT)).sense(Sense::click()))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    egui::Popup::menu(&r).show(|ui| {
+                        for p in &backlinks {
+                            let ws = workspace_of(p).unwrap_or_else(|| vault::DIARY.to_string());
+                            if ui.button(format!("{}  {}   ·  {ws}", icon::FILE_TEXT, display_title(&vault::stem(p)))).clicked() {
+                                open_backlink = Some(p.clone());
+                                ui.close();
+                            }
+                        }
+                    });
+                }
                 ui.spacing_mut().item_spacing.x = gap;
                 if in_meeting {
                     ui.label(RichText::new(format!("  {} Reunión en curso", icon::RECORD)).size(12.5).color(SUCCESS));
@@ -478,7 +560,7 @@ impl NotesApp {
                 st.store(&ctx, id);
             }
             let focused = ui.memory(|m| m.has_focus(id));
-            if focused {
+            if focused && !self.link_pick_keys(ui, id) {
                 self.edit_keys(ui, id);
             }
             let before = TextEditState::load(&ctx, id).and_then(|s| s.cursor.char_range());
@@ -499,13 +581,28 @@ impl NotesApp {
             if focused && ctrl_v {
                 self.paste_image(active);
             }
+            // Cómo se ve cada enlace escrito de la nota (si la nota o el archivo existen).
+            let mut kinds: HashMap<lines::Link, Kind> = HashMap::new();
+            let written: Vec<lines::Link> =
+                self.note.text.lines().filter(|l| l.contains('[')).flat_map(|l| lines::links(l).into_iter().map(|(.., k)| k)).collect();
+            for l in written {
+                if !kinds.contains_key(&l) {
+                    let exists = match &l {
+                        lines::Link::Note(t) => self.link_target(t).is_some(),
+                        _ => false,
+                    };
+                    kinds.insert(l.clone(), link_kind(&l, &self.note.path, &|_| exists));
+                }
+            }
+            let note_path = self.note.path.clone();
+            let link_of = |l: &lines::Link| kinds.get(l).cloned().unwrap_or_else(|| link_kind(l, &note_path, &|_| false));
             let decos: RefCell<Vec<Deco>> = RefCell::new(Vec::new());
             let links = &mut self.links;
             let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
                 let measure = |s: &str| {
                     ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), FontId::proportional(LABEL_SIZE), TEXT).size().x)
                 };
-                let (mut job, d) = build(buf.as_str(), active, links, &measure, &|rel| image_sizes.get(rel).copied());
+                let (mut job, d) = build(buf.as_str(), active, links, &measure, &|rel| image_sizes.get(rel).copied(), &link_of);
                 *decos.borrow_mut() = d;
                 job.wrap.max_width = wrap;
                 ui.fonts_mut(|f| f.layout_job(job))
@@ -538,6 +635,10 @@ impl NotesApp {
                     paste_now = true;
                     ui.close();
                 }
+                if ui.button(format!("{}  Adjuntar archivo…", icon::PAPERCLIP)).on_hover_text("También puedes arrastrar archivos a la ventana").clicked() {
+                    attach_now = true;
+                    ui.close();
+                }
                 let Some(l) = self.menu_line else { return };
                 let line = nth_line(&self.note.text, l);
                 if line.trim().is_empty() || lines::is_heading(line) {
@@ -556,6 +657,9 @@ impl NotesApp {
             });
             if paste_now {
                 self.paste_image(self.menu_line);
+            }
+            if attach_now {
+                self.pick_attachments(self.menu_line);
             }
             if let Some(l) = to_task {
                 self.line_to_task(l);
@@ -576,7 +680,10 @@ impl NotesApp {
                     }
                 }
             }
-            self.paint_decorations(ui, &out, &decos, active, under, before);
+            follow = self.paint_decorations(ui, &out, &decos, active, under, before);
+            // Escribiendo «[[…»: la lista de notas para enlazar.
+            self.update_link_pick(&out, out.response.has_focus());
+            self.link_pick_ui(&ctx, id);
             self.keep_cursor_out_of_prefix(&ctx, id, before);
             if std::mem::take(&mut self.focus_editor) {
                 out.response.request_focus();
@@ -597,6 +704,12 @@ impl NotesApp {
         if followup {
             self.start_followup();
         }
+        if let Some(t) = follow {
+            self.follow_note_link(&t);
+        }
+        if let Some(p) = open_backlink {
+            self.open_in_tab(p, None);
+        }
     }
 
     /// Números, barras, píldoras, casillas, fechas y enlaces; y sus clics.
@@ -608,16 +721,16 @@ impl NotesApp {
         active: Option<usize>,
         under: egui::layers::ShapeIdx,
         before: Option<CCursorRange>,
-    ) {
+    ) -> Option<String> {
         let boxes = char_boxes(&out.galley);
         if boxes.is_empty() {
-            return;
+            return None;
         }
         let o = out.galley_pos;
         let painter = ui.painter();
         let mut bg: Vec<egui::Shape> = Vec::new();
         let hover = out.response.hover_pos();
-        let mut clicked: Option<(usize, Option<Target>)> = None; // (línea, enlace) — sin enlace = casilla
+        let mut clicked: Option<(usize, Click)> = None;
         let text = self.note.text.clone();
         let starts = line_starts(&text);
 
@@ -699,7 +812,7 @@ impl NotesApp {
                         if hovered {
                             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                             if out.response.clicked() {
-                                clicked = Some((d.line, None));
+                                clicked = Some((d.line, Click::Check));
                             }
                         }
                     }
@@ -728,7 +841,7 @@ impl NotesApp {
                         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("imagen-tip"), egui::PopupAnchor::Pointer)
                             .show(|ui| ui.label(RichText::new("Abrir en tamaño real").size(12.5)));
                         if out.response.clicked() {
-                            clicked = Some((d.line, Some(Target::Path(file))));
+                            clicked = Some((d.line, Click::Open(Target::Path(file))));
                         }
                     }
                 }
@@ -748,7 +861,41 @@ impl NotesApp {
                         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("link-tip"), egui::PopupAnchor::Pointer)
                             .show(|ui| ui.label(RichText::new(tip).size(12.5)));
                         if out.response.clicked() {
-                            clicked = Some((d.line, Some(target.clone())));
+                            clicked = Some((d.line, Click::Open(target.clone())));
+                        }
+                    }
+                }
+                Kind::NoteLink(target, exists) => {
+                    let rects = char_rects(&boxes, o, d.chars.clone());
+                    if hover.is_some_and(|p| rects.iter().any(|r| r.contains(p))) {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        let name = target.rsplit('/').next().unwrap_or(target);
+                        let tip = if *exists { format!("Abrir «{name}»") } else { format!("Crear la nota «{name}»") };
+                        egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("link-tip"), egui::PopupAnchor::Pointer)
+                            .show(|ui| ui.label(RichText::new(tip).size(12.5)));
+                        if out.response.clicked() {
+                            clicked = Some((d.line, Click::Note(target.clone())));
+                        }
+                    }
+                }
+                Kind::FileLink(target, glyph, exists) => {
+                    let cy = o.y + text_center(&boxes, d.chars.start);
+                    let color = if *exists { ACCENT } else { MUTED };
+                    let icon_rect = egui::Rect::from_center_size(egui::pos2(o.x + first.x - d.lead + 8.0, cy), egui::vec2(16.0, 18.0));
+                    painter.text(icon_rect.center(), Align2::CENTER_CENTER, *glyph, FontId::proportional(15.0), color);
+                    let mut rects = char_rects(&boxes, o, d.chars.clone());
+                    rects.push(icon_rect);
+                    if hover.is_some_and(|p| rects.iter().any(|r| r.contains(p))) {
+                        let Target::Path(path) = target else { continue };
+                        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                        let tip = if *exists { format!("Abrir {name}") } else { format!("No se encuentra {}", path.display()) };
+                        if *exists {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("link-tip"), egui::PopupAnchor::Pointer)
+                            .show(|ui| ui.label(RichText::new(tip).size(12.5)));
+                        if *exists && out.response.clicked() {
+                            clicked = Some((d.line, Click::Open(target.clone())));
                         }
                     }
                 }
@@ -763,10 +910,12 @@ impl NotesApp {
                 st.store(ui.ctx(), out.response.id);
             }
             match target {
-                Some(t) => links::open(&t),
-                None => self.toggle_line_check(line),
+                Click::Open(t) => links::open(&t),
+                Click::Check => self.toggle_line_check(line),
+                Click::Note(t) => return Some(t),
             }
         }
+        None
     }
 
     /// Marca o desmarca la casilla de una línea de la nota abierta (y su tarea en tareas.txt).
@@ -1009,16 +1158,43 @@ impl NotesApp {
 mod tests {
     use super::*;
 
+    fn test_links(l: &lines::Link) -> Kind {
+        link_kind(l, Path::new("C:/Notas/Obra/Muro.md"), &|t| t == "Planos")
+    }
+
+    /// `[[Nota]]` y `[archivo](ruta)`: se ve solo el nombre; el resto queda oculto.
+    #[test]
+    fn note_and_file_links_show_only_their_name() {
+        let mut cache = LinkCache::default();
+        let text = "Ver [[Planos]] y [[Otra|esta]] con [acta.pdf](../Adjuntos/acta%201.pdf)\n";
+        let (job, decos) = build(text, None, &mut cache, &|_| 10.0, &|_| None, &test_links);
+        let shown: Vec<&str> = job.sections.iter().filter(|s| s.format.color != Color32::TRANSPARENT).map(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0]).collect();
+        assert_eq!(shown, vec!["Ver ", "Planos", " y ", "esta", " con ", "acta.pdf", "\n"]);
+        let kinds: Vec<String> = decos
+            .iter()
+            .map(|d| match &d.kind {
+                Kind::NoteLink(t, e) => format!("nota {t} {e}"),
+                Kind::FileLink(Target::Path(p), _, e) => format!("archivo {} {e}", p.file_name().unwrap().to_string_lossy()),
+                _ => "otro".into(),
+            })
+            .collect();
+        assert_eq!(kinds, vec!["nota Planos true", "nota Otra false", "archivo acta 1.pdf false"]);
+        // En la línea que se edita, se ve el texto tal cual.
+        let (job, decos) = build(text, Some(0), &mut cache, &|_| 10.0, &|_| None, &test_links);
+        assert!(decos.is_empty());
+        assert!(job.text.contains("[[Otra|esta]]"));
+    }
+
     /// Una línea de imagen se ve como la imagen (su fila, del alto de la imagen), salvo al editarla.
     #[test]
     fn image_lines_become_images() {
         let text = "Antes\n![Captura](../Adjuntos/c.png)\nDespués\n";
         let mut cache = LinkCache::default();
         let size = |rel: &str| (rel == "../Adjuntos/c.png").then_some((300.0, 150.0));
-        let (job, decos) = build(text, None, &mut cache, &|_| 10.0, &size);
+        let (job, decos) = build(text, None, &mut cache, &|_| 10.0, &size, &test_links);
         assert_eq!(job.text, text);
         assert!(decos.iter().any(|d| matches!(&d.kind, Kind::Image(r, w, h) if r == "../Adjuntos/c.png" && *w == 300.0 && *h == 150.0) && d.line == 1));
-        let (_, decos) = build(text, Some(1), &mut cache, &|_| 10.0, &size);
+        let (_, decos) = build(text, Some(1), &mut cache, &|_| 10.0, &size, &test_links);
         assert!(!decos.iter().any(|d| matches!(d.kind, Kind::Image(..))), "en la línea que se edita se ve el texto");
     }
 
@@ -1026,7 +1202,7 @@ mod tests {
     fn build_hides_hash_due_and_id_except_on_active_line() {
         let text = "- [ ] Entregar #informe due:2026-09-26 ^k3f9a\n  ver /no/existe\n";
         let mut cache = LinkCache::default();
-        let (job, decos) = build(text, None, &mut cache, &|s| s.chars().count() as f32 * 7.0, &|_| None);
+        let (job, decos) = build(text, None, &mut cache, &|s| s.chars().count() as f32 * 7.0, &|_| None, &test_links);
         assert_eq!(job.text, text, "el texto no cambia, solo su formato");
         let kinds: Vec<&str> = decos
             .iter()
@@ -1036,6 +1212,7 @@ mod tests {
                 Kind::Date { .. } => "date",
                 Kind::Link(_) => "link",
                 Kind::Image(..) => "image",
+                Kind::NoteLink(..) | Kind::FileLink(..) => "enlace",
             })
             .collect();
         assert_eq!(kinds, vec!["prefix", "pill", "date", "prefix"]);
@@ -1044,7 +1221,7 @@ mod tests {
         let sec = job.sections.iter().find(|s| s.byte_range.start.0 == hash).unwrap();
         assert_eq!(sec.format.color, Color32::TRANSPARENT);
         // En la línea activa sí.
-        let (job, decos) = build(text, Some(0), &mut cache, &|_| 10.0, &|_| None);
+        let (job, decos) = build(text, Some(0), &mut cache, &|_| 10.0, &|_| None, &test_links);
         let sec = job.sections.iter().find(|s| s.byte_range.start.0 == hash).unwrap();
         assert_ne!(sec.format.color, Color32::TRANSPARENT);
         assert!(!decos.iter().any(|d| matches!(d.kind, Kind::Pill(_))));
@@ -1054,7 +1231,7 @@ mod tests {
     fn headings_hide_their_marks_and_meetings_become_labels() {
         let text = "## Reunión CIC · 2026-09-24 10:00\n- 10:02 hola\n## fin · 10:40\n### Resumen\n";
         let mut cache = LinkCache::default();
-        let (job, decos) = build(text, None, &mut cache, &|s| s.chars().count() as f32 * 7.0, &|_| None);
+        let (job, decos) = build(text, None, &mut cache, &|s| s.chars().count() as f32 * 7.0, &|_| None, &test_links);
         assert_eq!(job.text, text);
         let labels: Vec<String> = decos
             .iter()
@@ -1073,7 +1250,7 @@ mod tests {
         assert_eq!(meeting_label("## Visita · 2026-09-24 15:00", false).unwrap(), format!("{} Visita · jue 24 sep · 15:00", icon::USERS));
         assert!(meeting_label("## Ideas para el curso", false).is_none());
         // En la línea que se edita, tal cual.
-        let (job, _) = build(text, Some(3), &mut cache, &|_| 10.0, &|_| None);
+        let (job, _) = build(text, Some(3), &mut cache, &|_| 10.0, &|_| None, &test_links);
         let sec = job.sections.iter().find(|s| s.byte_range.start.0 == hashes).unwrap();
         assert_ne!(sec.format.color, Color32::TRANSPARENT);
     }

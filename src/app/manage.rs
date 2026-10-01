@@ -49,6 +49,8 @@ impl NotesApp {
                 m.workspace = new.to_string();
             }
         }
+        // Los enlaces `[[Espacio/Nota]]` (los que solo dicen el nombre siguen sirviendo).
+        self.update_links(old, new, false);
         let root = self.vault.root.clone();
         let _ = self.doubts.save(&root);
         let _ = self.ideas.save(&root);

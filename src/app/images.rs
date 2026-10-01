@@ -30,7 +30,7 @@ pub(super) fn resolve(note: &Path, rel: &str) -> PathBuf {
             ".." => {
                 out.pop();
             }
-            p => out.push(p),
+            p => out.push(lines::decode_path(p)),
         }
     }
     out
@@ -81,22 +81,23 @@ fn v_key_down() -> bool {
     false
 }
 
-fn decode_png(bytes: &[u8]) -> Option<egui::ColorImage> {
-    let mut dec = png::Decoder::new(std::io::Cursor::new(bytes));
-    dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = dec.read_info().ok()?;
-    let mut buf = vec![0; reader.output_buffer_size()?];
-    let info = reader.next_frame(&mut buf).ok()?;
-    let (w, h) = (info.width as usize, info.height as usize);
-    let data = &buf[..info.buffer_size()];
-    let rgba: Vec<u8> = match info.color_type {
-        png::ColorType::Rgba => data.to_vec(),
-        png::ColorType::Rgb => data.chunks(3).flat_map(|c| [c[0], c[1], c[2], 255]).collect(),
-        png::ColorType::GrayscaleAlpha => data.chunks(2).flat_map(|c| [c[0], c[0], c[0], c[1]]).collect(),
-        png::ColorType::Grayscale => data.iter().flat_map(|&g| [g, g, g, 255]).collect(),
-        png::ColorType::Indexed => return None,
-    };
-    Some(egui::ColorImage::from_rgba_unmultiplied([w, h], &rgba))
+/// Lado máximo con que se carga una imagen para verla en la nota (el clic abre el original).
+const MAX_SIDE: u32 = 2048;
+
+/// Lee una imagen (PNG, JPG, GIF, WebP o BMP), derecha según cómo se tomó la foto.
+fn decode_image(bytes: &[u8]) -> Option<egui::ColorImage> {
+    use image::ImageDecoder;
+    let mut dec = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?.into_decoder().ok()?;
+    let orientation = dec.orientation().ok();
+    let mut img = image::DynamicImage::from_decoder(dec).ok()?;
+    if let Some(o) = orientation {
+        img.apply_orientation(o);
+    }
+    if img.width() > MAX_SIDE || img.height() > MAX_SIDE {
+        img = img.thumbnail(MAX_SIDE, MAX_SIDE);
+    }
+    let rgba = img.to_rgba8();
+    Some(egui::ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw()))
 }
 
 /// Guarda una imagen RGBA como PNG.
@@ -121,7 +122,7 @@ impl Images {
             if self.loaded.contains_key(&path) {
                 continue;
             }
-            let img = fs::read(&path).ok().and_then(|b| decode_png(&b)).map(|img| {
+            let img = fs::read(&path).ok().and_then(|b| decode_image(&b)).map(|img| {
                 let size = img.size;
                 (ctx.load_texture(path.to_string_lossy(), img, egui::TextureOptions::LINEAR), size)
             });
@@ -181,21 +182,7 @@ impl NotesApp {
         }
         let md = format!("![Captura {} {} {}](../{}/{name})", now.day(), MESES[now.month0() as usize], now.format("%H:%M"), vault::ATTACHMENTS);
         // Va en la línea del cursor si está vacía, o en una nueva debajo (sin cursor: al final).
-        let mut ls: Vec<String> = self.note.text.split('\n').map(str::to_string).collect();
-        let cur = line.unwrap_or(ls.len() - 1).min(ls.len() - 1);
-        if ls[cur].trim().is_empty() {
-            ls[cur] = md;
-        } else {
-            ls.insert(cur + 1, md);
-        }
-        let mut new = ls.join("\n");
-        if !new.ends_with('\n') {
-            new.push('\n');
-        }
-        self.note.text = new;
-        self.note.dirty = true;
-        self.note.last_edit = Instant::now();
-        self.save();
+        self.insert_lines_after(line, vec![md]);
         self.msg(format!("Captura pegada ({}×{}), guardada en {}/{name}", img.width, img.height, vault::ATTACHMENTS));
         true
     }
@@ -217,7 +204,7 @@ mod tests {
         // Una imagen pequeña ida y vuelta.
         let rgba: Vec<u8> = (0..4 * 3 * 2).map(|i| i as u8).collect();
         let png = encode_png(3, 2, &rgba).unwrap();
-        let img = decode_png(&png).unwrap();
+        let img = decode_image(&png).unwrap();
         assert_eq!(img.size, [3, 2]);
     }
 }
@@ -259,7 +246,7 @@ mod clipboard_tests {
         let (_, rel) = lines::image_of(line).expect("la segunda línea es la imagen");
         let file = resolve(&muro, rel);
         assert!(file.starts_with(dir.join("Adjuntos")), "{file:?}");
-        let img = decode_png(&fs::read(&file).unwrap()).unwrap();
+        let img = decode_image(&fs::read(&file).unwrap()).unwrap();
         assert_eq!(img.size, [4, 3]);
         assert_eq!(img.pixels[0].a(), 255, "el alfa se arregla");
         assert!(text.ends_with("Línea dos\n"));
