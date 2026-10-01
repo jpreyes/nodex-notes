@@ -547,6 +547,12 @@ pub struct NotesApp {
     /// «¿Qué se hizo?» (seguimiento) y los seguimientos de las tareas, guardados.
     follow_ask: Option<tracking::Ask>,
     follow_cache: Option<((u64, Option<SystemTime>), std::rc::Rc<tracking::FollowUps>)>,
+    /// «¿La marco hecha?»: la sugerencia, las revisiones en curso, las ya hechas y la última
+    /// versión de la nota abierta que se revisó.
+    done_suggest: Option<tracking::DoneSuggestion>,
+    done_checks: Vec<std::sync::mpsc::Receiver<Option<tracking::DoneSuggestion>>>,
+    done_checked: Option<HashSet<String>>,
+    done_scanned: Option<u64>,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -822,6 +828,10 @@ impl NotesApp {
             history: None,
             follow_ask: None,
             follow_cache: None,
+            done_suggest: None,
+            done_checks: Vec::new(),
+            done_checked: None,
+            done_scanned: None,
         };
         // Pestañas de la sesión anterior (o la nota que estaba abierta).
         let decoded: Vec<tabs::Tab> = estado_tabs.iter().filter_map(|t| tabs::decode(t, &app.vault.root)).collect();
@@ -896,9 +906,15 @@ impl NotesApp {
         }
         // La pregunta «¿Qué se hizo?» de la primera tarea pendiente (para capturas).
         #[cfg(debug_assertions)]
-        if std::env::var("NODEX_DEMO_SEGUIMIENTO").is_ok() {
+        if let Ok(v) = std::env::var("NODEX_DEMO_SEGUIMIENTO") {
             if let Some(t) = app.agenda.tasks().into_iter().find(|t| !t.done) {
-                app.ask_task_follow_up(&t, true);
+                if v == "sugerir" {
+                    app.ai = Err("demo".into());
+                    let target = tracking::Target::Task(tracking::task_key(&t));
+                    app.check_done(target, agenda::display_text(&t.text), "Listo, se mandaron por correo y Juan los aprobó".into());
+                } else {
+                    app.ask_task_follow_up(&t, true);
+                }
             }
         }
         #[cfg(debug_assertions)]
@@ -1330,6 +1346,7 @@ impl NotesApp {
         self.poll_ai_usage();
         self.poll_account();
         self.poll_update();
+        self.poll_done_checks();
         self.maybe_reconcile_tasks();
         let m = vault::modified(&self.note.path);
         if m.is_none() || !self.note.changed_on_disk() {
@@ -1899,6 +1916,42 @@ impl NotesApp {
     /// Deja la casilla de la línea "^id" de una nota como hecha o pendiente.
     fn sync_task_line(&mut self, note_rel: &str, id: &str, done: bool) {
         self.edit_task_line(note_rel, id, |line| lines::parse(line).check.is_some_and(|d| d != done).then(|| lines::toggle_check(line)));
+        // Hecha: sus subtareas también.
+        if done {
+            let path = self.vault.root.join(format!("{note_rel}.md"));
+            let text = if path == self.note.path { self.note.text.clone() } else { vault::read_text(&path).unwrap_or_default() };
+            if let Some(idx) = text.split('\n').position(|l| lines::id_of(l).as_deref() == Some(id)) {
+                self.complete_children(&path, idx);
+            }
+        }
+    }
+
+    /// Marca hechas las subtareas de la línea `idx` de una nota (y sus tareas).
+    pub(super) fn complete_children(&mut self, path: &Path, idx: usize) {
+        let open = path == self.note.path;
+        let old = if open { self.note.text.clone() } else { vault::read_text(path).unwrap_or_default() };
+        let (new, ids) = lines::check_children(&old, idx);
+        if new == old {
+            return;
+        }
+        for id in &ids {
+            if let Err(e) = self.agenda.set_done_by_id(id, true, &today()) {
+                self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
+            }
+        }
+        self.gcal_dirty = true;
+        if self.analyzed.contains(&ai::fnv(&old)) {
+            self.analyzed.insert(ai::fnv(&new));
+            self.save_analyzed();
+        }
+        if open {
+            self.note.text = new;
+            self.note.dirty = true;
+            self.save();
+        } else if fs::write(path, &new).is_ok() {
+            let m = vault::modified(path).unwrap_or_else(SystemTime::now);
+            self.vault.upsert(path.to_path_buf(), new, m);
+        }
     }
 
     /// Cambia la línea "^id" de una nota (`edit` devuelve la línea nueva, o `None` si no cambia).
@@ -3121,6 +3174,7 @@ impl NotesApp {
         self.update_news_window(&ctx);
         self.history_window(&ctx);
         self.follow_up_window(&ctx);
+        self.done_suggest_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {
             self.apply(a);
         }

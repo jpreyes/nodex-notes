@@ -1207,6 +1207,11 @@ impl NotesApp {
             }
         }
         self.save();
+        // Recién hecha: sus subtareas también.
+        if lines::parse(&new_line).check == Some(true) {
+            let p = self.note.path.clone();
+            self.complete_children(&p, line_idx);
+        }
         // Recién hecha: ¿qué se hizo? (fuera de las plantillas)
         if lines::parse(&new_line).check == Some(true) && !vault::in_templates(&self.note.path) {
             let target = super::tracking::Target::Line { note: self.note.path.clone(), id: lines::id_of(&new_line), text: new_line.clone() };

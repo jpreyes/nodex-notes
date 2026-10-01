@@ -241,6 +241,28 @@ pub fn is_block_end(line: &str) -> bool {
 }
 
 /// Línea hecha solo de etiquetas ("#reunión #vigas").
+/// Marca hechas las casillas pendientes que están debajo de la línea `idx` (sus subtareas: las
+/// líneas con más sangría, hasta la próxima con menos). Devuelve el texto y los identificadores
+/// (`^id`) de las que se marcaron.
+pub fn check_children(text: &str, idx: usize) -> (String, Vec<String>) {
+    let mut ls: Vec<String> = text.split('\n').map(str::to_string).collect();
+    let Some(base) = ls.get(idx).map(|l| parse(l).level) else { return (text.to_string(), Vec::new()) };
+    let mut ids = Vec::new();
+    for l in ls.iter_mut().skip(idx + 1) {
+        let info = parse(l);
+        if l.trim().is_empty() || info.level <= base {
+            break;
+        }
+        if info.check == Some(false) {
+            let cr = if l.ends_with('\r') { "\r" } else { "" };
+            let new = toggle_check(l.trim_end_matches('\r'));
+            ids.extend(id_of(&new));
+            *l = format!("{new}{cr}");
+        }
+    }
+    (ls.join("\n"), ids)
+}
+
 // ---------- Seguimiento ----------
 
 /// Marca de una línea de seguimiento (lo que se hizo con la línea de arriba):
@@ -561,6 +583,20 @@ pub fn units(text: &str) -> Vec<Unit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subtasks() {
+        // Una línea con sangría también puede ser tarea.
+        let sub = make_task("  Responder a Félix");
+        assert_eq!(sub, "  [ ] Responder a Félix");
+        assert_eq!(parse(&sub).check, Some(false));
+        assert_eq!(make_task("    - Revisar perfiles"), "    - [ ] Revisar perfiles");
+        // Marcar la madre marca las hijas pendientes (no las de otra tarea).
+        let t = "- [x] Preparar taller ^madre\n  [ ] Reservar sala ^hija1\n  - [x] Avisar\n    - [ ] Imprimir guías ^hija2\n  ↳ 2026-10-01: listo\n- [ ] Otra ^otra\n";
+        let (new, ids) = check_children(t, 0);
+        assert_eq!(new, "- [x] Preparar taller ^madre\n  [x] Reservar sala ^hija1\n  - [x] Avisar\n    - [x] Imprimir guías ^hija2\n  ↳ 2026-10-01: listo\n- [ ] Otra ^otra\n");
+        assert_eq!(ids, vec!["hija1", "hija2"]);
+    }
 
     #[test]
     fn follow_ups() {
