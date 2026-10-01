@@ -51,6 +51,8 @@ impl NotesApp {
         }
         // Los enlaces `[[Espacio/Nota]]` (los que solo dicen el nombre siguen sirviendo).
         self.update_links(old, new, false);
+        // Y su historial de versiones.
+        crate::history::relink(&self.vault.root, old, new);
         let root = self.vault.root.clone();
         let _ = self.doubts.save(&root);
         let _ = self.ideas.save(&root);

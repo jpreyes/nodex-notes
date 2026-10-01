@@ -253,6 +253,8 @@ pub struct Vault {
     cache_dirty: bool,
     cache_saved: Instant,
     cache_busy: Arc<AtomicBool>,
+    /// Cuándo se guardó la última versión de cada nota en el historial (ver `history`).
+    history_last: HashMap<PathBuf, chrono::DateTime<chrono::Local>>,
 }
 
 fn is_md(path: &Path) -> bool {
@@ -326,6 +328,7 @@ impl Vault {
             cache_dirty: false,
             cache_saved: Instant::now(),
             cache_busy: Arc::new(AtomicBool::new(false)),
+            history_last: HashMap::new(),
         };
         // Primero la copia local (un solo archivo); después solo se relee lo que cambió.
         let cached = v.load_cache();
@@ -446,7 +449,8 @@ impl Vault {
             let parts: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
             // .nodex, .papelera y otros ocultos no son notas.
             if parts.first().is_none_or(|c| c.starts_with('.')) {
-                self.internal_changed |= parts.first().is_some_and(|c| c == ".nodex");
+                // (El historial de versiones no es un dato que haya que releer.)
+                self.internal_changed |= parts.first().is_some_and(|c| c == ".nodex") && parts.get(1).is_none_or(|c| c != "historial");
                 continue;
             }
             match parts.len() {
@@ -540,6 +544,20 @@ impl Vault {
             .map(|w| if is_diary_dir(&w) { DIARY.to_string() } else { w })
             .unwrap_or_default();
         let title = stem(&path);
+        // Antes de reemplazarla: cómo estaba, al historial (si corresponde).
+        if let Some(old) = self.notes.get(&path).filter(|n| n.text != text) {
+            let rel = crate::history::rel_of(&self.root, &path);
+            let now = chrono::Local::now();
+            let last = self.history_last.get(&path).copied().or_else(|| crate::history::last_kept(&self.root, &rel));
+            let since = last.map(|t| (now - t).to_std().unwrap_or_default());
+            if crate::history::should_keep(&old.text, &text, since) {
+                if crate::history::keep(&self.root, &rel, &old.text, now).is_ok() {
+                    self.history_last.insert(path.clone(), now);
+                }
+            } else if let Some(t) = last {
+                self.history_last.insert(path.clone(), t);
+            }
+        }
         self.cache_dirty = true;
         self.generation += 1;
         use std::cell::OnceCell;

@@ -34,6 +34,7 @@ mod doubts_ui;
 mod editor;
 mod manage;
 mod followup;
+mod history_ui;
 mod home;
 mod images;
 mod mail_ui;
@@ -538,6 +539,8 @@ pub struct NotesApp {
     /// Sugerencias mientras se escribe `[[…`; y dónde se cerraron con Esc.
     link_pick: Option<notelinks::LinkPick>,
     link_pick_closed: Option<usize>,
+    /// La ventana «Historial» de la nota abierta.
+    history: Option<history_ui::HistoryView>,
 }
 
 /// Un instante "hace mucho" (sin pasar por debajo del arranque del equipo).
@@ -810,6 +813,7 @@ impl NotesApp {
             note_index: notelinks::NoteIndex::default(),
             link_pick: None,
             link_pick_closed: None,
+            history: None,
         };
         // Pestañas de la sesión anterior (o la nota que estaba abierta).
         let decoded: Vec<tabs::Tab> = estado_tabs.iter().filter_map(|t| tabs::decode(t, &app.vault.root)).collect();
@@ -881,6 +885,10 @@ impl NotesApp {
             app.note.text.push_str(&t);
             app.pending_cursor = Some(app.note.text.chars().count());
             app.focus_editor = true;
+        }
+        #[cfg(debug_assertions)]
+        if std::env::var("NODEX_DEMO_HISTORIAL").is_ok() {
+            app.open_history();
         }
         #[cfg(debug_assertions)]
         if std::env::var("NODEX_DEMO_WEEK").is_ok() {
@@ -3085,6 +3093,7 @@ impl NotesApp {
         self.onboarding_window(&ctx);
         self.reject_window(&ctx);
         self.update_news_window(&ctx);
+        self.history_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {
             self.apply(a);
         }

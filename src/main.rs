@@ -15,6 +15,7 @@ mod doubts;
 mod dropbox;
 mod dups;
 mod gcal;
+mod history;
 mod ics;
 mod lines;
 mod links;

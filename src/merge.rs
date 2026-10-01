@@ -18,7 +18,7 @@ pub struct Merged {
 }
 
 /// Pares (i, j) de líneas iguales de `a` y `b`, en orden: la subsecuencia común más larga.
-fn common(a: &[&str], b: &[&str]) -> Vec<(usize, usize)> {
+pub fn common(a: &[&str], b: &[&str]) -> Vec<(usize, usize)> {
     // Lo igual del comienzo y del final no necesita tabla.
     let mut start = 0;
     while start < a.len() && start < b.len() && a[start] == b[start] {

@@ -93,6 +93,7 @@ La IA las lee en cada análisis. Puedes editarlas o borrarlas.
 | `espacios.json` | Los temas sin espacio que la IA va juntando para sugerir uno nuevo. |
 | `sugerencias.json` | Con «sugerir antes de aplicar»: lo que propone la IA y espera tu visto bueno. |
 | `conversaciones/*.json` | Las conversaciones con la IA (una por archivo). |
+| `historial/<Espacio>/<Nota>/` | Versiones anteriores de cada nota: `AAAA-MM-DD HH.MM.SS huella.md`, el texto tal cual estaba. Se pueden abrir con cualquier editor. |
 | `recurrentes.json` | Las reuniones y notas que se repiten. |
 | `papelera.txt` | De dónde vino cada cosa de la papelera (`nombre⇥ruta original⇥fecha`). |
 | `diario-aparte.txt` | Notas del día que no se juntan en el Diario (se deshizo cuando se juntaron). |

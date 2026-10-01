@@ -625,6 +625,7 @@ impl NotesApp {
         let mut move_to: Option<String> = None;
         let mut follow: Option<String> = None;
         let mut open_backlink: Option<PathBuf> = None;
+        let mut show_history = false;
         let mut attach_now = false;
         let mut table_now = false;
         let mut template_now = false;
@@ -694,6 +695,17 @@ impl NotesApp {
                     });
                 }
                 ui.label(RichText::new(format!("{notes}   ·   {when}")).size(12.5).color(MUTED));
+                // Versiones anteriores de la nota.
+                if self.note.disk_mtime.is_some() && !vault::in_templates(&self.note.path) {
+                    ui.label(RichText::new("   ·   ").size(12.5).color(MUTED));
+                    let r = ui
+                        .add(egui::Label::new(RichText::new(format!("{} Historial", icon::CLOCK_COUNTER_CLOCKWISE)).size(12.5).color(MUTED)).sense(Sense::click()))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text("Ver y recuperar cómo estaba la nota antes");
+                    if r.clicked() {
+                        show_history = true;
+                    }
+                }
                 // Las notas que enlazan a esta.
                 if !backlinks.is_empty() {
                     ui.label(RichText::new("   ·   ").size(12.5).color(MUTED));
@@ -912,6 +924,9 @@ impl NotesApp {
         }
         if let Some(p) = open_backlink {
             self.open_in_tab(p, None);
+        }
+        if show_history {
+            self.open_history();
         }
     }
 
