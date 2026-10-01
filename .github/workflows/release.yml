@@ -25,7 +25,14 @@ jobs:
       # muestra al actualizarse. Se crea con: git tag -a vX.Y.Z -F novedades.txt
       - name: Crear release (borrador)
         run: |
-          gh release create "$TAG" --draft --repo "$GITHUB_REPOSITORY" --title "Notas $TAG" --notes-from-tag
+          REF=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")
+          if [ "$(echo "$REF" | jq -r .object.type)" = "tag" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/git/tags/$(echo "$REF" | jq -r .object.sha)" -q .message > notas.txt
+          else
+            echo "Descargas para Windows, macOS y Linux. Instrucciones en el README." > notas.txt
+          fi
+          cat notas.txt
+          gh release create "$TAG" --draft --repo "$GITHUB_REPOSITORY" --title "Notas $TAG" --notes-file notas.txt
 
   build:
     needs: create
