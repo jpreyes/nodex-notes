@@ -22,7 +22,17 @@ Hay dos formas de tener IA incluida:
 
 ## Instalar en un VPS (Ubuntu 22.04 o más nuevo)
 
-Hace falta un VPS y un subdominio que apunte a él (por ejemplo `ia.tudominio.cl`).
+**Con Claude Code en el VPS:** crea una carpeta, deja ahí [`deploy/CLAUDE.md`](deploy/CLAUDE.md)
+y pídele a Claude que instale el servidor: tiene los pasos (con Cloudflare Tunnel), lo que no debe
+tocar, la actualización diaria desde GitHub y el respaldo.
+
+```bash
+mkdir -p ~/notas-vps && cd ~/notas-vps
+curl -fsSLO https://raw.githubusercontent.com/jpreyes/nodex-notes/main/server/deploy/CLAUDE.md
+claude    # y escribe: «instala el servidor siguiendo CLAUDE.md»
+```
+
+A mano: hace falta un VPS y un subdominio que apunte a él (por ejemplo `ia.tudominio.cl`).
 
 1. **El programa.** Descarga `nodex-ia-servidor-linux-x64.tar.gz` del último release y déjalo en
    `/opt/nodex-ia/`:
@@ -46,8 +56,13 @@ Hace falta un VPS y un subdominio que apunte a él (por ejemplo `ia.tudominio.cl
    curl http://127.0.0.1:8080/salud   # responde "ok"
    ```
 
-4. **HTTPS.** Instala [Caddy](https://caddyserver.com/docs/install) y usa `deploy/Caddyfile`
-   (cambia el dominio). Caddy saca el certificado solo.
+4. **HTTPS.** Con **Cloudflare Tunnel** (`cloudflared`): una regla `hostname: ia.tudominio.cl` →
+   `service: http://localhost:8080` (ver `deploy/CLAUDE.md`, paso 5); no hace falta abrir puertos.
+   O con [Caddy](https://caddyserver.com/docs/install) y `deploy/Caddyfile` (cambia el dominio).
+
+   **Que se actualice solo:** `deploy/actualizar.sh` (git pull + último release, reinicia y revisa
+   `/salud`; si falla, vuelve al anterior) con `nodex-ia-actualizar.timer` (una vez al día), y
+   `nodex-ia-respaldo.timer` para un respaldo diario de los datos en `/var/backups/nodex-ia/`.
 
 5. **El correo de los códigos.** Crea una cuenta en [Resend](https://resend.com), verifica tu
    dominio y pon su clave en `NOTAS_IA_CORREO_CLAVE` y el remitente en `NOTAS_IA_CORREO_DE`

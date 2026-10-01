@@ -1,0 +1,9 @@
+[Unit]
+Description=Notas: respaldo diario de los datos del servidor de la IA incluida
+
+[Timer]
+OnCalendar=*-*-* 03:30
+Persistent=true
+
+[Install]
+WantedBy=timers.target

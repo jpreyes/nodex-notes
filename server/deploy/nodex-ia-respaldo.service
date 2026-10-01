@@ -1,0 +1,6 @@
+[Unit]
+Description=Notas: respaldo de los datos del servidor de la IA incluida
+
+[Service]
+Type=oneshot
+ExecStart=/opt/nodex-ia/respaldo.sh

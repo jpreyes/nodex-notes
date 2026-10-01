@@ -1,0 +1,9 @@
+[Unit]
+Description=Notas: actualizar el servidor de la IA incluida
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=REPO_DIR=/opt/nodex-ia/repo
+ExecStart=/opt/nodex-ia/actualizar.sh

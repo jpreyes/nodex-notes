@@ -1,0 +1,10 @@
+[Unit]
+Description=Notas: buscar una versión nueva del servidor una vez al día
+
+[Timer]
+OnCalendar=*-*-* 04:30
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
