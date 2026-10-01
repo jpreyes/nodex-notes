@@ -6,6 +6,7 @@
 //! - "due:2026-09-26" se ve como una fecha ("mañana") y "^k3f9a" no se ve;
 //! - en las reuniones, la hora de cada línea, el inicio y el fin se ven como etiquetas;
 //! - las rutas y direcciones web se abren con un clic;
+//! - las tablas (`| a | b |`) se ven alineadas, con bordes; Tab pasa de celda y Enter agrega una fila;
 //! - `[[Nota]]` es un enlace a otra nota y `[informe.pdf](../Adjuntos/informe.pdf)`, un archivo
 //!   adjunto: se ve solo el nombre (con su ícono) y se abren con un clic.
 //!
@@ -19,6 +20,7 @@ use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
 use std::cell::RefCell;
 use std::ops::Range;
+use std::rc::Rc;
 
 /// Tamaño de letra de lo que no se ve ("#", "due:…", sangrías).
 const HIDDEN: f32 = 0.5;
@@ -30,6 +32,9 @@ const LEVEL_X: [f32; 5] = [0.0, 22.0, 42.0, 62.0, 82.0];
 const CHECK_W: f32 = 25.0;
 /// Espacio para el ícono de un archivo adjunto.
 const FILE_ICON_W: f32 = 19.0;
+/// Margen a cada lado del texto de una celda, y ancho mínimo de una columna.
+const CELL_PAD: f32 = 10.0;
+const MIN_CELL: f32 = 24.0;
 const LABEL_SIZE: f32 = 12.5;
 
 /// Algo que se dibuja sobre el texto; `chars` son posiciones en el texto completo.
@@ -46,6 +51,58 @@ enum Kind {
     NoteLink(String, bool),
     /// `[texto](archivo)`: el archivo, su ícono y si existe.
     FileLink(Target, &'static str, bool),
+    /// Una fila de tabla: dónde están sus «|» (caracteres del texto), si es el encabezado y si
+    /// es la primera fila.
+    TableRow { pipes: Vec<usize>, header: bool, first: bool },
+}
+
+/// Cómo se ve una fila de tabla (todas las de una tabla comparten los anchos).
+struct TableRow {
+    widths: Rc<Vec<f32>>,
+    header: bool,
+    rule: bool,
+    first: bool,
+}
+
+/// Las tablas del texto: cada fila con los anchos de sus columnas. Si una tabla no cabe en
+/// `width`, no se alinea (se ve como texto).
+fn table_layout(text: &str, measure: &dyn Fn(&str, &FontId) -> f32, width: f32) -> HashMap<usize, TableRow> {
+    let all: Vec<&str> = text.split('\n').map(|l| l.trim_end_matches('\r')).collect();
+    let mut out = HashMap::new();
+    let mut i = 0;
+    while i < all.len() {
+        if !lines::is_table_row(all[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < all.len() && lines::is_table_row(all[i]) {
+            i += 1;
+        }
+        let has_rule = i - start > 1 && lines::is_table_rule(all[start + 1]);
+        let mut widths: Vec<f32> = Vec::new();
+        for (k, l) in all[start..i].iter().enumerate() {
+            if lines::is_table_rule(l) {
+                continue;
+            }
+            let font = if has_rule && k == 0 { theme::bold(EDITOR_SIZE) } else { FontId::proportional(EDITOR_SIZE) };
+            for (c, &(a, b)) in lines::table_cells(l).1.iter().enumerate() {
+                if widths.len() <= c {
+                    widths.push(MIN_CELL);
+                }
+                widths[c] = widths[c].max(measure(&l[a..b], &font));
+            }
+        }
+        let total: f32 = widths.iter().map(|w| w + 2.0 * CELL_PAD).sum();
+        if widths.is_empty() || total > width - 8.0 {
+            continue;
+        }
+        let widths = Rc::new(widths);
+        for li in start..i {
+            out.insert(li, TableRow { widths: widths.clone(), header: has_rule && li == start, rule: lines::is_table_rule(all[li]), first: li == start });
+        }
+    }
+    out
 }
 
 /// Qué hacer con un clic sobre el texto.
@@ -196,7 +253,20 @@ impl LinkCache {
     }
 }
 
-/// Arma el texto con formato y la lista de cosas a dibujar.
+/// Lo que `build` necesita saber de afuera.
+struct Env<'a> {
+    /// Ancho de un texto en una letra.
+    measure: &'a dyn Fn(&str, &FontId) -> f32,
+    /// Ancho y alto con que se ve una imagen (por la ruta escrita en la nota).
+    image: &'a dyn Fn(&str) -> Option<(f32, f32)>,
+    /// Cómo se ve un enlace escrito.
+    link: &'a dyn Fn(&lines::Link) -> Kind,
+    /// Ancho del texto.
+    width: f32,
+}
+
+/// `build_in` con lo mínimo (para las pruebas).
+#[cfg(test)]
 fn build(
     text: &str,
     active: Option<usize>,
@@ -205,10 +275,17 @@ fn build(
     image: &dyn Fn(&str) -> Option<(f32, f32)>,
     link: &dyn Fn(&lines::Link) -> Kind,
 ) -> (LayoutJob, Vec<Deco>) {
+    build_in(text, active, cache, &Env { measure: &|s, _| measure(s), image, link, width: f32::INFINITY })
+}
+
+/// Arma el texto con formato y la lista de cosas a dibujar.
+fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env) -> (LayoutJob, Vec<Deco>) {
+    let (measure, image, link) = (env.measure, env.image, env.link);
     let size = EDITOR_SIZE;
     let mut job = LayoutJob::default();
     let mut decos = Vec::new();
     let hidden = fmt(FontId::proportional(HIDDEN), Color32::TRANSPARENT);
+    let tables = table_layout(text, measure, env.width);
     let mut ci = 0; // carácter donde empieza la línea
     for (li, full) in text.split_inclusive('\n').enumerate() {
         let line = full.trim_end_matches(['\n', '\r']);
@@ -216,6 +293,42 @@ fn build(
         let n_chars = |a: usize, b: usize| line[a..b].chars().count();
         let is_active = active == Some(li);
         let info = lines::parse(line);
+
+        // Una fila de tabla (salvo la que se edita): cada celda en su columna.
+        if let Some(row) = tables.get(&li).filter(|_| !is_active) {
+            let lh = Some(size * 1.85);
+            let mut fh = hidden.clone();
+            if row.rule {
+                // La fila «|---|---|» no se ve.
+                fh.line_height = Some(3.0);
+                job.append(line, 0.0, fh.clone());
+                job.append(ending, 0.0, fh);
+                ci += full.chars().count();
+                continue;
+            }
+            fh.line_height = lh;
+            let mut ft = fmt(if row.header { theme::bold(size) } else { FontId::proportional(size) }, TEXT);
+            ft.line_height = lh;
+            let col_x = |c: usize| row.widths.iter().take(c).map(|w| w + 2.0 * CELL_PAD).sum::<f32>();
+            let (pipes, cells) = lines::table_cells(line);
+            let (mut pos, mut x) = (0, 0.0);
+            for (c, &(a, b)) in cells.iter().enumerate().take(row.widths.len()) {
+                // Desde la «|» hasta el texto, oculto: la «|» queda en el borde de la columna.
+                job.append(&line[pos..a], (col_x(c) - x).max(0.0), fh.clone());
+                x = col_x(c);
+                if b > a {
+                    job.append(&line[a..b], CELL_PAD, ft.clone());
+                    x += CELL_PAD + measure(&line[a..b], &ft.font_id);
+                }
+                pos = b.max(a);
+            }
+            job.append(&line[pos..], (col_x(row.widths.len()) - x).max(0.0), fh.clone());
+            job.append(ending, 0.0, fh);
+            let pipes = pipes.iter().map(|&p| ci + n_chars(0, p)).collect();
+            decos.push(Deco { kind: Kind::TableRow { pipes, header: row.header, first: row.first }, chars: ci..ci + n_chars(0, line.len()), line: li, lead: 0.0 });
+            ci += full.chars().count();
+            continue;
+        }
 
         // Una imagen (salvo en la línea que se edita): su línea queda del alto de la imagen.
         if let Some((w, h)) = lines::image_of(line).filter(|_| !is_active).and_then(|(_, rel)| Some((rel, image(rel)?))).map(|(rel, (w, h))| {
@@ -238,7 +351,7 @@ fn build(
                 job.append(full, 0.0, bold);
             } else if let Some(label) = meeting_label(line, li == 0) {
                 // Inicio y fin de una reunión: una etiqueta con la fecha y la hora.
-                let w = measure(&label) + 16.0;
+                let w = measure(&label, &FontId::proportional(LABEL_SIZE)) + 16.0;
                 let mut f = hidden.clone();
                 f.line_height = Some(28.0);
                 job.append(line, w, f);
@@ -285,7 +398,7 @@ fn build(
                 job.append(&line[..8], 0.0, fmt(FontId::proportional(size), MUTED));
             } else {
                 let label = line[2..7].to_string();
-                let w = measure(&label) + 16.0;
+                let w = measure(&label, &FontId::proportional(LABEL_SIZE)) + 16.0;
                 job.append(&line[..8], w, hidden.clone());
                 let (fg, bg) = (Color32::from_rgb(95, 94, 90), Color32::from_rgb(241, 239, 232));
                 decos.push(Deco { kind: Kind::Date { label, fg, bg }, chars: ci..ci + 8, line: li, lead: w });
@@ -370,7 +483,7 @@ fn build(
                         job.append(&line[a..b], lead, fmt(FontId::proportional(size - 2.0), MUTED));
                     } else {
                         let (label, fg, bg) = due_label(&d, done);
-                        let w = measure(&label) + 16.0;
+                        let w = measure(&label, &FontId::proportional(LABEL_SIZE)) + 16.0;
                         job.append(&line[a..b], lead + w, hidden.clone());
                         decos.push(Deco { kind: Kind::Date { label, fg, bg }, chars, line: li, lead: w });
                     }
@@ -393,6 +506,73 @@ fn build(
         job.append("", 0.0, fmt(FontId::proportional(size), TEXT));
     }
     (job, decos)
+}
+
+#[derive(Clone, Copy)]
+enum TableKey {
+    Next,
+    Prev,
+    Enter,
+}
+
+/// Tab (`Next`), Shift+Tab (`Prev`) o Enter en la fila `l` de una tabla, con el cursor en la
+/// columna `col` (en caracteres): el texto nuevo y dónde queda el cursor.
+/// Tab pasa a la celda siguiente (al final, a la fila de abajo, o agrega una); Enter agrega una
+/// fila debajo, salvo en una fila vacía, que se borra (sale de la tabla).
+fn table_edit(text: &str, l: usize, col: usize, key: TableKey) -> (String, usize) {
+    let raw: Vec<&str> = text.split('\n').collect();
+    let ls: Vec<&str> = raw.iter().map(|x| x.trim_end_matches('\r')).collect();
+    let cr = if raw[l].ends_with('\r') { "\r" } else { "" };
+    let line = ls[l];
+    let (pipes, cells) = lines::table_cells(line);
+    let n = cells.len().max(1);
+    let at = byte_index(line, col);
+    let cur = pipes.iter().filter(|&&p| p < at).count().saturating_sub(1);
+    // Dónde poner el cursor en la celda `k` de la fila `row` (en una vacía, entre sus espacios).
+    let cell_start = |row: &str, k: usize| -> usize {
+        let (pipes, cells) = lines::table_cells(row);
+        match cells.get(k) {
+            Some(&(a, b)) if a < b => a,
+            Some(_) => (pipes[k] + 2).min(pipes.get(k + 1).copied().unwrap_or(row.len())).min(row.len()),
+            None => row.len(),
+        }
+    };
+    let is_row = |i: usize| ls.get(i).is_some_and(|x| lines::is_table_row(x) && !lines::is_table_rule(x));
+    let mut new_lines: Vec<String> = raw.iter().map(|x| x.to_string()).collect();
+    let new_row = format!("{}{cr}", lines::empty_table_row(n));
+    // (fila, byte) donde queda el cursor
+    let target: (usize, usize) = match key {
+        TableKey::Next if cur + 1 < cells.len() => (l, cell_start(line, cur + 1)),
+        TableKey::Next => {
+            let next = if ls.get(l + 1).is_some_and(|x| lines::is_table_rule(x)) { l + 2 } else { l + 1 };
+            if is_row(next) {
+                (next, cell_start(ls[next], 0))
+            } else {
+                new_lines.insert(l + 1, new_row);
+                (l + 1, 2)
+            }
+        }
+        TableKey::Prev if cur > 0 => (l, cell_start(line, cur - 1)),
+        TableKey::Prev => {
+            let prev = if l >= 2 && lines::is_table_rule(ls[l - 1]) { Some(l - 2) } else { l.checked_sub(1) };
+            match prev.filter(|&p| is_row(p)) {
+                Some(p) => (p, cell_start(ls[p], lines::table_cells(ls[p]).1.len().saturating_sub(1))),
+                None => (l, cell_start(line, 0)),
+            }
+        }
+        TableKey::Enter if cells.iter().all(|&(a, b)| a == b) && l > 0 && lines::is_table_row(ls[l - 1]) => {
+            new_lines[l] = cr.to_string();
+            (l, 0)
+        }
+        TableKey::Enter => {
+            new_lines.insert(l + 1, new_row);
+            (l + 1, 2)
+        }
+    };
+    let new = new_lines.join("\n");
+    let row = new.split('\n').nth(target.0).unwrap_or("");
+    let ci = line_starts(&new)[target.0] + row[..target.1.min(row.len())].chars().count();
+    (new, ci)
 }
 
 /// Los rectángulos de los caracteres `chars` en pantalla.
@@ -446,6 +626,8 @@ impl NotesApp {
         let mut follow: Option<String> = None;
         let mut open_backlink: Option<PathBuf> = None;
         let mut attach_now = false;
+        let mut table_now = false;
+        let mut template_now = false;
         let backlinks = self.backlinks();
         Self::column(ui, "editor", |ui, col_w| {
             // Título = nombre del archivo; las notas del día muestran su fecha ("Hoy, domingo 27 sep").
@@ -491,6 +673,9 @@ impl NotesApp {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 if vault::in_diary(&self.note.path) {
                     ui.label(RichText::new(format!("{} Diario · la IA lleva cada cosa a su espacio", icon::SUN)).size(12.5).color(MUTED));
+                } else if vault::in_templates(&self.note.path) {
+                    ui.label(RichText::new(format!("{} Plantilla · se usa desde el + de las pestañas", icon::FILE_DASHED)).size(12.5).color(MUTED))
+                        .on_hover_text("Al crear una nota con ella, {{fecha}}, {{hoy}}, {{hora}} y {{titulo}} se cambian por la fecha, el día, la hora y el nombre de la nota");
                 } else {
                     // El espacio de la nota: un clic permite moverla a otro.
                     let here = workspace_of(&self.note.path).unwrap_or_else(|| self.ws.clone());
@@ -599,16 +784,17 @@ impl NotesApp {
             let decos: RefCell<Vec<Deco>> = RefCell::new(Vec::new());
             let links = &mut self.links;
             let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
-                let measure = |s: &str| {
-                    ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), FontId::proportional(LABEL_SIZE), TEXT).size().x)
-                };
-                let (mut job, d) = build(buf.as_str(), active, links, &measure, &|rel| image_sizes.get(rel).copied(), &link_of);
+                let measure = |s: &str, font: &FontId| ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), font.clone(), TEXT).size().x);
+                let env = Env { measure: &measure, image: &|rel| image_sizes.get(rel).copied(), link: &link_of, width: wrap };
+                let (mut job, d) = build_in(buf.as_str(), active, links, &env);
                 *decos.borrow_mut() = d;
                 job.wrap.max_width = wrap;
                 ui.fonts_mut(|f| f.layout_job(job))
             };
             let hint = if in_meeting {
                 "Escribe lo que se va diciendo; cada Enter agrega la hora…"
+            } else if vault::in_templates(&self.note.path) {
+                "Escribe cómo empieza cada nota de este tipo…  {{fecha}}, {{hoy}}, {{hora}} y {{titulo}} se completan solos"
             } else {
                 "Escribe una idea por línea…  Tab la une a la de arriba · #etiqueta · «el viernes» le pone fecha · Ctrl+R reunión"
             };
@@ -639,6 +825,14 @@ impl NotesApp {
                     attach_now = true;
                     ui.close();
                 }
+                if ui.button(format!("{}  Insertar tabla", icon::TABLE)).on_hover_text("Tab pasa a la celda siguiente; Enter agrega una fila").clicked() {
+                    table_now = true;
+                    ui.close();
+                }
+                if !vault::in_templates(&self.note.path) && ui.button(format!("{}  Guardar como plantilla", icon::FILE_DASHED)).on_hover_text("Para crear notas que empiecen igual (desde el + de las pestañas)").clicked() {
+                    template_now = true;
+                    ui.close();
+                }
                 let Some(l) = self.menu_line else { return };
                 let line = nth_line(&self.note.text, l);
                 if line.trim().is_empty() || lines::is_heading(line) {
@@ -660,6 +854,15 @@ impl NotesApp {
             }
             if attach_now {
                 self.pick_attachments(self.menu_line);
+            }
+            if template_now {
+                self.save_as_template();
+            }
+            if table_now {
+                // El cursor queda en la primera celda.
+                let first = self.insert_lines_after(self.menu_line, lines::NEW_TABLE.iter().map(|l| l.to_string()).collect());
+                self.pending_cursor = line_starts(&self.note.text).get(first).map(|s| s + 2);
+                self.focus_editor = true;
             }
             if let Some(l) = to_task {
                 self.line_to_task(l);
@@ -865,6 +1068,32 @@ impl NotesApp {
                         }
                     }
                 }
+                Kind::TableRow { pipes, header, first: is_first } => {
+                    let Some(b0) = boxes.get(d.chars.start) else { continue };
+                    let (top, bottom) = (o.y + b0.row_top, o.y + b0.row_top + b0.row_h);
+                    let mut xs: Vec<f32> = pipes.iter().filter_map(|&i| boxes.get(i)).map(|b| o.x + b.x).collect();
+                    // Sin «|» al final: el borde derecho es donde termina la fila.
+                    if let Some(end) = d.chars.end.checked_sub(1).and_then(|i| boxes.get(i)) {
+                        let r = o.x + end.x + end.w;
+                        if xs.last().is_none_or(|&x| r > x + 4.0) {
+                            xs.push(r);
+                        }
+                    }
+                    let (Some(&l), Some(&r)) = (xs.first(), xs.last()) else { continue };
+                    let line = Stroke::new(1.0, theme::BORDER);
+                    if *header {
+                        bg.push(egui::Shape::rect_filled(egui::Rect::from_min_max(egui::pos2(l, top), egui::pos2(r, bottom)), 0.0, BG_SIDE));
+                    }
+                    // Arriba solo en la primera fila; las demás tapan la fila «|---|» oculta.
+                    let from = if *is_first { top } else { top - 4.0 };
+                    if *is_first {
+                        painter.hline(l..=r, top, line);
+                    }
+                    painter.hline(l..=r, bottom, if *header { Stroke::new(1.5, Color32::from_rgb(200, 198, 190)) } else { line });
+                    for x in xs {
+                        painter.vline(x, from..=bottom, line);
+                    }
+                }
                 Kind::NoteLink(target, exists) => {
                     let rects = char_rects(&boxes, o, d.chars.clone());
                     if hover.is_some_and(|p| rects.iter().any(|r| r.contains(p))) {
@@ -958,6 +1187,13 @@ impl NotesApp {
             self.toggle_line_check(line_idx);
             return;
         }
+        // En una plantilla, solo la casilla: la tarea se crea en cada nota hecha con ella.
+        if vault::in_templates(&self.note.path) {
+            self.note.text = replace_line(&old, line_idx, &lines::make_task(&line));
+            self.note.dirty = true;
+            self.note.last_edit = Instant::now();
+            return;
+        }
         let id = new_task_id();
         let new_line = lines::set_meta(&lines::make_task(&line), None, Some(&id));
         self.note.text = replace_line(&old, line_idx, &new_line);
@@ -1009,6 +1245,10 @@ impl NotesApp {
             let ci = starts[la] + (col + prefix(&new_line)).saturating_sub(before).min(new_line.chars().count());
             st.cursor.set_char_range(Some(CCursorRange::one(CCursor::new(ci))));
             st.store(ctx, id);
+            return;
+        }
+        // En una tabla: Tab y Shift+Tab pasan de celda; Enter agrega una fila.
+        if lo == hi && lines::is_table_row(nth_line(&text, la)) && self.table_keys(ui, id, &text, la, lo - starts[la], st.clone()) {
             return;
         }
         let untab = ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab));
@@ -1093,6 +1333,28 @@ impl NotesApp {
             st.cursor.set_char_range(Some(CCursorRange::one(CCursor::new(ci))));
             self.set_text(ctx, id, st, new);
         }
+    }
+
+    /// Tab, Shift+Tab y Enter en la fila `l` de una tabla, con el cursor en la columna `col`.
+    fn table_keys(&mut self, ui: &Ui, id: Id, text: &str, l: usize, col: usize, mut st: TextEditState) -> bool {
+        let key = if ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab)) {
+            TableKey::Prev
+        } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab)) {
+            TableKey::Next
+        } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter)) {
+            TableKey::Enter
+        } else {
+            return false;
+        };
+        let (new, ci) = table_edit(text, l, col, key);
+        st.cursor.set_char_range(Some(CCursorRange::one(CCursor::new(ci))));
+        if new == text {
+            st.store(ui.ctx(), id);
+            ui.ctx().request_repaint();
+        } else {
+            self.set_text(ui.ctx(), id, st, new);
+        }
+        true
     }
 
     fn set_text(&mut self, ctx: &egui::Context, id: Id, st: TextEditState, text: String) {
@@ -1185,6 +1447,68 @@ mod tests {
         assert!(job.text.contains("[[Otra|esta]]"));
     }
 
+    /// Tab y Enter en una tabla.
+    #[test]
+    fn tab_and_enter_in_a_table() {
+        let t = "| Material | Kg |\n|---|---|\n| Acero | 120 |\nFin";
+        let at = |text: &str, ci: usize| -> (usize, usize) {
+            let starts = line_starts(text);
+            let l = line_at(&starts, ci);
+            (l, ci - starts[l])
+        };
+        // Tab en «Material» → «Kg».
+        let (s1, ci) = table_edit(t, 0, 3, TableKey::Next);
+        assert_eq!((s1.as_str(), at(t, ci)), (t, (0, 13)));
+        // Tab en la última celda del encabezado → primera de la fila de abajo (salta |---|).
+        let (_, ci) = table_edit(t, 0, 14, TableKey::Next);
+        assert_eq!(at(t, ci), (2, 2));
+        // Tab en la última celda de la tabla → una fila nueva.
+        let (s2, ci) = table_edit(t, 2, 11, TableKey::Next);
+        assert_eq!(s2, "| Material | Kg |\n|---|---|\n| Acero | 120 |\n|  |  |\nFin");
+        assert_eq!(at(&s2, ci), (3, 2));
+        // Shift+Tab en la primera celda de una fila → última de la de arriba.
+        let (_, ci) = table_edit(t, 2, 3, TableKey::Prev);
+        assert_eq!(at(t, ci), (0, 13));
+        // Enter en una fila vacía: sale de la tabla.
+        let (s3, ci) = table_edit(&s2, 3, 2, TableKey::Enter);
+        assert_eq!(s3, "| Material | Kg |\n|---|---|\n| Acero | 120 |\n\nFin");
+        assert_eq!(at(&s3, ci), (3, 0));
+        // Con finales de línea de Windows, se respetan.
+        let w = "| a | b |\r\n| c | d |\r\n";
+        let (s4, _) = table_edit(w, 1, 9, TableKey::Enter);
+        assert_eq!(s4, "| a | b |\r\n| c | d |\r\n|  |  |\r\n");
+    }
+
+    /// Las celdas de una tabla quedan en columnas: cada «|» en el borde de su columna.
+    #[test]
+    fn table_cells_line_up() {
+        let mut cache = LinkCache::default();
+        let text = "| Material | Kg |\n|---|---|\n| Acero | 120 |\n";
+        // Cada letra mide 7 (en negrita, 8).
+        let measure = |s: &str, f: &FontId| s.chars().count() as f32 * if f.family == FontId::proportional(1.0).family { 7.0 } else { 8.0 };
+        let env = Env { measure: &measure, image: &|_| None, link: &test_links, width: 500.0 };
+        let (job, decos) = build_in(text, None, &mut cache, &env);
+        let rows: Vec<(bool, bool)> = decos
+            .iter()
+            .filter_map(|d| match &d.kind {
+                Kind::TableRow { header, first, .. } => Some((*header, *first)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rows, vec![(true, true), (false, false)], "la fila |---| no se dibuja");
+        // La segunda celda de cada fila empieza en la misma columna: ancho de la primera + márgenes.
+        let lead_of = |cell: &str| job.sections.iter().find(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0] == cell).map(|s| s.leading_space);
+        assert_eq!(lead_of("Material"), Some(CELL_PAD));
+        assert_eq!(lead_of("Acero"), Some(CELL_PAD));
+        // Si no cabe, se ve como texto.
+        let narrow = Env { width: 60.0, ..env };
+        let (_, decos) = build_in(text, None, &mut cache, &narrow);
+        assert!(decos.iter().all(|d| !matches!(d.kind, Kind::TableRow { .. })));
+        // La que se edita, tal cual.
+        let (_, decos) = build_in(text, Some(2), &mut cache, &env);
+        assert_eq!(decos.iter().filter(|d| matches!(d.kind, Kind::TableRow { .. })).count(), 1);
+    }
+
     /// Una línea de imagen se ve como la imagen (su fila, del alto de la imagen), salvo al editarla.
     #[test]
     fn image_lines_become_images() {
@@ -1213,6 +1537,7 @@ mod tests {
                 Kind::Link(_) => "link",
                 Kind::Image(..) => "image",
                 Kind::NoteLink(..) | Kind::FileLink(..) => "enlace",
+                Kind::TableRow { .. } => "tabla",
             })
             .collect();
         assert_eq!(kinds, vec!["prefix", "pill", "date", "prefix"]);

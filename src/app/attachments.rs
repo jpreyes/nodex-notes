@@ -56,16 +56,20 @@ pub(super) fn attachment_line(name: &str) -> String {
 
 impl NotesApp {
     /// Agrega líneas a la nota abierta después de la línea `line` (si está vacía, la usa; sin
-    /// línea, al final) y la guarda.
-    pub(super) fn insert_lines_after(&mut self, line: Option<usize>, new: Vec<String>) {
+    /// línea, al final) y la guarda. Devuelve dónde quedó la primera.
+    pub(super) fn insert_lines_after(&mut self, line: Option<usize>, new: Vec<String>) -> usize {
         let mut ls: Vec<String> = self.note.text.split('\n').map(str::to_string).collect();
         let mut cur = line.unwrap_or(ls.len() - 1).min(ls.len() - 1);
+        let mut first = cur;
         for (i, md) in new.into_iter().enumerate() {
             if i == 0 && ls[cur].trim().is_empty() {
                 ls[cur] = md;
             } else {
                 cur += 1;
                 ls.insert(cur, md);
+                if i == 0 {
+                    first = cur;
+                }
             }
         }
         let mut text = ls.join("\n");
@@ -76,6 +80,7 @@ impl NotesApp {
         self.note.dirty = true;
         self.note.last_edit = Instant::now();
         self.save();
+        first
     }
 
     /// Copia los archivos a `Adjuntos/` y los agrega a la nota abierta, después de `line`.
@@ -106,7 +111,7 @@ impl NotesApp {
         if added.is_empty() {
             return;
         }
-        self.insert_lines_after(line, added);
+        let _ = self.insert_lines_after(line, added);
         self.msg(match names.as_slice() {
             [one] => format!("Adjuntado «{one}» (en {})", vault::ATTACHMENTS),
             many => format!("{} adjuntados (en {})", many.len(), vault::ATTACHMENTS),

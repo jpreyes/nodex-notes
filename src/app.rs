@@ -46,6 +46,7 @@ mod settings;
 mod spaces_ui;
 mod tabs;
 mod tasks_sync;
+mod templates;
 mod trust;
 mod trash_view;
 #[cfg(test)]
@@ -556,9 +557,9 @@ fn today() -> String {
     Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// El espacio de una nota; `None` para las notas del día (no son de ningún espacio).
+/// El espacio de una nota; `None` para las notas del día y las plantillas (no son de ningún espacio).
 fn workspace_of(path: &Path) -> Option<String> {
-    if vault::in_diary(path) {
+    if vault::in_diary(path) || vault::in_templates(path) {
         return None;
     }
     Some(path.parent()?.file_name()?.to_string_lossy().into_owned())
@@ -994,10 +995,14 @@ impl NotesApp {
                 n.dirty = false;
                 n.base = n.text.clone();
                 n.remember_disk();
-                if let Some(m) = n.disk_mtime {
+                // Las plantillas no son notas: no se listan ni se organizan.
+                let template = vault::in_templates(&n.path);
+                if let Some(m) = n.disk_mtime.filter(|_| !template) {
                     self.vault.upsert(n.path.clone(), n.text.clone(), m);
                 }
-                self.touched.insert(self.note.path.clone());
+                if !template {
+                    self.touched.insert(self.note.path.clone());
+                }
                 if let Some(conflicts) = merged {
                     self.merged_msg(conflicts);
                 }

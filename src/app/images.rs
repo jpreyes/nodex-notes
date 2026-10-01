@@ -182,7 +182,7 @@ impl NotesApp {
         }
         let md = format!("![Captura {} {} {}](../{}/{name})", now.day(), MESES[now.month0() as usize], now.format("%H:%M"), vault::ATTACHMENTS);
         // Va en la línea del cursor si está vacía, o en una nueva debajo (sin cursor: al final).
-        self.insert_lines_after(line, vec![md]);
+        let _ = self.insert_lines_after(line, vec![md]);
         self.msg(format!("Captura pegada ({}×{}), guardada en {}/{name}", img.width, img.height, vault::ATTACHMENTS));
         true
     }

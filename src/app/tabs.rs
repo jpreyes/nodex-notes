@@ -245,6 +245,9 @@ impl NotesApp {
             New,
             NewNote,
             NewMeeting,
+            FromTemplate(PathBuf),
+            EditTemplate(PathBuf),
+            NewTemplate,
         }
         let mut todo = None;
         let n = self.tabs.list.len();
@@ -348,6 +351,28 @@ impl NotesApp {
                         todo = Some(Do::New);
                         ui.close();
                     }
+                    ui.separator();
+                    let templates = self.templates();
+                    if !templates.is_empty() {
+                        ui.label(RichText::new(format!("Desde una plantilla, en {ws}")).size(12.0).color(MUTED));
+                        for t in templates {
+                            ui.horizontal(|ui| {
+                                if ui.button(format!("{}  {}", icon::FILE_DASHED, vault::stem(&t))).clicked() {
+                                    todo = Some(Do::FromTemplate(t.clone()));
+                                    ui.close();
+                                }
+                                let edit = egui::Button::new(RichText::new(icon::PENCIL_SIMPLE).size(13.0).color(MUTED)).frame(false);
+                                if ui.add(edit).on_hover_text("Editar la plantilla").clicked() {
+                                    todo = Some(Do::EditTemplate(t.clone()));
+                                    ui.close();
+                                }
+                            });
+                        }
+                    }
+                    if ui.button(format!("{}  Plantilla nueva…", icon::FILE_PLUS)).on_hover_text("Una nota que sirve de punto de partida para otras (visita a obra, acta…)").clicked() {
+                        todo = Some(Do::NewTemplate);
+                        ui.close();
+                    }
                 });
                 plus.response.on_hover_text("Nueva pestaña");
             });
@@ -374,6 +399,9 @@ impl NotesApp {
             }
             Some(Do::NewMeeting) => self.start_meeting(),
             Some(Do::Recurring) => self.open_recurring(),
+            Some(Do::FromTemplate(t)) => self.new_from_template(&t),
+            Some(Do::EditTemplate(t)) => self.open_in_tab(t, None),
+            Some(Do::NewTemplate) => self.new_template(),
             _ => {}
         }
     }

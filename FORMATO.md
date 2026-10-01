@@ -13,6 +13,8 @@ Notas/
   Adjuntos/
     captura-2026-09-30-171200.png   capturas pegadas en las notas
     Acta visita.pdf                 archivos adjuntos (arrastrados a la nota)
+  Plantillas/
+    Visita a obra.md       una plantilla (no es un espacio)
   Obra Talca/              un espacio de trabajo = una carpeta
     Muro.md                una nota = un archivo Markdown
   General/
@@ -24,7 +26,8 @@ Notas/
   .nodex/                  datos internos de la app (ver abajo)
 ```
 
-- Cada subcarpeta es un **espacio**, salvo `Diario` y `Adjuntos`, que están reservadas.
+- Cada subcarpeta es un **espacio**, salvo `Diario`, `Adjuntos` y `Plantillas`, que están reservadas.
+- En una plantilla, `{{fecha}}`, `{{hoy}}`, `{{hora}}` y `{{titulo}}` se cambian al crear una nota con ella.
 - Cada `.md` es una **nota**; su nombre de archivo es su título. Las notas del día se llaman con
   su fecha (`AAAA-MM-DD.md`).
 - Los archivos están en UTF-8. Si se editan con otro programa, la app lo nota al instante.
@@ -47,6 +50,7 @@ Es Markdown, con unas pocas convenciones:
 | `![Captura 30 sep 17:12](../Adjuntos/captura-….png)` | Una imagen; la ruta es relativa a la nota. |
 | `[Acta visita.pdf](../Adjuntos/Acta%20visita.pdf)` | Un archivo adjunto (los espacios del nombre van como `%20`). También `[texto](https://…)`. |
 | `[[Muro sur]]`, `[[Obra/Muro sur]]`, `[[Muro sur\|el muro]]` | Enlace a otra nota, por su nombre (como en Obsidian). |
+| `\| Material \| Kg \|` y debajo `\|---\|---\|` | Una tabla, como en Markdown. Toda la tabla es una sola nota de adentro. |
 | `# Título`, `### Subtítulo` | Títulos. |
 
 Un bloque que empieza con `## Título` va junto hasta `## fin`, el siguiente `##` o una línea en

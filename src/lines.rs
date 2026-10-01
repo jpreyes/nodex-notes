@@ -241,6 +241,49 @@ pub fn is_block_end(line: &str) -> bool {
 }
 
 /// Línea hecha solo de etiquetas ("#reunión #vigas").
+// ---------- Tablas ----------
+
+/// ¿Es una fila de una tabla? ("| Material | Cantidad |")
+pub fn is_table_row(line: &str) -> bool {
+    let t = line.trim();
+    t.starts_with('|') && t[1..].contains('|')
+}
+
+/// ¿Es la fila que separa el encabezado del resto? ("|---|:---:|")
+pub fn is_table_rule(line: &str) -> bool {
+    is_table_row(line)
+        && table_cells(line).1.iter().all(|&(a, b)| {
+            let c = &line[a..b];
+            c.contains('-') && c.chars().all(|ch| ch == '-' || ch == ':')
+        })
+}
+
+/// Una fila de tabla: dónde están sus «|» (en bytes) y el texto de cada celda, sin los espacios
+/// de alrededor (inicio, fin). La última «|» puede faltar.
+pub fn table_cells(line: &str) -> (Vec<usize>, Vec<(usize, usize)>) {
+    let pipes: Vec<usize> = line.char_indices().filter(|&(i, c)| c == '|' && !line[..i].ends_with('\\')).map(|(i, _)| i).collect();
+    let mut cells = Vec::new();
+    for (k, &p) in pipes.iter().enumerate() {
+        let end = pipes.get(k + 1).copied().unwrap_or(line.len());
+        let raw = &line[p + 1..end];
+        if pipes.get(k + 1).is_none() && raw.trim().is_empty() {
+            break; // después de la última «|»
+        }
+        let lead = raw.len() - raw.trim_start().len();
+        let a = p + 1 + lead;
+        cells.push((a, a + raw.trim().len()));
+    }
+    (pipes, cells)
+}
+
+/// Una fila vacía de `n` columnas.
+pub fn empty_table_row(n: usize) -> String {
+    format!("|{}", "  |".repeat(n.max(1)))
+}
+
+/// Una tabla nueva, para insertar.
+pub const NEW_TABLE: [&str; 3] = ["| Columna 1 | Columna 2 | Columna 3 |", "|---|---|---|", "|  |  |  |"];
+
 pub fn is_tag_only(line: &str) -> bool {
     let words: Vec<&str> = line.split_whitespace().collect();
     !words.is_empty() && words.iter().all(|w| tags::tag_spans(w).first() == Some(&(0, w.len())))
@@ -379,6 +422,8 @@ pub fn units(text: &str) -> Vec<Unit> {
         Closed,
         /// Tras "### Título": su texto, hasta una línea en blanco o una de etiquetas.
         Section,
+        /// Las filas de una tabla.
+        Table,
     }
     let mut open = Open::None;
     for (i, raw) in lines.iter().enumerate() {
@@ -418,6 +463,16 @@ pub fn units(text: &str) -> Vec<Unit> {
             open = Open::None;
             continue;
         }
+        // Una tabla es una sola nota (y va dentro de la nota de arriba si tiene sangría).
+        if is_table_row(l) {
+            if open == Open::Table || (open != Open::None && raw.starts_with(' ')) {
+                extend(&mut out);
+            } else {
+                out.push(Unit { id: format!("L{}", i + 1), first: i, last: i, block: false });
+            }
+            open = Open::Table;
+            continue;
+        }
         let info = parse(raw);
         let attaches = info.level >= 1 || is_tag_only(l) || l.starts_with("### ");
         if attaches && open != Open::None {
@@ -439,6 +494,25 @@ pub fn units(text: &str) -> Vec<Unit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tables() {
+        let row = "| Acero A63 | 120 kg |";
+        assert!(is_table_row(row) && !is_table_rule(row));
+        assert!(is_table_rule("|---|:--:|") && is_table_rule("| --- | --- |"));
+        assert!(!is_table_row("| solo una"));
+        let (pipes, cells) = table_cells(row);
+        assert_eq!(pipes, vec![0, 12, 21]);
+        let texts: Vec<&str> = cells.iter().map(|&(a, b)| &row[a..b]).collect();
+        assert_eq!(texts, vec!["Acero A63", "120 kg"]);
+        // Sin la última «|» y con celdas vacías.
+        let (_, cells) = table_cells("| a |  | c");
+        assert_eq!(cells.len(), 3);
+        assert_eq!(empty_table_row(2), "|  |  |");
+        // Toda la tabla es una nota.
+        let u = units("Materiales\n| a | b |\n|---|---|\n| 1 | 2 |\nOtra\n");
+        assert_eq!(u.iter().map(|u| (u.first, u.last)).collect::<Vec<_>>(), vec![(0, 0), (1, 3), (4, 4)]);
+    }
 
     #[test]
     fn note_and_file_links() {
