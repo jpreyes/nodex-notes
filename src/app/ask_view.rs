@@ -148,7 +148,7 @@ impl NotesApp {
             let picked = ask::rank(&question, &history, &candidates, &today(), ask::MAX_CANDIDATES);
             notes = picked.into_iter().map(|i| notes[i]).collect();
         }
-        let docs: Vec<ask::Doc> = notes
+        let mut docs: Vec<ask::Doc> = notes
             .into_iter()
             .enumerate()
             .map(|(i, n)| {
@@ -164,6 +164,12 @@ impl NotesApp {
                 doc
             })
             .collect();
+        // El Bloc también (con las claves ocultas).
+        if let Some(text) = self.bloc_for_ai().filter(|_| since.is_none()) {
+            let doc = ask::Doc { key: format!("n{}", docs.len() + 1), path: self.bloc_path(), workspace: "Bloc".into(), title: "Bloc".into(), date: today(), text };
+            sources.insert(doc.key.clone(), Source { path: doc.path.clone(), label: "Bloc".into() });
+            docs.push(doc);
+        }
         let all = self.agenda.tasks();
         let (pending, done): (Vec<_>, Vec<_>) = all.into_iter().partition(|t| !t.done);
         let chosen: Vec<agenda::Task> = pending.into_iter().chain(done.into_iter().rev().take(30)).collect();

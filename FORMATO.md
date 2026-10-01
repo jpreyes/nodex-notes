@@ -18,6 +18,7 @@ Notas/
   Obra Talca/              un espacio de trabajo = una carpeta
     Muro.md                una nota = un archivo Markdown
   General/
+  Bloc.md                  el Bloc: texto libre, tal cual (la IA no lo organiza)
   tareas.txt               las tareas
   agenda.txt               los eventos que salieron de las notas
   agenda.ics               lo mismo, para importar en un calendario

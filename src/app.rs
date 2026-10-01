@@ -25,6 +25,7 @@ use std::time::{Duration, Instant, SystemTime};
 mod account_ui;
 mod ai_view;
 mod attachments;
+mod bloc;
 mod ask_view;
 mod calendars_ui;
 mod chats;
@@ -317,6 +318,8 @@ enum View {
     Tasks,
     Agenda,
     Trash,
+    /// El Bloc: texto libre, tal cual.
+    Bloc,
 }
 
 enum Action {
@@ -389,6 +392,8 @@ enum Action {
     /// Pestañas.
     OpenNewTab(PathBuf),
     ShowTab(View),
+    /// El Bloc, listo para pegar.
+    OpenBloc,
     NewTab,
     CloseTab,
     NextTab(bool),
@@ -544,6 +549,8 @@ pub struct NotesApp {
     link_pick_closed: Option<usize>,
     /// La ventana «Historial» de la nota abierta.
     history: Option<history_ui::HistoryView>,
+    /// El Bloc (texto libre).
+    bloc: bloc::Bloc,
     /// «¿Qué se hizo?» (seguimiento) y los seguimientos de las tareas, guardados.
     follow_ask: Option<tracking::Ask>,
     follow_cache: Option<((u64, Option<SystemTime>), std::rc::Rc<tracking::FollowUps>)>,
@@ -826,6 +833,7 @@ impl NotesApp {
             link_pick: None,
             link_pick_closed: None,
             history: None,
+            bloc: bloc::Bloc::default(),
             follow_ask: None,
             follow_cache: None,
             done_suggest: None,
@@ -2052,7 +2060,13 @@ impl NotesApp {
         match action {
             Action::Open(p, c) => {
                 self.search.clear();
-                self.open_in_tab(p, c)
+                // Una cita del Bloc (desde Preguntar) abre el Bloc.
+                if p == self.bloc_path() {
+                    self.show_in_tab(View::Bloc);
+                    self.open_bloc();
+                } else {
+                    self.open_in_tab(p, c)
+                }
             }
             Action::NewNote => self.new_note(),
             Action::Today => {
@@ -2215,6 +2229,10 @@ impl NotesApp {
             Action::Reject(id) => self.ask_reject(trust::Rejected::Done(id)),
             Action::OpenNewTab(p) => self.new_tab(tabs::Tab::Note(p)),
             Action::ShowTab(v) => self.show_in_tab(v),
+            Action::OpenBloc => {
+                self.show_in_tab(View::Bloc);
+                self.open_bloc();
+            }
             Action::NewTab => self.new_tab(tabs::Tab::View(View::Home)),
             Action::CloseTab => {
                 let i = self.tabs.active;
@@ -2271,6 +2289,9 @@ impl NotesApp {
         }
         if pressed(Key::K) {
             return Some(Action::ShowAi(ai_view::AiTab::Chat));
+        }
+        if pressed(Key::B) {
+            return Some(Action::OpenBloc);
         }
         if pressed(Key::R) {
             return Some(Action::StartMeeting);
@@ -2335,6 +2356,9 @@ impl NotesApp {
             }
             if asks > 0 {
                 rail_badge(ui, &r, asks, ACCENT);
+            }
+            if rail_item(ui, icon::NOTEPAD, "Bloc", "Bloc: pega o escribe lo que sea, tal cual (Ctrl+B)", self.view == View::Bloc, TEXT).clicked() {
+                action = Some(Action::OpenBloc);
             }
             ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
                 if rail_item(ui, icon::GEAR, "Ajustes", "Configuración (Ctrl+,)", self.settings.is_some(), TEXT).clicked() {
@@ -3068,6 +3092,7 @@ impl eframe::App for NotesApp {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.close_meeting(Local::now());
         self.save();
+        self.save_bloc();
         self.save_estado();
         self.vault.save_cache_now();
         // Si se está actualizando, la versión nueva esperaba esto para abrir.
@@ -3150,6 +3175,7 @@ impl NotesApp {
                     View::Tasks => actions.extend(self.tasks_view(ui)),
                     View::Agenda => actions.extend(self.agenda_view(ui)),
                     View::Trash => actions.extend(self.trash_view(ui)),
+                    View::Bloc => actions.extend(self.bloc_view(ui)),
                 }
             }
         });
@@ -3182,6 +3208,7 @@ impl NotesApp {
         if self.note.dirty && self.note.last_edit.elapsed() >= AUTOSAVE {
             self.save();
         }
+        self.maybe_save_bloc();
         if ctx.input(|i| i.viewport().close_requested()) {
             self.close_meeting(Local::now());
             self.save();
