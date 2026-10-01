@@ -897,7 +897,7 @@ impl NotesApp {
         }
         #[cfg(debug_assertions)]
         if let Ok(s) = std::env::var("NODEX_DEMO_SETTINGS") {
-            app.open_settings(if s == "acerca" { Section::About } else { Section::Tasks });
+            app.open_settings(match s.as_str() { "acerca" => Section::About, "cuenta" => Section::Account, _ => Section::Tasks });
         }
         #[cfg(debug_assertions)]
         if std::env::var("NODEX_DEMO_TOAST").is_ok() {

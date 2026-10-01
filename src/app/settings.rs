@@ -41,9 +41,7 @@ pub(super) struct Settings {
     code: String,
     server: String,
     // Tu cuenta: correo, código recibido, pasar a la IA incluida, clave pegada.
-    acct_email: String,
-    acct_code: String,
-    acct_included: bool,
+    login: super::account_ui::LoginForm,
     acct_key: String,
     client_id: String,
     client_secret: String,
@@ -72,9 +70,7 @@ impl Settings {
             model: cfg.modelo.clone(),
             code: cfg.codigo_ia.clone(),
             server: cfg.servidor_ia.clone(),
-            acct_email: String::new(),
-            acct_code: String::new(),
-            acct_included: true,
+            login: Default::default(),
             acct_key: String::new(),
             client_id: cfg.google_client_id.clone(),
             client_secret: cfg.google_client_secret.clone(),
@@ -94,9 +90,7 @@ pub(super) enum Change {
     Model(String),
     Key(String),
     /// Tu cuenta.
-    AccountCode(String),
-    AccountSignIn(String, String, bool),
-    AccountMicrosoft(bool),
+    Login(super::account_ui::LoginAction),
     AccountSignOut,
     AccountSync,
     AccountKey(String),
@@ -309,12 +303,10 @@ impl NotesApp {
                 self.save_config();
                 self.restart_ai();
             }
-            Change::AccountCode(email) => self.account_send_code(email),
-            Change::AccountSignIn(email, code, inc) => {
-                s.acct_code.clear();
-                self.account_sign_in(email, code, inc);
+            Change::Login(a) => {
+                s.login.code.clear();
+                self.account_login(a);
             }
-            Change::AccountMicrosoft(inc) => self.account_sign_in_microsoft(inc),
             Change::AccountSignOut => self.account_sign_out(),
             Change::AccountSync => self.account_sync_now(),
             Change::AccountKey(k) => match crate::account::set_key_text(&self.vault.root, &k) {
@@ -388,70 +380,34 @@ impl NotesApp {
     }
 
     fn section_account(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {
-        heading(ui, "Tu cuenta", "IA incluida (prueba gratis de 14 días) y tu configuración en todos tus equipos.");
+        heading(ui, "Tu cuenta", "La IA incluida y tu configuración en todos tus equipos.");
         let server = crate::account::server(&self.cfg);
-        if server.is_none() || crate::account::BUILT_IN_SERVER.is_none() {
+        // La dirección del servicio: viene puesta en los instaladores; si no, en «Avanzado».
+        let server_row = |ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>| {
             row(ui, "Servidor", "La dirección del servicio de Notas", |ui| {
                 let r = ui.add(egui::TextEdit::singleline(&mut s.server).hint_text("https://…").desired_width(250.0).margin(Margin::symmetric(8, 4)));
                 if (r.lost_focus() || ui.input(|i| i.key_pressed(Key::Enter))) && s.server.trim() != self.cfg.servidor_ia {
                     changes.push(Change::IncludedServer(s.server.clone()));
                 }
             });
-        }
+        };
         let busy = self.acct.busy;
         if !self.signed_in() {
             ui.add_space(8.0);
-            ui.label(
-                RichText::new("Con una cuenta, la IA viene incluida (sin claves ni configuración) y tus calendarios, cuentas de correo, Google Calendar y Microsoft To Do te siguen a cualquier equipo donde entres.")
-                    .size(13.0),
-            );
-            ui.add_space(8.0);
-            match &self.acct.code_sent_to {
-                None => {
-                    row(ui, "Tu correo", "Te mandamos un código de 6 dígitos para entrar (o crear tu cuenta)", |ui| {
-                        let ok = s.acct_email.contains('@') && server.is_some() && !busy;
-                        if ui.add_enabled(ok, egui::Button::new("Enviar código")).clicked() {
-                            changes.push(Change::AccountCode(s.acct_email.clone()));
-                        }
-                        let r = ui.add(egui::TextEdit::singleline(&mut s.acct_email).hint_text("tu@correo.cl").desired_width(200.0).margin(Margin::symmetric(8, 4)));
-                        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && ok {
-                            changes.push(Change::AccountCode(s.acct_email.clone()));
-                        }
-                    });
-                }
-                Some(to) => {
-                    row(ui, "El código", &format!("Lo enviamos a {to} (revisa también el spam)"), |ui| {
-                        let ok = s.acct_code.trim().len() >= 6 && !busy;
-                        if ui.add_enabled(ok, egui::Button::new(RichText::new("Entrar").color(Color32::WHITE)).fill(ACCENT)).clicked() {
-                            changes.push(Change::AccountSignIn(to.clone(), s.acct_code.clone(), s.acct_included));
-                        }
-                        let r = ui.add(egui::TextEdit::singleline(&mut s.acct_code).hint_text("123456").desired_width(90.0).margin(Margin::symmetric(8, 4)));
-                        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && ok {
-                            changes.push(Change::AccountSignIn(to.clone(), s.acct_code.clone(), s.acct_included));
-                        }
-                    });
-                    if ui.link(RichText::new("Usar otro correo o pedir otro código").size(12.5)).clicked() {
-                        changes.push(Change::AccountCode(String::new()));
-                    }
-                }
+            ui.label(RichText::new("Entra y listo: la IA queda activa y tus calendarios, correos, Google Calendar y Microsoft To Do te siguen a cualquier equipo. Las cuentas nuevas se aprueban antes de usarse; al aprobarla empiezan tus 14 días gratis.").size(13.0));
+            ui.add_space(12.0);
+            if server.is_none() {
+                server_row(ui, s, changes);
+                ui.label(RichText::new("Falta la dirección del servidor de Notas (vendrá puesta en los instaladores).").size(12.5).color(WARN));
+                ui.add_space(8.0);
             }
-            row(ui, "O entra con Microsoft", "Tu cuenta personal o del trabajo", |ui| {
-                if ui.add_enabled(server.is_some() && !busy, egui::Button::new(format!("{}  Entrar con Microsoft", icon::WINDOWS_LOGO))).clicked() {
-                    changes.push(Change::AccountMicrosoft(s.acct_included));
-                }
-            });
-            ui.add_space(6.0);
-            ui.checkbox(&mut s.acct_included, "Usar la IA incluida (deja guardada tu clave de IA, si tienes una)");
-            if busy {
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(RichText::new("Un momento…").size(12.5).color(MUTED));
-                });
+            let error = self.acct.error.as_deref();
+            if let Some(a) = super::account_ui::login_form(ui, &mut s.login, busy, server.is_some(), error, self.acct.notice.as_deref(), self.acct.code_sent_to.as_deref()) {
+                changes.push(Change::Login(a));
             }
-            if let Some(e) = &self.acct.error {
-                ui.add_space(6.0);
-                chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false);
+            if server.is_some() && crate::account::BUILT_IN_SERVER.is_none() {
+                ui.add_space(14.0);
+                egui::CollapsingHeader::new(RichText::new("Avanzado").size(12.5).color(MUTED)).show(ui, |ui| server_row(ui, s, changes));
             }
             return;
         }
@@ -460,6 +416,17 @@ impl NotesApp {
                 changes.push(Change::AccountSignOut);
             }
             ui.label(RichText::new(&self.cfg.cuenta).size(14.0));
+        });
+        // Qué IA se usa: la de Notas o la propia.
+        let included = self.cfg.proveedor == "notas";
+        row(ui, "La IA", if included { "La de Notas, incluida con tu cuenta" } else { "Tu propia clave (en Inteligencia artificial)" }, |ui| {
+            if included {
+                if ui.button("Usar mi propia clave").clicked() {
+                    changes.push(Change::Do(Action::OpenSettings(Section::Ai)));
+                }
+            } else if ui.button("Usar la de Notas").clicked() {
+                changes.push(Change::Provider("notas".into()));
+            }
         });
         match &self.acct.info {
             Some(Ok(info)) => row(ui, "Plan", "", |ui| {

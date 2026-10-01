@@ -6,6 +6,9 @@
 //! nodex-ia lista                        uso del mes de cada persona y costo estimado
 //! nodex-ia desactivar <huella>          deja sin IA a una persona (las primeras letras de su huella)
 //! nodex-ia plan <correo> <plan> [días]   cambia el plan de una cuenta (prueba, pro, fundador, gratis)
+//! nodex-ia pendientes                   cuentas nuevas que esperan aprobación
+//! nodex-ia aprobar <correo>             aprueba una cuenta (empieza su prueba) y se lo avisa por correo
+//! nodex-ia rechazar <correo>            no la aprueba (no podrá entrar)
 //! ```
 //!
 //! Configuración (variables de entorno): NOTAS_IA_KEY (clave de la IA, obligatoria para servir),
@@ -15,7 +18,7 @@
 use nodex_ia::{Settings, Store, report, router, state};
 
 fn usage() -> ! {
-    eprintln!("uso: nodex-ia servir | nuevo \"Nombre\" [tokens al mes] | lista | desactivar <huella> | plan <correo> <plan> [días]");
+    eprintln!("uso: nodex-ia servir | nuevo \"Nombre\" [tokens al mes] | lista | desactivar <huella> | plan <correo> <plan> [días] | pendientes | aprobar <correo> | rechazar <correo>");
     std::process::exit(2)
 }
 
@@ -72,6 +75,36 @@ async fn main() {
                 println!("{correo}: plan {plan}");
             }
             accounts.save(&settings.data).expect("no se pudo guardar cuentas.json");
+        }
+        Some("pendientes") => {
+            let accounts = nodex_ia::accounts::Accounts::load(&settings.data);
+            let p = accounts.pending();
+            if p.is_empty() {
+                println!("No hay cuentas por aprobar.");
+            }
+            for a in p {
+                println!("{}  (creada el {})  →  nodex-ia aprobar {}", a.correo, a.creado, a.correo);
+            }
+        }
+        Some(cmd @ ("aprobar" | "rechazar")) => {
+            let Some(correo) = args.get(1) else { usage() };
+            let mut accounts = nodex_ia::accounts::Accounts::load(&settings.data);
+            let done = if cmd == "aprobar" { accounts.approve(correo, settings.trial_days) } else { accounts.reject(correo) };
+            let Some(a) = done else {
+                eprintln!("No hay una cuenta con el correo {correo}");
+                std::process::exit(1);
+            };
+            accounts.save(&settings.data).expect("no se pudo guardar cuentas.json");
+            if cmd == "aprobar" {
+                println!("{}: aprobada{}", a.correo, if a.plan == "prueba" { format!(" (prueba hasta el {})", a.prueba_hasta) } else { String::new() });
+                let text = "Tu cuenta de Notas está lista: ya puedes entrar con tu correo y tu clave (Configuración → Tu cuenta).\n\nLa IA queda activa al entrar.";
+                let http = reqwest::Client::new();
+                if !nodex_ia::accounts::send_mail(&settings, &http, &a.correo, "Tu cuenta de Notas está lista", text).await {
+                    eprintln!("(no se pudo avisarle por correo)");
+                }
+            } else {
+                println!("{}: rechazada", a.correo);
+            }
         }
         Some("desactivar") => {
             let Some(prefix) = args.get(1) else { usage() };

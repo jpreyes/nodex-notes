@@ -13,13 +13,14 @@ pub(super) enum Step {
 
 pub(super) struct Onboarding {
     pub step: Step,
-    email: String,
-    code: String,
+    login: super::account_ui::LoginForm,
 }
 
 impl Onboarding {
     pub(super) fn new() -> Onboarding {
-        Onboarding { step: Step::Folder, email: String::new(), code: String::new() }
+        // La primera vez, lo normal es crear la cuenta.
+        let login = super::account_ui::LoginForm { mode: super::account_ui::LoginMode::Register, ..Default::default() };
+        Onboarding { step: Step::Folder, login }
     }
 }
 
@@ -33,10 +34,12 @@ impl NotesApp {
         let busy = self.acct.busy;
         let code_sent = self.acct.code_sent_to.clone();
         let error = self.acct.error.clone();
+        let notice = self.acct.notice.clone();
+        let mut login: Option<super::account_ui::LoginAction> = None;
         let folder = self.vault.root.clone();
         let mut next: Option<Step> = None;
         let mut pick = false;
-        let (mut send, mut enter, mut microsoft, mut done) = (false, false, false, false);
+        let mut done = false;
         egui::Modal::new(Id::new("primera-vez")).show(ctx, |ui| {
             ui.set_width(480.0);
             let dots = |ui: &mut Ui| {
@@ -81,49 +84,10 @@ impl NotesApp {
                 Step::Account => {
                     ui.label(RichText::new("Tu cuenta").font(theme::bold(20.0)));
                     ui.add_space(4.0);
-                    ui.label(RichText::new("Con una cuenta, la IA viene incluida: 14 días gratis, sin claves ni configuración. Y tu configuración te sigue a tus otros equipos.").size(13.5));
+                    ui.label(RichText::new("Con una cuenta, la IA queda activa al entrar (14 días gratis), sin claves ni configuración, y tu configuración te sigue a tus otros equipos. Las cuentas nuevas se aprueban antes de usarse: te avisamos por correo.").size(13.5));
                     ui.add_space(12.0);
                     let Some(ob) = self.onboarding.as_mut() else { return };
-                    match &code_sent {
-                        None => {
-                            ui.label(RichText::new("Tu correo (te mandamos un código de 6 dígitos):").size(13.0).color(MUTED));
-                            ui.horizontal(|ui| {
-                                let r = ui.add(egui::TextEdit::singleline(&mut ob.email).hint_text("tu@correo.cl").desired_width(260.0));
-                                let ok = ob.email.contains('@') && !busy;
-                                if ui.add_enabled(ok, egui::Button::new("Enviar código")).clicked() || (ok && r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))) {
-                                    send = true;
-                                }
-                            });
-                        }
-                        Some(to) => {
-                            ui.label(RichText::new(format!("Escribe el código que enviamos a {to}:")).size(13.0).color(MUTED));
-                            ui.horizontal(|ui| {
-                                let r = ui.add(egui::TextEdit::singleline(&mut ob.code).hint_text("123456").desired_width(110.0));
-                                if !r.has_focus() && ob.code.is_empty() {
-                                    r.request_focus();
-                                }
-                                let ok = ob.code.trim().len() >= 6 && !busy;
-                                if ui.add_enabled(ok, egui::Button::new(RichText::new("Entrar").color(Color32::WHITE)).fill(ACCENT)).clicked()
-                                    || (ok && r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
-                                {
-                                    enter = true;
-                                }
-                            });
-                        }
-                    }
-                    ui.add_space(8.0);
-                    if ui.add_enabled(!busy, egui::Button::new(format!("{}  Entrar con Microsoft", icon::WINDOWS_LOGO))).clicked() {
-                        microsoft = true;
-                    }
-                    if busy {
-                        ui.horizontal(|ui| {
-                            ui.spinner();
-                            ui.label(RichText::new("Un momento…").size(12.5).color(MUTED));
-                        });
-                    }
-                    if let Some(e) = &error {
-                        ui.label(RichText::new(format!("{} {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED));
-                    }
+                    login = super::account_ui::login_form(ui, &mut ob.login, busy, server.is_some(), error.as_deref(), notice.as_deref(), code_sent.as_deref());
                     ui.add_space(14.0);
                     if ui.link(RichText::new("Ahora no (puedes usar tu propia clave de IA, o ninguna)").size(12.5)).clicked() {
                         next = Some(Step::Ready);
@@ -160,17 +124,8 @@ impl NotesApp {
                 self.change_folder(p);
             }
         }
-        let (email, code) = self.onboarding.as_ref().map(|o| (o.email.clone(), o.code.clone())).unwrap_or_default();
-        if send {
-            self.account_send_code(email.clone());
-        }
-        if enter {
-            if let Some(to) = code_sent {
-                self.account_sign_in(to, code, true);
-            }
-        }
-        if microsoft {
-            self.account_sign_in_microsoft(true);
+        if let Some(a) = login {
+            self.account_login(a);
         }
         // Al entrar, se pasa solo al último paso.
         if step == Step::Account && signed_in {

@@ -46,8 +46,10 @@ en la cuenta de Cloudflare).
    `chmod 600` (dueño root). Deja `NOTAS_IA_DIRECCION=127.0.0.1` y `NOTAS_IA_PUERTO=8080` (si el
    8080 está ocupado, elige otro y úsalo también en el túnel). Pide a la persona que llene:
    - `NOTAS_IA_KEY`: la clave de OpenCode Zen del servicio (obligatoria).
-   - `NOTAS_IA_CORREO_CLAVE` y `NOTAS_IA_CORREO_DE`: Resend, para mandar los códigos de entrada
-     (opcional al comienzo: sin clave, el código aparece en `journalctl -u nodex-ia`).
+   - `NOTAS_IA_CORREO_CLAVE` y `NOTAS_IA_CORREO_DE`: Resend, para mandar los avisos y los códigos
+     de «¿Olvidaste tu clave?» (opcional al comienzo: sin clave, aparecen en `journalctl -u nodex-ia`).
+   - `NOTAS_IA_AVISAR`: el correo de la persona dueña del servidor, para avisarle de cada cuenta
+     nueva por aprobar (las cuentas nuevas no se activan solas).
 
 4. **El programa y el servicio.**
    ```bash
@@ -91,11 +93,10 @@ en la cuenta de Cloudflare).
    compila en ARM), reinicia y revisa `/salud`; si la versión nueva no responde, vuelve a la
    anterior. El de respaldo deja `/var/backups/nodex-ia/AAAA-MM-DD.tar.gz` (30 días).
 
-7. **Prueba de punta a punta.** Pide un código de entrada para un correo de la persona:
-   ```bash
-   curl -s -X POST https://ia.tudominio.cl/v1/cuenta/codigo -H 'Content-Type: application/json' -d '{"correo":"SU_CORREO"}'
-   ```
-   Tiene que llegar por correo (o, sin Resend, aparecer en `journalctl -u nodex-ia -n 20`).
+7. **Prueba de punta a punta.** Que la persona cree su cuenta desde la app (Configuración → Tu
+   cuenta → Crear cuenta): queda pendiente y llega el aviso a `NOTAS_IA_AVISAR` (o aparece en
+   `journalctl -u nodex-ia -n 20`). Apruébala con `nia aprobar SU_CORREO` (ver «Día a día») y que
+   entre con su correo y su clave.
 
 8. **Al terminar, dile a la persona:**
    - La dirección del servidor: `https://ia.tudominio.cl`.
@@ -103,8 +104,8 @@ en la cuenta de Cloudflare).
      (Settings → Secrets and variables → Actions → Variables), para que los instaladores de las
      próximas versiones la traigan puesta. Mientras tanto, en la app: Configuración → Tu cuenta →
      «Servidor».
-   - Que cambie su propia cuenta a un plan sin vencimiento, después de entrar desde la app:
-     `nodex-ia plan SU_CORREO fundador` (ver «Día a día»).
+   - Que cambie su propia cuenta a un plan sin vencimiento: `nia plan SU_CORREO fundador`.
+   - Que las cuentas nuevas esperan aprobación: `nia pendientes` y `nia aprobar <correo>`.
 
 ## Día a día
 
@@ -114,6 +115,9 @@ Los comandos de `nodex-ia` necesitan las variables del servicio:
 nia() { sudo -u nodex-ia bash -c "set -a; . /etc/nodex-ia.env; /opt/nodex-ia/nodex-ia $*"; }
 nia lista                         # uso del mes por persona y costo estimado (USD)
 nia plan ana@correo.cl pro        # plan de una cuenta: prueba [días], pro, fundador o gratis
+nia pendientes                    # cuentas nuevas que esperan aprobación
+nia aprobar ana@correo.cl         # aprobarla (empieza su prueba; se le avisa por correo)
+nia rechazar ana@correo.cl        # no aprobarla
 nia nuevo '"Ana Pérez"'           # un código a mano (se muestra una sola vez)
 nia desactivar 3fa9c1             # deja sin IA a una persona (primeras letras de su huella)
 ```

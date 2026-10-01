@@ -14,9 +14,12 @@ No guarda el texto de las notas: solo pasa por el servidor y se cuentan los toke
 
 Hay dos formas de tener IA incluida:
 
-- **Cuentas** (lo normal): en la app, Configuración → Tu cuenta, se entra con el correo (llega un
-  código de 6 dígitos) o con Microsoft. Una cuenta nueva trae una prueba de 14 días; el plan se
-  cambia con `nodex-ia plan`. Con la cuenta también viaja la configuración de la persona
+- **Cuentas** (lo normal): en la app, Configuración → Tu cuenta, «Crear cuenta» con correo y
+  clave (o «Entrar con Microsoft»). **Las cuentas nuevas quedan pendientes hasta que se aprueban**
+  (`nodex-ia aprobar <correo>`): se avisa por correo a `NOTAS_IA_AVISAR`, y al aprobarla, a la
+  persona. La prueba de 14 días empieza al aprobarla; el plan se cambia con `nodex-ia plan`.
+  «¿Olvidaste tu clave?» manda un código de 6 dígitos al correo para poner una nueva. La clave se
+  guarda como huella Argon2, nunca tal cual. Con la cuenta también viaja la configuración de la persona
   (calendarios, correo, To Do…), **cifrada en la app** con una clave que el servidor no tiene.
 - **Códigos** entregados a mano (`nodex-ia nuevo`), para pruebas o casos especiales.
 
@@ -90,6 +93,9 @@ A mano: hace falta un VPS y un subdominio que apunte a él (por ejemplo `ia.tudo
 nodex-ia lista                  # uso del mes de cada persona y costo estimado en USD
 nodex-ia desactivar 3fa9c1      # deja sin IA a una persona (las primeras letras de su huella)
 nodex-ia plan ana@correo.cl pro # plan de una cuenta: prueba [días], pro, fundador o gratis
+nodex-ia pendientes             # cuentas nuevas que esperan aprobación
+nodex-ia aprobar ana@correo.cl  # la aprueba (empieza su prueba) y le avisa por correo
+nodex-ia rechazar ana@correo.cl # no la aprueba
 ```
 
 (con las mismas variables de entorno que el servicio, como en el paso 6).
@@ -109,6 +115,7 @@ mes). Conviene respaldar esa carpeta.
 | `NOTAS_IA_PRUEBA_DIAS` / `NOTAS_IA_LIMITE_PRUEBA` | Prueba de las cuentas nuevas: días y tokens al mes | `14` / `1000000` |
 | `NOTAS_IA_CORREO_CLAVE` / `NOTAS_IA_CORREO_DE` | Envío de los códigos (Resend) | — |
 | `NOTAS_IA_CORREO_API` | API de correo (compatible con Resend) | `https://api.resend.com/emails` |
+| `NOTAS_IA_AVISAR` | Correo al que se avisa de cada cuenta nueva por aprobar | — |
 | `NOTAS_IA_PRECIO_ENTRADA` / `_SALIDA` | USD por millón de tokens, para estimar el costo | `0.3` / `1.2` |
 | `NOTAS_IA_DATA` | Carpeta de datos | `datos` |
 | `NOTAS_IA_DIRECCION` / `NOTAS_IA_PUERTO` | Dónde escucha (detrás de Caddy) | `127.0.0.1` / `8080` |

@@ -1,6 +1,12 @@
-//! Cuentas: entrar con el correo (un código de 6 dígitos que llega por correo) o con Microsoft,
-//! el plan de cada cuenta (prueba de 14 días, pro, fundador, gratis) y la configuración que
-//! viaja con la cuenta.
+//! Cuentas: crear una con correo y clave y entrar con ellos (lo normal); recuperar la clave con un
+//! código de 6 dígitos que llega por correo; o entrar con Microsoft. El plan de cada cuenta
+//! (prueba de 14 días, pro, fundador, gratis) y la configuración que viaja con la cuenta.
+//!
+//! La clave se guarda como huella Argon2 (con sal propia), nunca tal cual.
+//!
+//! **Las cuentas nuevas quedan pendientes** hasta que se aprueban (`nodex-ia aprobar <correo>`):
+//! mientras tanto no se puede entrar. Al crearse una, se avisa por correo a `NOTAS_IA_AVISAR`;
+//! al aprobarla, a la persona. La prueba de 14 días empieza al aprobarla.
 //!
 //! La configuración llega **cifrada** desde la app (con una clave que vive en la carpeta de notas
 //! de la persona): el servidor la guarda y la entrega, pero no puede leerla.
@@ -24,6 +30,11 @@ const CODE_TTL: Duration = Duration::from_secs(600);
 const CODE_TRIES: u32 = 5;
 /// No se manda otro código al mismo correo antes de esto.
 const CODE_EVERY: Duration = Duration::from_secs(30);
+/// Claves equivocadas permitidas por correo en `FAILS_WINDOW`.
+const MAX_FAILS: u32 = 10;
+const FAILS_WINDOW: Duration = Duration::from_secs(15 * 60);
+/// Largo mínimo de una clave.
+const MIN_PASSWORD: usize = 8;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -37,6 +48,12 @@ pub struct Account {
     /// Tokens al mes; 0 = el del plan.
     pub limite: u64,
     pub creado: String,
+    /// Huella Argon2 de la clave (vacía si entra solo con código o Microsoft).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub clave: String,
+    /// "" = activa; "pendiente" (espera aprobación) o "rechazada".
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub estado: String,
 }
 
 /// Lo que se guarda en `cuentas.json`.
@@ -66,11 +83,12 @@ impl Accounts {
         self.cuentas.values().find(|a| a.correo.eq_ignore_ascii_case(correo))
     }
 
-    /// La cuenta de ese correo (la crea, con la prueba, si no existe) y un token de sesión nuevo.
-    fn sign_in(&mut self, correo: &str, nombre: &str, trial_days: i64) -> (String, Account) {
+    /// Entrar con ese correo: un token de sesión nuevo si la cuenta está activa. Si no existe, se
+    /// crea **pendiente** (sin sesión). `Err((cuenta, es_nueva))` si no se puede entrar todavía.
+    fn sign_in(&mut self, correo: &str, nombre: &str) -> Result<(String, Account), (Account, bool)> {
         let today = chrono::Local::now().date_naive();
-        let id = match self.by_email(correo) {
-            Some(a) => a.id.clone(),
+        let (id, new) = match self.by_email(correo) {
+            Some(a) => (a.id.clone(), false),
             None => {
                 let id = random_hex(8);
                 let a = Account {
@@ -78,19 +96,92 @@ impl Accounts {
                     correo: correo.to_lowercase(),
                     nombre: nombre.to_string(),
                     plan: "prueba".into(),
-                    prueba_hasta: (today + chrono::Duration::days(trial_days)).format("%Y-%m-%d").to_string(),
+                    prueba_hasta: String::new(),
                     limite: 0,
                     creado: today.format("%Y-%m-%d").to_string(),
+                    clave: String::new(),
+                    estado: "pendiente".into(),
                 };
                 self.cuentas.insert(id.clone(), a);
-                id
+                (id, true)
             }
         };
+        let acc = self.cuentas[&id].clone();
+        if !acc.estado.is_empty() {
+            return Err((acc, new));
+        }
         let token = format!("ns-{}", random_hex(24));
         self.sesiones.insert(fingerprint(&token), id.clone());
-        let acc = self.cuentas[&id].clone();
-        (token, acc)
+        Ok((token, acc))
     }
+
+    /// Las cuentas que esperan aprobación.
+    pub fn pending(&self) -> Vec<&Account> {
+        self.cuentas.values().filter(|a| a.estado == "pendiente").collect()
+    }
+
+    /// Aprueba una cuenta: queda activa y empieza su prueba (si su plan es «prueba»).
+    pub fn approve(&mut self, correo: &str, trial_days: i64) -> Option<Account> {
+        let id = self.by_email(correo)?.id.clone();
+        let a = self.cuentas.get_mut(&id)?;
+        a.estado.clear();
+        if a.plan == "prueba" {
+            a.prueba_hasta = (chrono::Local::now().date_naive() + chrono::Duration::days(trial_days)).format("%Y-%m-%d").to_string();
+        }
+        Some(a.clone())
+    }
+
+    /// Rechaza una cuenta (no podrá entrar) y cierra sus sesiones.
+    pub fn reject(&mut self, correo: &str) -> Option<Account> {
+        let id = self.by_email(correo)?.id.clone();
+        self.sesiones.retain(|_, v| *v != id);
+        let a = self.cuentas.get_mut(&id)?;
+        a.estado = "rechazada".into();
+        Some(a.clone())
+    }
+}
+
+/// Manda un correo (Resend). Sin clave configurada, lo deja en el registro. Devuelve si salió.
+pub async fn send_mail(settings: &crate::Settings, http: &reqwest::Client, to: &str, subject: &str, text: &str) -> bool {
+    if settings.mail_key.is_empty() {
+        println!("correo para {to}: {subject}\n{text}");
+        return true;
+    }
+    let sent = http
+        .post(&settings.mail_api)
+        .bearer_auth(&settings.mail_key)
+        .json(&serde_json::json!({ "from": settings.mail_from, "to": [to], "subject": subject, "text": text }))
+        .send()
+        .await;
+    let ok = sent.as_ref().is_ok_and(|r| r.status().is_success());
+    if !ok {
+        eprintln!("no se pudo enviar el correo a {to}: {:?}", sent.map(|r| r.status()));
+    }
+    ok
+}
+
+/// La respuesta para una cuenta que aún no puede entrar.
+fn not_yet(acc: &Account) -> Response {
+    if acc.estado == "rechazada" {
+        return error(StatusCode::FORBIDDEN, "Tu cuenta de Notas no fue aprobada.");
+    }
+    let msg = "Tu cuenta quedó pendiente de aprobación. Te avisaremos por correo cuando esté lista.";
+    (StatusCode::ACCEPTED, Json(serde_json::json!({ "pendiente": true, "mensaje": msg }))).into_response()
+}
+
+/// La huella de una clave (Argon2id, con sal al azar).
+pub fn hash_password(clave: &str) -> Option<String> {
+    use argon2::password_hash::{PasswordHasher, SaltString};
+    let mut salt = [0u8; 16];
+    getrandom::fill(&mut salt).ok()?;
+    let salt = SaltString::encode_b64(&salt).ok()?;
+    argon2::Argon2::default().hash_password(clave.as_bytes(), &salt).ok().map(|h| h.to_string())
+}
+
+/// ¿La clave corresponde a la huella?
+pub fn check_password(clave: &str, hash: &str) -> bool {
+    use argon2::password_hash::{PasswordHash, PasswordVerifier};
+    !hash.is_empty() && PasswordHash::new(hash).is_ok_and(|h| argon2::Argon2::default().verify_password(clave.as_bytes(), &h).is_ok())
 }
 
 pub fn random_hex(n: usize) -> String {
@@ -130,10 +221,11 @@ pub struct SignedIn {
     pub cuenta: AccountInfo,
 }
 
-/// Códigos enviados por correo que aún no se usan (solo en memoria).
+/// Códigos enviados por correo que aún no se usan, y claves equivocadas (solo en memoria).
 #[derive(Default)]
 pub struct Pending {
     codes: BTreeMap<String, (String, Instant, u32)>,
+    fails: BTreeMap<String, (u32, Instant)>,
 }
 
 pub(crate) fn bearer(headers: &HeaderMap) -> String {
@@ -177,22 +269,9 @@ pub async fn send_code(State(state): State<Arc<AppState>>, Json(r): Json<CodeReq
         code
     };
     let text = format!("Tu código para entrar a Notas es {code}\n\nVence en 10 minutos. Si no lo pediste, ignora este correo.");
-    let s = &state.settings;
-    if s.mail_key.is_empty() {
-        // Sin servicio de correo configurado (desarrollo): el código queda en el registro.
-        println!("código para {correo}: {code}");
-    } else {
-        let sent = state
-            .http
-            .post(&s.mail_api)
-            .bearer_auth(&s.mail_key)
-            .json(&serde_json::json!({ "from": s.mail_from, "to": [correo], "subject": format!("Tu código de Notas: {code}"), "text": text }))
-            .send()
-            .await;
-        if !sent.as_ref().is_ok_and(|r| r.status().is_success()) {
-            eprintln!("no se pudo enviar el código a {correo}: {:?}", sent.map(|r| r.status()));
-            return error(StatusCode::BAD_GATEWAY, "No se pudo enviar el correo con el código; inténtalo de nuevo en un rato.");
-        }
+    // (Sin servicio de correo configurado, el código queda en el registro.)
+    if !send_mail(&state.settings, &state.http, &correo, &format!("Tu código de Notas: {code}"), &text).await {
+        return error(StatusCode::BAD_GATEWAY, "No se pudo enviar el correo con el código; inténtalo de nuevo en un rato.");
     }
     Json(serde_json::json!({ "ok": true })).into_response()
 }
@@ -203,24 +282,118 @@ pub struct CodeLogin {
     codigo: String,
 }
 
+/// Revisa (y gasta) el código enviado a ese correo.
+async fn use_code(state: &AppState, correo: &str, codigo: &str) -> Result<(), Response> {
+    let mut p = state.pending.lock().await;
+    let Some((fp, at, tries)) = p.codes.get_mut(correo) else {
+        return Err(error(StatusCode::UNAUTHORIZED, "Primero pide un código para ese correo."));
+    };
+    if at.elapsed() > CODE_TTL || *tries >= CODE_TRIES {
+        p.codes.remove(correo);
+        return Err(error(StatusCode::UNAUTHORIZED, "Ese código venció; pide otro."));
+    }
+    if *fp != fingerprint(codigo.trim()) {
+        *tries += 1;
+        return Err(error(StatusCode::UNAUTHORIZED, "El código no coincide; revísalo."));
+    }
+    p.codes.remove(correo);
+    Ok(())
+}
+
 pub async fn sign_in_code(State(state): State<Arc<AppState>>, Json(r): Json<CodeLogin>) -> Response {
     let correo = r.correo.trim().to_lowercase();
-    {
-        let mut p = state.pending.lock().await;
-        let Some((fp, at, tries)) = p.codes.get_mut(&correo) else {
-            return error(StatusCode::UNAUTHORIZED, "Primero pide un código para ese correo.");
-        };
-        if at.elapsed() > CODE_TTL || *tries >= CODE_TRIES {
-            p.codes.remove(&correo);
-            return error(StatusCode::UNAUTHORIZED, "Ese código venció; pide otro.");
-        }
-        if *fp != fingerprint(r.codigo.trim()) {
-            *tries += 1;
-            return error(StatusCode::UNAUTHORIZED, "El código no coincide; revísalo.");
-        }
-        p.codes.remove(&correo);
+    if let Err(e) = use_code(&state, &correo, &r.codigo).await {
+        return e;
     }
     finish_sign_in(&state, &correo, "").await
+}
+
+#[derive(Deserialize)]
+pub struct PasswordLogin {
+    correo: String,
+    clave: String,
+    #[serde(default)]
+    nombre: String,
+}
+
+fn short_password(clave: &str) -> Option<Response> {
+    (clave.chars().count() < MIN_PASSWORD).then(|| error(StatusCode::BAD_REQUEST, &format!("La clave debe tener al menos {MIN_PASSWORD} caracteres.")))
+}
+
+/// Crear una cuenta con correo y clave (con la prueba de 14 días) y entrar.
+pub async fn register(State(state): State<Arc<AppState>>, Json(r): Json<PasswordLogin>) -> Response {
+    let correo = r.correo.trim().to_lowercase();
+    if !valid_email(&correo) {
+        return error(StatusCode::BAD_REQUEST, "Ese correo no parece válido.");
+    }
+    if let Some(e) = short_password(&r.clave) {
+        return e;
+    }
+    {
+        let mut store = state.store.lock().await;
+        store.refresh_accounts(&state.settings.data);
+        if let Some(a) = store.accounts.by_email(&correo) {
+            return error(
+                StatusCode::CONFLICT,
+                if a.clave.is_empty() {
+                    "Ya hay una cuenta con ese correo (entraste antes con un código o con Microsoft): usa «¿Olvidaste tu clave?» para ponerle una."
+                } else {
+                    "Ya hay una cuenta con ese correo: inicia sesión."
+                },
+            );
+        }
+    }
+    let Some(hash) = hash_password(&r.clave) else { return error(StatusCode::INTERNAL_SERVER_ERROR, "No se pudo guardar la clave; inténtalo de nuevo.") };
+    finish_sign_in_with(&state, &correo, r.nombre.trim(), Some(hash)).await
+}
+
+/// Entrar con correo y clave.
+pub async fn sign_in_password(State(state): State<Arc<AppState>>, Json(r): Json<PasswordLogin>) -> Response {
+    let correo = r.correo.trim().to_lowercase();
+    {
+        let p = state.pending.lock().await;
+        if p.fails.get(&correo).is_some_and(|(n, at)| *n >= MAX_FAILS && at.elapsed() < FAILS_WINDOW) {
+            return error(StatusCode::TOO_MANY_REQUESTS, "Demasiados intentos con esa cuenta; espera unos minutos o usa «¿Olvidaste tu clave?».");
+        }
+    }
+    let hash = {
+        let mut store = state.store.lock().await;
+        store.refresh_accounts(&state.settings.data);
+        store.accounts.by_email(&correo).map(|a| a.clave.clone()).unwrap_or_default()
+    };
+    if !check_password(&r.clave, &hash) {
+        let mut p = state.pending.lock().await;
+        let e = p.fails.entry(correo).or_insert((0, Instant::now()));
+        if e.1.elapsed() >= FAILS_WINDOW {
+            *e = (0, Instant::now());
+        }
+        e.0 += 1;
+        return error(StatusCode::UNAUTHORIZED, "Correo o clave incorrectos.");
+    }
+    state.pending.lock().await.fails.remove(&correo);
+    finish_sign_in(&state, &correo, "").await
+}
+
+#[derive(Deserialize)]
+pub struct PasswordReset {
+    correo: String,
+    codigo: String,
+    clave: String,
+}
+
+/// «¿Olvidaste tu clave?»: con el código que llegó al correo, una clave nueva (si no había
+/// cuenta, se crea) y adentro.
+pub async fn reset_password(State(state): State<Arc<AppState>>, Json(r): Json<PasswordReset>) -> Response {
+    let correo = r.correo.trim().to_lowercase();
+    if let Some(e) = short_password(&r.clave) {
+        return e;
+    }
+    if let Err(e) = use_code(&state, &correo, &r.codigo).await {
+        return e;
+    }
+    let Some(hash) = hash_password(&r.clave) else { return error(StatusCode::INTERNAL_SERVER_ERROR, "No se pudo guardar la clave; inténtalo de nuevo.") };
+    state.pending.lock().await.fails.remove(&correo);
+    finish_sign_in_with(&state, &correo, "", Some(hash)).await
 }
 
 #[derive(Deserialize)]
@@ -243,9 +416,38 @@ pub async fn sign_in_microsoft(State(state): State<Arc<AppState>>, Json(r): Json
 }
 
 async fn finish_sign_in(state: &AppState, correo: &str, nombre: &str) -> Response {
+    finish_sign_in_with(state, correo, nombre, None).await
+}
+
+/// Entra (creando la cuenta si no existe) y, si viene, le pone esa clave.
+async fn finish_sign_in_with(state: &AppState, correo: &str, nombre: &str, clave: Option<String>) -> Response {
     let mut store = state.store.lock().await;
     store.refresh_accounts(&state.settings.data);
-    let (token, acc) = store.accounts.sign_in(correo, nombre, state.settings.trial_days);
+    let result = store.accounts.sign_in(correo, nombre);
+    let id = match &result {
+        Ok((_, a)) | Err((a, _)) => a.id.clone(),
+    };
+    if let Some(hash) = clave {
+        if let Some(a) = store.accounts.cuentas.get_mut(&id) {
+            a.clave = hash;
+        }
+    }
+    let (token, acc) = match result {
+        Ok(ok) => ok,
+        Err((acc, new)) => {
+            if let Err(e) = store.accounts.save(&state.settings.data) {
+                eprintln!("no se pudo guardar cuentas.json: {e}");
+            }
+            store.accounts_mtime = std::fs::metadata(Accounts::file(&state.settings.data)).and_then(|m| m.modified()).ok();
+            drop(store);
+            // Una cuenta nueva: aviso para aprobarla.
+            if new && !state.settings.admin.is_empty() {
+                let text = format!("{correo} creó una cuenta en Notas.\n\nPara aprobarla, en el servidor:\n  nodex-ia aprobar {correo}\n\n(o: nodex-ia rechazar {correo})");
+                send_mail(&state.settings, &state.http, &state.settings.admin, &format!("Notas: cuenta nueva por aprobar ({correo})"), &text).await;
+            }
+            return not_yet(&acc);
+        }
+    };
     if let Err(e) = store.accounts.save(&state.settings.data) {
         eprintln!("no se pudo guardar cuentas.json: {e}");
         return error(StatusCode::INTERNAL_SERVER_ERROR, "No se pudo guardar tu cuenta; inténtalo de nuevo.");
@@ -362,8 +564,14 @@ mod tests {
             mail_key: "clave-correo".into(),
             mail_from: "Notas <hola@notas.cl>".into(),
             graph: format!("{fake_url}/graph"),
+            admin: "jp@notas.cl".into(),
             ..Default::default()
         };
+        // Juan ya tiene una cuenta aprobada (la de Ana, por Microsoft, será nueva).
+        let mut seed = Accounts::default();
+        seed.cuentas.insert("j1".into(), Account { id: "j1".into(), correo: "juan@obra.cl".into(), plan: "prueba".into(), estado: "pendiente".into(), ..Default::default() });
+        seed.approve("juan@obra.cl", 14).unwrap();
+        seed.save(&data).unwrap();
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", l.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(l, router(state(settings))).await.unwrap() });
@@ -414,7 +622,17 @@ mod tests {
         let got: Blob = http.get(format!("{base}/v1/cuenta/config")).bearer_auth(&ok.token).send().await.unwrap().json().await.unwrap();
         assert_eq!(got.datos, "cifrado-1");
 
-        // Microsoft: la misma cuenta si el correo coincide; otra si no.
+        // Microsoft con un correo nuevo: la cuenta queda pendiente y se avisa para aprobarla.
+        let first = http.post(format!("{base}/v1/cuenta/microsoft")).json(&serde_json::json!({"token": "permiso-ms"})).send().await.unwrap();
+        assert_eq!(first.status(), 202);
+        assert_eq!(first.json::<serde_json::Value>().await.unwrap()["pendiente"], true);
+        assert!(mails.lock().await.iter().any(|m| m["to"][0] == "jp@notas.cl" && m["text"].as_str().unwrap().contains("nodex-ia aprobar ana@outlook.com")));
+        let mut acc = Accounts::load(&data);
+        assert_eq!(acc.pending().len(), 1);
+        acc.approve("ana@outlook.com", 14).unwrap();
+        acc.save(&data).unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Aprobada: entra.
         let ms: SignedIn = http.post(format!("{base}/v1/cuenta/microsoft")).json(&serde_json::json!({"token": "permiso-ms"})).send().await.unwrap().json().await.unwrap();
         assert_eq!((ms.cuenta.correo.as_str(), ms.cuenta.nombre.as_str()), ("ana@outlook.com", "Ana Pérez"));
         let bad_ms = http.post(format!("{base}/v1/cuenta/microsoft")).json(&serde_json::json!({"token": "otro"})).send().await.unwrap();

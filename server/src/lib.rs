@@ -50,6 +50,8 @@ pub struct Settings {
     pub mail_from: String,
     /// Microsoft Graph (para «Entrar con Microsoft»).
     pub graph: String,
+    /// A quién avisar por correo cuando alguien crea una cuenta (para aprobarla).
+    pub admin: String,
 }
 
 impl Default for Settings {
@@ -68,6 +70,7 @@ impl Default for Settings {
             mail_key: String::new(),
             mail_from: String::new(),
             graph: "https://graph.microsoft.com/v1.0".into(),
+            admin: String::new(),
         }
     }
 }
@@ -93,6 +96,7 @@ impl Settings {
             mail_key: var("NOTAS_IA_CORREO_CLAVE", ""),
             mail_from: var("NOTAS_IA_CORREO_DE", "Notas <no-responder@notas.invalid>"),
             graph: var("NOTAS_IA_GRAPH", "https://graph.microsoft.com/v1.0"),
+            admin: var("NOTAS_IA_AVISAR", ""),
         }
     }
 }
@@ -369,6 +373,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/uso", get(usage))
         .route("/v1/cuenta/codigo", post(accounts::send_code))
         .route("/v1/cuenta/entrar", post(accounts::sign_in_code))
+        .route("/v1/cuenta/registro", post(accounts::register))
+        .route("/v1/cuenta/entrar-clave", post(accounts::sign_in_password))
+        .route("/v1/cuenta/clave-nueva", post(accounts::reset_password))
         .route("/v1/cuenta/microsoft", post(accounts::sign_in_microsoft))
         .route("/v1/cuenta", get(accounts::me))
         .route("/v1/cuenta/salir", post(accounts::sign_out))

@@ -84,6 +84,18 @@ async fn check(r: reqwest::Response) -> Result<String, String> {
     Err(msg.unwrap_or_else(|| format!("el servidor respondió {status}")))
 }
 
+/// Marca de «tu cuenta espera aprobación» al comienzo del mensaje (no es un error).
+pub const PENDING: &str = "pendiente:";
+
+/// Lee la respuesta de entrar: la sesión, o que la cuenta espera aprobación.
+fn signed_in(text: &str) -> Result<SignedIn, String> {
+    let v: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    if v["pendiente"].as_bool() == Some(true) {
+        return Err(format!("{PENDING}{}", v["mensaje"].as_str().unwrap_or("Tu cuenta espera aprobación.")));
+    }
+    serde_json::from_value(v).map_err(|e| e.to_string())
+}
+
 /// Hace algo con el servidor en otro hilo y avisa a la ventana al terminar.
 fn spawn<T: Send + 'static>(ctx: eframe::egui::Context, job: impl FnOnce() -> Result<T, String> + Send + 'static) -> Receiver<Result<T, String>> {
     let (tx, rx) = mpsc::channel();
@@ -103,14 +115,30 @@ pub fn send_code(base: String, email: String, ctx: eframe::egui::Context) -> Rec
     })
 }
 
-pub fn sign_in_code(base: String, email: String, code: String, ctx: eframe::egui::Context) -> Receiver<Result<SignedIn, String>> {
+/// Pide al servidor algo que termina en una sesión (crear cuenta, entrar, clave nueva).
+fn session(base: String, path: &'static str, body: Value, ctx: eframe::egui::Context) -> Receiver<Result<SignedIn, String>> {
     spawn(ctx, move || {
         runtime()?.block_on(async {
-            let r = http().post(format!("{base}/v1/cuenta/entrar")).json(&serde_json::json!({ "correo": email.trim(), "codigo": code.trim() })).send().await;
+            let r = http().post(format!("{base}{path}")).json(&body).send().await;
             let text = check(r.map_err(|e| format!("sin conexión con el servidor ({e})"))?).await?;
-            serde_json::from_str(&text).map_err(|e| e.to_string())
+            signed_in(&text)
         })
     })
+}
+
+/// Crear una cuenta con correo y clave.
+pub fn register(base: String, email: String, password: String, ctx: eframe::egui::Context) -> Receiver<Result<SignedIn, String>> {
+    session(base, "/v1/cuenta/registro", serde_json::json!({ "correo": email.trim(), "clave": password }), ctx)
+}
+
+/// Entrar con correo y clave.
+pub fn sign_in_password(base: String, email: String, password: String, ctx: eframe::egui::Context) -> Receiver<Result<SignedIn, String>> {
+    session(base, "/v1/cuenta/entrar-clave", serde_json::json!({ "correo": email.trim(), "clave": password }), ctx)
+}
+
+/// «¿Olvidaste tu clave?»: con el código del correo, una clave nueva (y adentro).
+pub fn reset_password(base: String, email: String, code: String, password: String, ctx: eframe::egui::Context) -> Receiver<Result<SignedIn, String>> {
+    session(base, "/v1/cuenta/clave-nueva", serde_json::json!({ "correo": email.trim(), "codigo": code.trim(), "clave": password }), ctx)
 }
 
 /// Entrar con Microsoft: se pide permiso para leer el perfil (navegador) y el servidor pregunta
@@ -121,7 +149,7 @@ pub fn sign_in_microsoft(base: String, ctx: eframe::egui::Context) -> Receiver<R
         runtime()?.block_on(async {
             let r = http().post(format!("{base}/v1/cuenta/microsoft")).json(&serde_json::json!({ "token": token })).send().await;
             let text = check(r.map_err(|e| format!("sin conexión con el servidor ({e})"))?).await?;
-            serde_json::from_str(&text).map_err(|e| e.to_string())
+            signed_in(&text)
         })
     })
 }
@@ -504,10 +532,28 @@ mod two_devices {
             base
         });
         let ctx = eframe::egui::Context::default();
-        send_code(base.clone(), "ana@obra.cl".into(), ctx.clone()).recv().unwrap().unwrap();
-        let code: String = mails.lock().unwrap()[0].chars().filter(|c| c.is_ascii_digit()).take(6).collect();
-        let s = sign_in_code(base.clone(), "ana@obra.cl".into(), code, ctx.clone()).recv().unwrap().unwrap();
+        // Crear la cuenta: queda pendiente hasta que se apruebe (no se puede entrar).
+        let pending = register(base.clone(), "ana@obra.cl".into(), "clave-segura".into(), ctx.clone()).recv().unwrap().unwrap_err();
+        assert!(pending.starts_with(PENDING), "{pending}");
+        let again = sign_in_password(base.clone(), "ana@obra.cl".into(), "clave-segura".into(), ctx.clone()).recv().unwrap().unwrap_err();
+        assert!(again.starts_with(PENDING), "{again}");
+        let short = register(base.clone(), "otra@obra.cl".into(), "corta".into(), ctx.clone()).recv().unwrap().unwrap_err();
+        assert!(short.contains("8 caracteres"), "{short}");
+        // Se aprueba (nodex-ia aprobar): empieza la prueba.
+        let mut accounts = nodex_ia::accounts::Accounts::load(&data);
+        assert_eq!(accounts.pending().len(), 1);
+        assert!(!std::fs::read_to_string(nodex_ia::accounts::Accounts::file(&data)).unwrap().contains("clave-segura"), "la clave no se guarda tal cual");
+        accounts.approve("ana@obra.cl", 14).unwrap();
+        accounts.save(&data).unwrap();
+        let wrong = sign_in_password(base.clone(), "ana@obra.cl".into(), "otra-clave".into(), ctx.clone()).recv().unwrap().unwrap_err();
+        assert_eq!(wrong, "Correo o clave incorrectos.");
+        let s = sign_in_password(base.clone(), "ana@obra.cl".into(), "clave-segura".into(), ctx.clone()).recv().unwrap().unwrap();
         assert_eq!(s.cuenta.plan_label(), "Prueba gratis · quedan 14 días");
+        // «¿Olvidaste tu clave?»: con el código del correo, una clave nueva.
+        send_code(base.clone(), "ana@obra.cl".into(), ctx.clone()).recv().unwrap().unwrap();
+        let code: String = mails.lock().unwrap().last().unwrap().chars().filter(|c| c.is_ascii_digit()).take(6).collect();
+        reset_password(base.clone(), "ana@obra.cl".into(), code, "clave-nueva-1".into(), ctx.clone()).recv().unwrap().unwrap();
+        let s = sign_in_password(base.clone(), "ana@obra.cl".into(), "clave-nueva-1".into(), ctx.clone()).recv().unwrap().unwrap();
         let token = s.token;
 
         let cal = serde_json::json!([{"nombre": "Trabajo", "url": "https://x.cl/a.ics"}]);
