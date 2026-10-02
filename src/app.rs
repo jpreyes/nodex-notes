@@ -2069,9 +2069,9 @@ impl NotesApp {
             Action::Open(p, c) => {
                 self.search.clear();
                 // Una cita del Bloc (desde Preguntar) abre el Bloc.
-                if p == self.bloc_path() {
+                if self.is_bloc_page(&p) {
                     self.show_in_tab(View::Bloc);
-                    self.open_bloc();
+                    self.open_bloc_file(&p);
                 } else {
                     self.open_in_tab(p, c)
                 }
@@ -3209,6 +3209,7 @@ impl NotesApp {
         self.reject_window(&ctx);
         self.update_news_window(&ctx);
         self.history_window(&ctx);
+        self.sync_offer_window(&ctx);
         self.follow_up_window(&ctx);
         self.done_suggest_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {

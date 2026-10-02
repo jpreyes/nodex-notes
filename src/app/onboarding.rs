@@ -71,7 +71,7 @@ impl NotesApp {
                         RichText::new(if cloud {
                             "Está en tu nube: tus notas estarán en todos tus equipos."
                         } else {
-                            "Si usas Dropbox u OneDrive, elige una carpeta dentro de ella para tener tus notas en todos tus equipos."
+                            "Con tu cuenta (en el paso siguiente), tus notas se sincronizan solas en todos tus equipos."
                         })
                         .size(12.5)
                         .color(MUTED),

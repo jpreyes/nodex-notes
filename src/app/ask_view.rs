@@ -175,9 +175,10 @@ impl NotesApp {
             })
             .collect();
         // El Bloc también (con las claves ocultas).
-        if let Some(text) = self.bloc_for_ai().filter(|_| since.is_none()) {
-            let doc = ask::Doc { key: format!("n{}", docs.len() + 1), path: self.bloc_path(), workspace: "Bloc".into(), title: "Bloc".into(), date: today(), text };
-            sources.insert(doc.key.clone(), Source { path: doc.path.clone(), label: "Bloc".into() });
+        let pages = if since.is_none() { self.bloc_for_ai() } else { Vec::new() };
+        for (path, page, text) in pages {
+            let doc = ask::Doc { key: format!("n{}", docs.len() + 1), path, workspace: "Bloc".into(), title: page.clone(), date: today(), text };
+            sources.insert(doc.key.clone(), Source { path: doc.path.clone(), label: format!("Bloc / {page}") });
             docs.push(doc);
         }
         let all = self.agenda.tasks();

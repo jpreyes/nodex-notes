@@ -1,6 +1,7 @@
-//! La sincronización propia en la app: encenderla (Configuración → Tu cuenta), cómo va (abajo) y,
-//! si la carpeta está en Dropbox u OneDrive, copiarla afuera primero (un solo modo por carpeta:
-//! si no, Dropbox y la cuenta se pelearían el mismo archivo).
+//! La sincronización propia en la app. Es automática: al entrar con la cuenta, la carpeta de notas
+//! se sincroniza sola (se puede apagar en Configuración → Tu cuenta). Si la carpeta está en
+//! Dropbox u OneDrive, se pregunta una vez si copiarla afuera y sincronizar esa (un solo modo por
+//! carpeta: si no, Dropbox y la cuenta se pelearían el mismo archivo). Abajo, cómo va.
 
 use super::*;
 use std::sync::Arc;
@@ -22,6 +23,8 @@ pub(super) struct SyncUi {
     told: u64,
     told_at: Option<Instant>,
     pub copy: Option<CopyJob>,
+    /// Se cerró la pregunta «¿Sincronizamos…?» en esta sesión (sin elegir).
+    offer_closed: bool,
 }
 
 /// ¿La carpeta está en una nube que ya sincroniza (Dropbox, OneDrive, iCloud)?
@@ -35,7 +38,8 @@ pub(super) fn in_cloud(root: &Path) -> bool {
 
 /// Una carpeta libre fuera de la nube para las notas («Documentos/Notas», «Notas 2»…).
 fn outside_folder() -> PathBuf {
-    let docs = dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from("."));
+    // En Windows, Documentos puede estar dentro de OneDrive: entonces, la carpeta personal.
+    let docs = dirs::document_dir().filter(|d| !in_cloud(d)).or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from("."));
     let mut p = docs.join("Notas");
     let mut i = 2;
     while p.exists() && fs::read_dir(&p).is_ok_and(|mut d| d.next().is_some()) {
@@ -68,7 +72,7 @@ impl NotesApp {
     /// Empieza (o detiene) la sincronización según la configuración y la cuenta.
     pub(super) fn restart_sync(&mut self) {
         self.sync.handle = None; // detiene la anterior
-        if !self.cfg.sincronizar || !self.signed_in() || in_cloud(&self.vault.root) {
+        if self.cfg.sin_sincronizar || !self.signed_in() || in_cloud(&self.vault.root) {
             return;
         }
         let Some(base) = crate::account::server(&self.cfg) else { return };
@@ -97,7 +101,7 @@ impl NotesApp {
         match r {
             Ok(()) => {
                 self.change_folder(dest.clone());
-                self.cfg.sincronizar = true;
+                self.cfg.sin_sincronizar = false;
                 self.save_config();
                 self.restart_sync();
                 self.msg(format!("Tus notas ahora están en {} y se sincronizan con tu cuenta (la carpeta de Dropbox quedó como estaba)", dest.display()));
@@ -108,7 +112,7 @@ impl NotesApp {
 
     /// Encender o apagar la sincronización con la cuenta.
     pub(super) fn set_sync(&mut self, on: bool) {
-        self.cfg.sincronizar = on;
+        self.cfg.sin_sincronizar = !on;
         self.save_config();
         self.restart_sync();
         self.msg(if on { "Tus notas se sincronizan con tu cuenta" } else { "Tus notas ya no se sincronizan con tu cuenta (quedan en este equipo)" });
@@ -158,13 +162,65 @@ impl NotesApp {
         ui.add_space(12.0);
     }
 
+    /// Una vez, al entrar con la cuenta y con la carpeta en Dropbox/OneDrive: «¿Sincronizamos tus
+    /// notas con tu cuenta?» (copiarlas afuera, o seguir con Dropbox).
+    pub(super) fn sync_offer_window(&mut self, ctx: &egui::Context) {
+        let show = self.signed_in()
+            && !self.cfg.sin_sincronizar
+            && !self.sync.offer_closed
+            && self.sync.copy.is_none()
+            && self.onboarding.is_none()
+            && self.settings.is_none()
+            && crate::account::server(&self.cfg).is_some()
+            && in_cloud(&self.vault.root);
+        if !show {
+            return;
+        }
+        let dest = outside_folder();
+        let (mut yes, mut keep, mut close) = (false, false, false);
+        let cloud = if crate::dropbox::contains(&self.vault.root) { "Dropbox" } else { "OneDrive" };
+        let modal = egui::Modal::new(Id::new("ofrecer-sincronizar")).show(ctx, |ui| {
+            ui.set_width(460.0);
+            ui.label(RichText::new(format!("{} ¿Sincronizamos tus notas con tu cuenta?", icon::CLOUD_ARROW_UP)).font(theme::bold(17.0)));
+            ui.add_space(6.0);
+            ui.label(RichText::new(format!("Tus notas están en {cloud}. Con tu cuenta, cada cambio llega en segundos a tus otros equipos, sin depender de {cloud}, y si dos equipos cambian la misma nota, se juntan.")).size(13.5));
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(format!("Para que no se peleen las dos sincronizaciones, tus notas se copian a {} y la app pasa a usar esa carpeta. La de {cloud} queda como está.", dest.display()))
+                    .size(12.5)
+                    .color(MUTED),
+            );
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui.add(egui::Button::new(RichText::new("Sí, sincronizar").color(Color32::WHITE)).fill(ACCENT)).clicked() {
+                    yes = true;
+                }
+                if ui.button(format!("Seguir con {cloud}")).clicked() {
+                    keep = true;
+                }
+            });
+        });
+        if modal.should_close() {
+            close = true;
+        }
+        if yes {
+            self.copy_out_of_cloud();
+        } else if keep {
+            self.cfg.sin_sincronizar = true;
+            self.save_config();
+            self.msg(format!("Tus notas siguen con {cloud}. Puedes cambiarlo en Configuración → Tu cuenta"));
+        } else if close {
+            self.sync.offer_closed = true;
+        }
+    }
+
     /// En Configuración → Tu cuenta.
     pub(super) fn sync_settings(&self, ui: &mut Ui, changes: &mut Vec<settings::Change>) {
         use settings::Change;
         let cloud = in_cloud(&self.vault.root);
-        let hint = "Tus notas en todos tus equipos, sin Dropbox: cada cambio sube a tu cuenta y llega al instante a tus otros equipos. Si dos equipos cambian la misma nota, se juntan. Sin conexión, escribes igual.";
+        let hint = "Tus notas en todos tus equipos, sin Dropbox: cada cambio sube a tu cuenta y llega al instante a tus otros equipos. Si dos equipos cambian la misma nota, se juntan. Sin conexión, escribes igual. Se enciende sola al entrar.";
         settings::row(ui, "Sincronizar tus notas", hint, |ui| {
-            let mut on = self.cfg.sincronizar && !cloud;
+            let mut on = !self.cfg.sin_sincronizar && !cloud;
             ui.add_enabled_ui(!cloud && self.sync.copy.is_none(), |ui| {
                 if settings::toggle(ui, &mut on).changed() {
                     changes.push(Change::Sync(on));
@@ -208,5 +264,7 @@ mod tests {
         assert!(in_cloud(Path::new("C:/Users/ana/OneDrive/Notas")));
         assert!(in_cloud(Path::new("C:/Users/ana/Dropbox/Notas")));
         assert!(!in_cloud(Path::new("C:/Users/ana/Documents/Notas")));
+        // La copia nunca queda en otra nube (Documentos puede estar dentro de OneDrive).
+        assert!(!in_cloud(&outside_folder()), "{}", outside_folder().display());
     }
 }

@@ -1,6 +1,6 @@
 //! Bloc: un lugar para pegar y escribir cualquier cosa (código, ideas sueltas, claves, tokens) tal
-//! cual, sin que se vuelva tareas, etiquetas ni eventos. Es `Bloc.md` en la carpeta de notas
-//! (viaja con Dropbox y guarda versiones en el historial).
+//! cual, sin que se vuelva tareas, etiquetas ni eventos. Tiene páginas: cada una es un archivo en
+//! la carpeta `Bloc/` de las notas (no es un espacio; viaja con la carpeta y guarda versiones).
 //!
 //! - Letra de ancho fijo; Tab escribe una tabulación; nada se transforma.
 //! - Los bloques (separados por una línea en blanco) tienen «Copiar» al pasar el mouse.
@@ -12,7 +12,10 @@ use super::*;
 use egui::text::{CCursor, CCursorRange};
 use std::sync::mpsc::Receiver;
 
-pub(super) const FILE: &str = "Bloc.md";
+/// La carpeta de las páginas, la primera página y el archivo de antes (una sola página).
+pub(super) const DIR: &str = "Bloc";
+const FIRST: &str = "General";
+const OLD_FILE: &str = "Bloc.md";
 /// Cuánto de cada bloque ve la IA para ordenarlo (basta para saber de qué es).
 const PEEK: usize = 600;
 
@@ -36,6 +39,19 @@ pub(super) struct Bloc {
     copied: Option<(usize, Instant)>,
     /// Cuándo se guardó la última versión en el historial.
     kept: Option<DateTime<Local>>,
+    /// La página abierta ("" = la primera).
+    page: String,
+    /// Cambiando el nombre de una página: (cuál, nombre nuevo).
+    renaming: Option<(String, String)>,
+}
+
+/// Lo que se pidió con las páginas.
+enum PageDo {
+    Open(String),
+    New,
+    StartRename(String),
+    Rename(String, String),
+    Delete(String),
 }
 
 /// Los bloques del texto (separados por líneas en blanco): primera y última línea, y su texto.
@@ -166,8 +182,122 @@ fn parse_groups(reply: &str) -> Option<Vec<(String, Vec<usize>)>> {
 }
 
 impl NotesApp {
+    fn bloc_dir(&self) -> PathBuf {
+        self.vault.root.join(DIR)
+    }
+
+    /// La página abierta.
+    fn bloc_page(&self) -> String {
+        if self.bloc.page.is_empty() { FIRST.to_string() } else { self.bloc.page.clone() }
+    }
+
+    /// El archivo de la página abierta.
     pub(super) fn bloc_path(&self) -> PathBuf {
-        self.vault.root.join(FILE)
+        self.bloc_dir().join(format!("{}.md", self.bloc_page()))
+    }
+
+    /// ¿Es una página del Bloc?
+    pub(super) fn is_bloc_page(&self, path: &Path) -> bool {
+        path.parent().is_some_and(|p| p == self.bloc_dir())
+    }
+
+    /// Las páginas, por nombre (la primera, primero).
+    pub(super) fn bloc_pages(&self) -> Vec<String> {
+        let mut v: Vec<String> = fs::read_dir(self.bloc_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("md")) && crate::conflicts::original_of(&p.file_name().unwrap_or_default().to_string_lossy()).is_none())
+            .map(|p| vault::stem(&p))
+            .collect();
+        if !v.iter().any(|p| p == FIRST) {
+            v.push(FIRST.to_string());
+        }
+        v.sort_by_key(|p| (p != FIRST, p.to_lowercase()));
+        v
+    }
+
+    /// El Bloc de antes (`Bloc.md`, una sola página) pasa a ser la página «General».
+    fn migrate_old_bloc(&self) {
+        let old = self.vault.root.join(OLD_FILE);
+        let first = self.bloc_dir().join(format!("{FIRST}.md"));
+        if old.is_file() && !first.exists() {
+            let _ = fs::create_dir_all(self.bloc_dir());
+            let _ = fs::rename(&old, &first);
+        }
+    }
+
+    /// Abre otra página (guardando la que estaba).
+    fn open_bloc_page(&mut self, name: &str) {
+        self.save_bloc();
+        self.bloc.page = name.to_string();
+        self.bloc.loaded = false;
+        self.bloc.undo = None;
+        self.bloc.error = None;
+        self.bloc.kept = None;
+        self.load_bloc();
+        self.bloc.focus = true;
+    }
+
+    fn new_bloc_page(&mut self) {
+        let pages = self.bloc_pages();
+        let name = (2..).map(|i| format!("Página {i}")).find(|n| !pages.contains(n)).unwrap_or_else(|| "Página".into());
+        let _ = fs::create_dir_all(self.bloc_dir());
+        let _ = fs::write(self.bloc_dir().join(format!("{name}.md")), "");
+        self.open_bloc_page(&name);
+    }
+
+    fn rename_bloc_page(&mut self, old: &str, new: &str) {
+        let new = vault::sanitize(new);
+        if new == old || new.trim().is_empty() {
+            return;
+        }
+        if self.bloc_pages().iter().any(|p| p.eq_ignore_ascii_case(&new)) {
+            self.msg(format!("Ya hay una página «{new}»"));
+            return;
+        }
+        if old == self.bloc_page() {
+            self.save_bloc();
+        }
+        let (from, to) = (self.bloc_dir().join(format!("{old}.md")), self.bloc_dir().join(format!("{new}.md")));
+        let _ = fs::create_dir_all(self.bloc_dir());
+        if from.exists() {
+            if let Err(e) = fs::rename(&from, &to) {
+                self.msg(format!("No se pudo cambiar el nombre: {e}"));
+                return;
+            }
+        } else {
+            let _ = fs::write(&to, "");
+        }
+        crate::history::relink(&self.vault.root, &format!("{DIR}/{old}"), &format!("{DIR}/{new}"));
+        if old == self.bloc_page() {
+            self.bloc.page = new;
+            self.bloc.disk = self.bloc_disk();
+        }
+    }
+
+    fn delete_bloc_page(&mut self, name: &str) {
+        if self.bloc_pages().len() <= 1 {
+            self.msg("El Bloc necesita al menos una página");
+            return;
+        }
+        if name == self.bloc_page() {
+            self.save_bloc();
+        }
+        let path = self.bloc_dir().join(format!("{name}.md"));
+        if path.exists() {
+            if let Err(e) = self.vault.trash(&path) {
+                self.msg(format!("No se pudo borrar la página: {e}"));
+                return;
+            }
+        }
+        self.msg(format!("Página «{name}» a la papelera"));
+        if name == self.bloc_page() {
+            let first = self.bloc_pages().into_iter().next().unwrap_or_else(|| FIRST.into());
+            self.bloc.dirty = false;
+            self.open_bloc_page(&first);
+        }
     }
 
     fn bloc_disk(&self) -> Option<(SystemTime, u64)> {
@@ -176,6 +306,7 @@ impl NotesApp {
 
     /// Lee el bloc (la primera vez, o si cambió en disco y aquí no hay nada sin guardar).
     fn load_bloc(&mut self) {
+        self.migrate_old_bloc();
         let disk = self.bloc_disk();
         if self.bloc.loaded && (self.bloc.dirty || disk == self.bloc.disk) {
             return;
@@ -193,6 +324,7 @@ impl NotesApp {
             return;
         }
         let path = self.bloc_path();
+        let _ = fs::create_dir_all(self.bloc_dir());
         let disk_now = self.bloc_disk();
         if disk_now != self.bloc.disk {
             if let Ok(disk) = vault::read_text(&path) {
@@ -203,9 +335,10 @@ impl NotesApp {
         }
         // La versión anterior, al historial (como las notas).
         let now = Local::now();
-        let last = self.bloc.kept.or_else(|| crate::history::last_kept(&self.vault.root, "Bloc"));
+        let rel = format!("{DIR}/{}", self.bloc_page());
+        let last = self.bloc.kept.or_else(|| crate::history::last_kept(&self.vault.root, &rel));
         if crate::history::should_keep(&self.bloc.base, &self.bloc.text, last.map(|t| (now - t).to_std().unwrap_or_default())) {
-            if crate::history::keep(&self.vault.root, "Bloc", &self.bloc.base, now).is_ok() {
+            if crate::history::keep(&self.vault.root, &rel, &self.bloc.base, now).is_ok() {
                 self.bloc.kept = Some(now);
             }
         }
@@ -226,11 +359,28 @@ impl NotesApp {
         }
     }
 
-    /// El texto del bloc para la IA (para «Preguntar»), con las claves ocultas.
-    pub(super) fn bloc_for_ai(&mut self) -> Option<String> {
+    /// Las páginas del Bloc para la IA (para «Preguntar»), con las claves ocultas: (archivo,
+    /// página, texto).
+    pub(super) fn bloc_for_ai(&mut self) -> Vec<(PathBuf, String, String)> {
         self.load_bloc();
-        let t = self.bloc.text.trim();
-        (!t.is_empty()).then(|| mask(&t.chars().take(20_000).collect::<String>(), &mut Vec::new()))
+        self.save_bloc();
+        let mut known = Vec::new();
+        let mut budget = 20_000usize;
+        let mut out = Vec::new();
+        for page in self.bloc_pages() {
+            let path = self.bloc_dir().join(format!("{page}.md"));
+            let text = vault::read_text(&path).unwrap_or_default();
+            let t: String = text.trim().chars().take(budget).collect();
+            if t.is_empty() {
+                continue;
+            }
+            budget = budget.saturating_sub(t.chars().count());
+            out.push((path, page, mask(&t, &mut known)));
+            if budget == 0 {
+                break;
+            }
+        }
+        out
     }
 
     /// «Ordenar»: la IA agrupa los bloques (sin ver las claves).
@@ -280,8 +430,11 @@ impl NotesApp {
             }
         }
         let ctx = ui.ctx().clone();
-        let id = Id::new("bloc");
+        let page = self.bloc_page();
+        let id = Id::new(("bloc", page.clone()));
         let mut copy: Option<(usize, String)> = None;
+        let pages = self.bloc_pages();
+        let mut page_do: Option<PageDo> = None;
         Self::column(ui, "bloc-vista", |ui, col_w| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Bloc").font(theme::bold(26.0)));
@@ -319,7 +472,45 @@ impl NotesApp {
             if let Some(e) = &self.bloc.error {
                 ui.label(RichText::new(format!("{} {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED));
             }
-            ui.add_space(10.0);
+            ui.add_space(8.0);
+            // Las páginas: un clic abre; doble clic o clic derecho, cambiar el nombre o borrar.
+            let busy = self.bloc.ordering.is_some();
+            ui.horizontal_wrapped(|ui| {
+                for p in &pages {
+                    if let Some((old, new)) = self.bloc.renaming.as_mut().filter(|(o, _)| o == p) {
+                        let r = ui.add(egui::TextEdit::singleline(new).desired_width(120.0).margin(Margin::symmetric(6, 3)));
+                        if !r.has_focus() && !r.lost_focus() {
+                            r.request_focus();
+                        }
+                        if r.lost_focus() {
+                            page_do = Some(if ui.input(|i| i.key_pressed(Key::Escape)) { PageDo::Rename(old.clone(), old.clone()) } else { PageDo::Rename(old.clone(), new.clone()) });
+                        }
+                        continue;
+                    }
+                    let label = RichText::new(format!("{}  {p}", icon::NOTEPAD)).size(13.0);
+                    let r = ui.add_enabled(!busy || *p == page, egui::Button::selectable(*p == page, label));
+                    if r.clicked() && *p != page {
+                        page_do = Some(PageDo::Open(p.clone()));
+                    }
+                    if r.double_clicked() {
+                        page_do = Some(PageDo::StartRename(p.clone()));
+                    }
+                    r.context_menu(|ui| {
+                        if ui.button(format!("{}  Cambiar nombre", icon::PENCIL_SIMPLE)).clicked() {
+                            page_do = Some(PageDo::StartRename(p.clone()));
+                            ui.close();
+                        }
+                        if ui.button(format!("{}  Borrar página", icon::TRASH)).clicked() {
+                            page_do = Some(PageDo::Delete(p.clone()));
+                            ui.close();
+                        }
+                    });
+                }
+                if ui.add_enabled(!busy, egui::Button::new(RichText::new(icon::PLUS).size(14.0)).frame(false)).on_hover_text("Página nueva").clicked() {
+                    page_do = Some(PageDo::New);
+                }
+            });
+            ui.add_space(8.0);
             let out = egui::TextEdit::multiline(&mut self.bloc.text)
                 .id(id)
                 .font(FontId::monospace(14.0))
@@ -362,6 +553,17 @@ impl NotesApp {
                 break;
             }
         });
+        match page_do {
+            Some(PageDo::Open(p)) => self.open_bloc_page(&p),
+            Some(PageDo::New) => self.new_bloc_page(),
+            Some(PageDo::StartRename(p)) => self.bloc.renaming = Some((p.clone(), p)),
+            Some(PageDo::Rename(old, new)) => {
+                self.bloc.renaming = None;
+                self.rename_bloc_page(&old, &new);
+            }
+            Some(PageDo::Delete(p)) => self.delete_bloc_page(&p),
+            None => {}
+        }
         if let Some((k, text)) = copy {
             ctx.copy_text(text);
             self.bloc.copied = Some((k, Instant::now()));
@@ -380,9 +582,19 @@ impl NotesApp {
         self.load_bloc();
         self.bloc.focus = true;
         let n = self.bloc.text.chars().count();
-        let mut st = egui::text_edit::TextEditState::load(&self.ctx, Id::new("bloc")).unwrap_or_default();
+        let id = Id::new(("bloc", self.bloc_page()));
+        let mut st = egui::text_edit::TextEditState::load(&self.ctx, id).unwrap_or_default();
         st.cursor.set_char_range(Some(CCursorRange::one(CCursor::new(n))));
-        st.store(&self.ctx, Id::new("bloc"));
+        st.store(&self.ctx, id);
+    }
+
+    /// Abre una página del Bloc por su archivo (desde una cita de Preguntar).
+    pub(super) fn open_bloc_file(&mut self, path: &Path) {
+        let page = vault::stem(path);
+        if page != self.bloc_page() {
+            self.open_bloc_page(&page);
+        }
+        self.open_bloc();
     }
 }
 
@@ -416,6 +628,42 @@ mod tests {
         assert!(arrange(t, &[("X".into(), vec![9, 1, 1])]).is_some());
         let g = parse_groups("Aquí va: {\"grupos\": [{\"titulo\": \"Código\", \"bloques\": [\"B2\", \"b1\"]}]}").unwrap();
         assert_eq!(g, vec![("Código".to_string(), vec![2, 1])]);
+    }
+
+    /// Con la app: el Bloc de antes pasa a ser «General»; páginas nuevas, con otro nombre o borradas.
+    #[test]
+    fn pages() {
+        let dir = std::env::temp_dir().join(format!("nodex-bloc-paginas-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("General")).unwrap();
+        fs::write(dir.join(OLD_FILE), "lo de antes
+").unwrap();
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut app = NotesApp::new(cfg, None, egui::Context::default());
+        app.load_bloc();
+        assert_eq!(app.bloc.text, "lo de antes
+");
+        assert!(dir.join("Bloc").join("General.md").exists() && !dir.join(OLD_FILE).exists());
+        app.new_bloc_page();
+        assert_eq!(app.bloc_pages(), vec!["General".to_string(), "Página 2".to_string()]);
+        app.bloc.text = "sk-proj-abc123def456ghi789 token de prueba
+".into();
+        app.bloc.dirty = true;
+        app.save_bloc();
+        app.rename_bloc_page("Página 2", "Claves");
+        assert_eq!(app.bloc_page(), "Claves");
+        assert_eq!(fs::read_to_string(dir.join("Bloc").join("Claves.md")).unwrap(), "sk-proj-abc123def456ghi789 token de prueba
+");
+        // Preguntar ve todas las páginas, sin las claves.
+        let ai = app.bloc_for_ai();
+        assert_eq!(ai.iter().map(|(_, p, _)| p.as_str()).collect::<Vec<_>>(), vec!["General", "Claves"]);
+        assert!(ai[1].2.contains("[clave 1]") && !ai[1].2.contains("sk-proj"));
+        app.delete_bloc_page("Claves");
+        assert_eq!(app.bloc_pages(), vec!["General".to_string()]);
+        assert_eq!(app.bloc_page(), "General");
+        assert!(!app.vault.workspaces.iter().any(|w| w == "Bloc"), "no es un espacio");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

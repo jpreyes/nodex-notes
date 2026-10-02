@@ -18,7 +18,8 @@ Notas/
   Obra Talca/              un espacio de trabajo = una carpeta
     Muro.md                una nota = un archivo Markdown
   General/
-  Bloc.md                  el Bloc: texto libre, tal cual (la IA no lo organiza)
+  Bloc/
+    General.md             una página del Bloc: texto libre, tal cual (la IA no lo organiza)
   tareas.txt               las tareas
   agenda.txt               los eventos que salieron de las notas
   agenda.ics               lo mismo, para importar en un calendario
@@ -27,7 +28,7 @@ Notas/
   .nodex/                  datos internos de la app (ver abajo)
 ```
 
-- Cada subcarpeta es un **espacio**, salvo `Diario`, `Adjuntos` y `Plantillas`, que están reservadas.
+- Cada subcarpeta es un **espacio**, salvo `Diario`, `Adjuntos`, `Plantillas` y `Bloc`, que están reservadas.
 - En una plantilla, `{{fecha}}`, `{{hoy}}`, `{{hora}}` y `{{titulo}}` se cambian al crear una nota con ella.
 - Cada `.md` es una **nota**; su nombre de archivo es su título. Las notas del día se llaman con
   su fecha (`AAAA-MM-DD.md`).

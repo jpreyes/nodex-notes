@@ -284,7 +284,7 @@ pub fn is_attachments_dir(name: &str) -> bool {
 
 /// ¿Es un nombre que no puede tener un espacio? (Diario, Adjuntos, Plantillas)
 pub fn is_reserved_dir(name: &str) -> bool {
-    is_diary_dir(name) || is_attachments_dir(name) || name.eq_ignore_ascii_case(TEMPLATES)
+    is_diary_dir(name) || is_attachments_dir(name) || name.eq_ignore_ascii_case(TEMPLATES) || name.eq_ignore_ascii_case("Bloc")
 }
 
 /// ¿Es una plantilla?
@@ -624,7 +624,7 @@ impl Vault {
     pub fn create_workspace(&mut self, name: &str) -> io::Result<String> {
         let name = sanitize(name);
         if is_reserved_dir(&name) {
-            return Err(io::Error::other(format!("«{name}» es una carpeta reservada (Diario, Adjuntos o Plantillas)")));
+            return Err(io::Error::other(format!("«{name}» es una carpeta reservada (Diario, Adjuntos, Plantillas o Bloc)")));
         }
         fs::create_dir_all(self.root.join(&name))?;
         self.scan();

@@ -101,7 +101,7 @@ impl NotesApp {
                 }
                 "anotar" if !a.texto.trim().is_empty() => {
                     let path = match sources.get(a.nota.trim()) {
-                        Some(s) if s.path != self.bloc_path() => s.path.clone(),
+                        Some(s) if !self.is_bloc_page(&s.path) => s.path.clone(),
                         _ => self.today_path(),
                     };
                     let old = self.text_of(&path);

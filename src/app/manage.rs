@@ -144,7 +144,7 @@ impl NotesApp {
             return;
         }
         if vault::is_reserved_dir(&new) {
-            self.msg(format!("«{new}» es una carpeta reservada (Diario, Adjuntos o Plantillas); elige otro nombre"));
+            self.msg(format!("«{new}» es una carpeta reservada (Diario, Adjuntos, Plantillas o Bloc); elige otro nombre"));
             return;
         }
         if self.vault.workspaces.iter().any(|w| *w != old && w.eq_ignore_ascii_case(&new)) {

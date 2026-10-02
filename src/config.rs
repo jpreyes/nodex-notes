@@ -35,21 +35,30 @@ pub struct Config {
     pub cuenta: String,
     /// Buscar y bajar sola las versiones nuevas (se instalan con un clic en «Actualizar»).
     pub actualizar_sola: bool,
-    /// Sincronizar la carpeta de notas con la cuenta (sin Dropbox). Solo en este equipo.
-    pub sincronizar: bool,
+    /// No sincronizar la carpeta de notas con la cuenta (se sincroniza sola al entrar, salvo que
+    /// se apague o que la carpeta esté en Dropbox/OneDrive y se elija seguir con ellos).
+    pub sin_sincronizar: bool,
     /// Se abrió la app por primera vez en este equipo (no había config.toml): se muestra el asistente.
     #[serde(skip)]
     pub first_run: bool,
 }
 
-/// Dónde guardar las notas la primera vez: en Dropbox u OneDrive si están (así se sincronizan
-/// entre equipos), si no en Documentos.
+/// Dónde guardar las notas la primera vez: con la cuenta de Notas (que las sincroniza), fuera
+/// de las nubes; si no, en Dropbox u OneDrive si están (así se sincronizan), o en Documentos.
 pub fn default_folder() -> PathBuf {
     // Para pruebas: otra carpeta, así nunca se tocan las notas reales.
     if let Some(dir) = std::env::var_os("NODEX_CARPETA_INICIAL").filter(|d| !d.is_empty()) {
         return PathBuf::from(dir);
     }
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let in_cloud = |p: &std::path::Path| p.components().any(|c| {
+        let s = c.as_os_str().to_string_lossy().to_lowercase();
+        s == "dropbox" || s.starts_with("onedrive")
+    });
+    // Con la cuenta de Notas (que sincroniza sola), una carpeta fuera de las nubes.
+    if crate::account::BUILT_IN_SERVER.is_some_and(|s| !s.trim().is_empty()) {
+        return dirs::document_dir().filter(|d| !in_cloud(d)).unwrap_or(home).join("Notas");
+    }
     for cloud in ["Dropbox", "OneDrive"] {
         if home.join(cloud).is_dir() {
             return home.join(cloud).join("Notas");
@@ -78,7 +87,7 @@ impl Default for Config {
             servidor_ia: String::new(),
             cuenta: String::new(),
             actualizar_sola: true,
-            sincronizar: false,
+            sin_sincronizar: false,
             first_run: false,
         }
     }
@@ -177,8 +186,8 @@ fn render(c: &Config) -> String {
          # Buscar y bajar sola las versiones nuevas (se instalan cuando haces clic en «Actualizar»)\n\
          actualizar_sola = {}\n\
          \n\
-         # Sincronizar la carpeta de notas con tu cuenta (sin Dropbox)\n\
-         sincronizar = {}\n",
+         # No sincronizar tus notas con tu cuenta (al entrar con tu cuenta se sincronizan solas)\n\
+         sin_sincronizar = {}\n",
         q(&c.carpeta_notas.to_string_lossy()),
         q(&c.proveedor),
         q(&c.modelo),
@@ -193,7 +202,7 @@ fn render(c: &Config) -> String {
         c.correo_al_llegar,
         q(&c.correo_diario),
         c.actualizar_sola,
-        c.sincronizar,
+        c.sin_sincronizar,
     );
     main + &calendars
 }
