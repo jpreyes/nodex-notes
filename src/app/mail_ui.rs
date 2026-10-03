@@ -562,7 +562,7 @@ impl NotesApp {
             return; // todo estaba anotado ya
         }
         let notes: Vec<String> = files.iter().map(|(p, _)| self.rel(p)).collect();
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), relinks: Vec::new() });
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), keep_tasks: Vec::new(), relinks: Vec::new() });
         let replies_text = if followed > 0 { format!("{} como seguimiento del correo original", plural(followed, "respuesta")) } else { String::new() };
         let new_text = if entries.is_empty() { String::new() } else { format!("{} en la nota de hoy; la IA los ordena", plural(entries.len(), "correo anotado")) };
         self.msg(format!("Correo · {}", [new_text, replies_text].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")));

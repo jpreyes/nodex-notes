@@ -15,7 +15,7 @@ const ORPHAN: Duration = Duration::from_secs(600);
 /// Cada cuánto se buscan copias aunque no haya cambiado ninguna nota (las de tareas.txt).
 const LOOK_EVERY: Duration = Duration::from_secs(30);
 /// Datos internos (`.nodex/`) cuyas copias en conflicto se saben juntar.
-const INTERNAL: [&str; 13] = [
+const INTERNAL: [&str; 14] = [
     "sugerencias.json",
     "seguimiento.txt",
     "seguimiento-revisado.txt",
@@ -29,6 +29,7 @@ const INTERNAL: [&str; 13] = [
     vault::TRASH_LIST,
     "todo.json",
     "google.json",
+    tasks_sync::KEEP_FILE,
 ];
 
 impl NotesApp {
@@ -129,7 +130,7 @@ impl NotesApp {
             let _ = self.agenda.write_ics();
             self.gcal_dirty = true;
         }
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: vec![(copy.to_path_buf(), trashed)], created_dir: None, apart: Vec::new(), relinks: Vec::new() });
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: vec![(copy.to_path_buf(), trashed)], created_dir: None, apart: Vec::new(), keep_tasks: Vec::new(), relinks: Vec::new() });
         let what = if is_note { format!("«{}»", display_title(&vault::stem(&main))) } else { original.clone() };
         let detail = match added {
             0 => "No había nada nuevo en la copia".to_string(),
@@ -176,7 +177,7 @@ impl NotesApp {
                 self.analyzed.extend(text.lines().filter_map(|l| u64::from_str_radix(l.trim(), 16).ok()));
                 self.save_analyzed();
             }
-            "correos-anotados.txt" | "diario-aparte.txt" | "seguimiento.txt" | "seguimiento-revisado.txt" | vault::TRASH_LIST => {
+            "correos-anotados.txt" | "diario-aparte.txt" | "seguimiento.txt" | "seguimiento-revisado.txt" | tasks_sync::KEEP_FILE | vault::TRASH_LIST => {
                 let merged = conflicts::merge_lines(&vault::read_text(main).unwrap_or_default(), &text);
                 let _ = fs::write(main, merged);
             }

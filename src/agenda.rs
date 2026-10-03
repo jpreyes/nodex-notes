@@ -6,6 +6,7 @@
 //! agenda.txt:  2026-09-26 10:00 Visita del inspector +Proyecto_Edificio_A nota:...
 //! ```
 
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -31,6 +32,8 @@ pub struct Task {
     pub created: Option<String>,
     /// Correo de donde salió ("correo:cuenta:carpeta:uid").
     pub mail: Option<String>,
+    /// De dónde llegó, si no salió de una nota ni de un correo ("de:todo" = de Microsoft To Do).
+    pub from: Option<String>,
     pub raw: String,
 }
 
@@ -196,11 +199,12 @@ struct Meta {
     note: Option<String>,
     id: Option<String>,
     mail: Option<String>,
+    from: Option<String>,
 }
 
 /// Separa las palabras especiales (+proyecto, due:, nota:, id:) del texto.
 fn split_meta(words: &[&str]) -> Meta {
-    let mut m = Meta { text: String::new(), project: String::new(), due: None, note: None, id: None, mail: None };
+    let mut m = Meta { text: String::new(), project: String::new(), due: None, note: None, id: None, mail: None, from: None };
     let mut text = Vec::new();
     for w in words {
         if let Some(p) = w.strip_prefix('+').filter(|p| !p.is_empty()) {
@@ -213,6 +217,8 @@ fn split_meta(words: &[&str]) -> Meta {
             m.id = Some(i.to_string());
         } else if let Some(c) = w.strip_prefix("correo:").filter(|c| !c.is_empty()) {
             m.mail = Some(decode_note(c));
+        } else if let Some(f) = w.strip_prefix("de:").filter(|f| !f.is_empty()) {
+            m.from = Some(f.to_string());
         } else {
             text.push(*w);
         }
@@ -236,8 +242,8 @@ pub fn parse_task(line: &str) -> Option<Task> {
         dates.push(words.remove(0).to_string());
     }
     let (done_on, created) = if done { (dates.first().cloned(), dates.get(1).cloned()) } else { (None, dates.first().cloned()) };
-    let Meta { text, project, due, note, id, mail } = split_meta(&words);
-    Some(Task { done, text, project, due, note, id, done_on, created, mail, raw: line.to_string() })
+    let Meta { text, project, due, note, id, mail, from } = split_meta(&words);
+    Some(Task { done, text, project, due, note, id, done_on, created, mail, from, raw: line.to_string() })
 }
 
 pub fn parse_event(line: &str) -> Option<Event> {
@@ -266,6 +272,49 @@ pub fn format_task(created: &str, text: &str, ws: &str, due: Option<&str>, note:
 pub fn format_event(date: &str, time: Option<&str>, title: &str, ws: &str, note: &str) -> String {
     let time = time.map(|t| format!("{t} ")).unwrap_or_default();
     format!("{date} {time}{} {} nota:{}", title.trim(), project_token(ws), encode_note(note))
+}
+
+/// Tareas repetidas, para quitarlas (pasa cuando una misma tarea vuelve por Microsoft To Do, o
+/// llega de dos equipos). Solo pendientes y solo las «sueltas»: sin línea en una nota (`lines`:
+/// identificador -> texto de su línea), sin correo y sin estar en `keep` (las que se devolvieron
+/// con Deshacer). Una suelta sobra si ya hay otra igual: una con línea o correo, o una suelta
+/// anterior en la lista. Igual = el mismo texto (sin etiquetas, fecha ni mayúsculas), o uno que
+/// empieza con el otro si son largos (To Do agrega las etiquetas como palabras al final).
+pub fn repeated(tasks: &[Task], lines: &HashMap<String, String>, keep: &HashSet<String>) -> Vec<String> {
+    fn norm(s: &str) -> String {
+        display_text(s)
+            .split_whitespace()
+            .filter(|w| !w.starts_with('#') && !w.starts_with("due:") && !w.starts_with('^'))
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    }
+    let same = |a: &str, b: &str| a == b || (a.chars().count().min(b.chars().count()) >= 24 && (a.starts_with(b) || b.starts_with(a)));
+    let pending: Vec<(&Task, &str)> = tasks.iter().filter(|t| !t.done).filter_map(|t| Some((t, t.id.as_deref()?))).collect();
+    let anchored = |t: &Task, id: &str| t.mail.is_some() || lines.contains_key(id);
+    let mut seen: Vec<String> = Vec::new();
+    for (t, id) in &pending {
+        if anchored(t, id) {
+            seen.push(norm(&t.text));
+            seen.extend(lines.get(*id).map(|l| norm(l)));
+        }
+    }
+    let mut out = Vec::new();
+    for (t, id) in pending {
+        if anchored(t, id) || keep.contains(id) {
+            continue;
+        }
+        let k = norm(&t.text);
+        if k.is_empty() {
+            continue;
+        }
+        if seen.iter().any(|s| same(s, &k)) {
+            out.push(id.to_string());
+        } else {
+            seen.push(k);
+        }
+    }
+    out
 }
 
 /// Quita los eventos con esas líneas exactas.
@@ -436,6 +485,14 @@ impl Agenda {
         self.write_ics()
     }
 
+    /// Borra las tareas con esos identificadores.
+    pub fn remove_ids(&self, ids: &[String]) -> io::Result<()> {
+        let lines: Vec<String> =
+            self.read_lines(TASKS_FILE).into_iter().filter(|l| parse_task(l).and_then(|t| t.id).is_none_or(|i| !ids.contains(&i))).collect();
+        self.write_lines(TASKS_FILE, &lines)?;
+        self.write_ics()
+    }
+
     /// Da un identificador a cada tarea pendiente que no tenga (para reconocerla en To Do).
     /// Devuelve si cambió algo.
     pub fn ensure_ids(&self, mut next: impl FnMut() -> String) -> io::Result<bool> {
@@ -602,6 +659,41 @@ impl Agenda {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_repeated_tasks() {
+        let tasks: Vec<Task> = [
+            "2026-09-26 Hacer el cálculo del galpón +General nota:General/Galpón id:g1 due:2026-09-26",
+            "2026-10-01 Hacer el cálculo del galpón +General id:g2 due:2026-09-25",
+            "2026-10-01 hacer el  cálculo del galpón +General id:g3 due:2026-09-24",
+            "2026-09-30 Entregar planos a Marcor +General id:p1",
+            "2026-10-01 Entregar planos a Marcor +General id:p2",
+            "2026-10-01 Me gustaría que se sincronice con la nube +General id:n1",
+            "2026-10-01 Me gustaría que se sincronice con la nube interfaz nube dropbox +General id:n2",
+            "2026-09-29 Comentar a José el cierre +General nota:General/Paloma id:x9",
+            "2026-10-01 Correo de José (29 sep): cerrar el contrato de Paloma +General id:c1",
+            "2026-09-28 comentar el informe @Gisele_Muñoz +General correo:x:INBOX:1 id:m1",
+            "2026-10-01 Gisele Muñoz: comentar el informe +General id:m2",
+            "x 2026-09-29 2026-09-26 Llamar a Juan +General id:j1",
+            "2026-10-01 Llamar a Juan +General id:j2",
+            "2026-10-01 Llamar +General id:k1",
+            "2026-10-01 Llamar más tarde a la oficina +General id:k2",
+            "2026-10-01 Revisar el muro +General id:r1",
+            "2026-10-01 Revisar el muro +General id:r2",
+        ]
+        .iter()
+        .filter_map(|l| parse_task(l))
+        .collect();
+        let lines = HashMap::from([
+            ("g1".to_string(), "Hacer el cálculo del galpón".to_string()),
+            ("x9".to_string(), "Correo de José (29 sep): cerrar el contrato de Paloma".to_string()),
+        ]);
+        let keep = HashSet::from(["r2".to_string()]);
+        let out = repeated(&tasks, &lines, &keep);
+        // Se queda la que tiene línea (o correo, o la primera suelta); las demás sobran. La hecha
+        // no cuenta, las cortas no se comparan por el comienzo y la que se devolvió no se toca.
+        assert_eq!(out, ["g2", "g3", "p2", "n2", "c1", "m2"]);
+    }
 
     #[test]
     fn dates_written_as_said() {

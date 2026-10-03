@@ -80,6 +80,13 @@ impl NotesApp {
         }
     }
 
+    /// Avisa en la vista lo último anotado en «Lo que hizo» (con su Deshacer).
+    pub(super) fn show_toast(&mut self, kind: Kind, text: String, details: Vec<String>) {
+        if let Some(entry) = self.undo_entry.clone() {
+            self.toast = Some(Toast { kind, entry, text, details, at: Instant::now() });
+        }
+    }
+
     /// El aviso, arriba a la derecha: qué hizo, a dónde fue cada cosa, Ver y Deshacer.
     pub(super) fn toast_ui(&mut self, ctx: &egui::Context) -> Option<Action> {
         let t = self.toast.as_ref()?;
@@ -96,6 +103,7 @@ impl NotesApp {
             Kind::Error => "La IA no pudo terminar",
             Kind::Sincronizar if t.text.contains("«Hoy»") => "Las notas del día, en un solo «Hoy»",
             Kind::Sincronizar => "Se juntaron dos versiones",
+            Kind::Duplicado => "Quité tareas repetidas",
             _ => "La IA ordenó tu nota",
         };
         let r = egui::Area::new(Id::new("ia-aviso"))
@@ -221,6 +229,11 @@ impl NotesApp {
                 if let Some(a) = self.ai_status(ui, pending) {
                     action = Some(a);
                 }
+                if self.show_unorganized && pending > 0 && self.in_flight.is_none() {
+                    if let Some(a) = self.unorganized_list(ui) {
+                        action = Some(a);
+                    }
+                }
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
@@ -307,8 +320,9 @@ impl NotesApp {
         }
     }
 
-    fn ai_status(&self, ui: &mut Ui, pending: usize) -> Option<Action> {
+    fn ai_status(&mut self, ui: &mut Ui, pending: usize) -> Option<Action> {
         let mut action = None;
+        let mut toggle = false;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             let ai = match &self.ai {
@@ -347,7 +361,11 @@ impl NotesApp {
                 ui.label(RichText::new(format!("{} Todo organizado", icon::CHECK_CIRCLE)).size(13.0).color(SUCCESS));
             } else {
                 let what = if pending == 1 { "1 nota sin organizar".to_string() } else { format!("{pending} notas sin organizar") };
-                ui.label(RichText::new(what).size(13.0).color(TEXT));
+                let arrow = if self.show_unorganized { icon::CARET_UP } else { icon::CARET_DOWN };
+                let r = ui.add(egui::Button::new(RichText::new(format!("{what} {arrow}")).size(13.0).color(TEXT)).frame(false));
+                if r.on_hover_text(if self.show_unorganized { "Ocultar cuáles son" } else { "Ver cuáles son" }).clicked() {
+                    toggle = true;
+                }
                 let b = egui::Button::new(RichText::new(format!("{} Organizar ahora", icon::SPARKLE)).size(13.0));
                 if ui.add(b).on_hover_text("La IA pone etiquetas, tareas y fechas, y lleva cada nota a su espacio").clicked() {
                     action = Some(Action::Organize);
@@ -359,6 +377,48 @@ impl NotesApp {
             if let Some(e) = &self.ai_error {
                 ui.label(RichText::new(format!("· último error: {e}")).size(12.5).color(RED));
             }
+        });
+        if toggle {
+            self.show_unorganized = !self.show_unorganized;
+        }
+        action
+    }
+
+    /// Las notas que faltan por organizar: dónde está cada una, cómo empieza y un botón para abrirla.
+    fn unorganized_list(&self, ui: &mut Ui) -> Option<Action> {
+        let mut action = None;
+        let paths = self.unorganized();
+        let notes = self.vault.all_notes();
+        ui.add_space(6.0);
+        Frame::new().fill(BG_SIDE).corner_radius(10).inner_margin(Margin::symmetric(10, 8)).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt("sin-organizar").max_height(230.0).auto_shrink([false, true]).show(ui, |ui| {
+                for p in &paths {
+                    let Some(n) = notes.iter().find(|n| &n.path == p) else { continue };
+                    let start: String = n
+                        .text
+                        .lines()
+                        .map(|l| l.trim().trim_start_matches(['#', '-', '*', ' ']))
+                        .filter(|l| !l.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" · ")
+                        .chars()
+                        .take(140)
+                        .collect();
+                    ui.horizontal(|ui| {
+                        let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(ACCENT)).frame(false);
+                        if ui.add(b).on_hover_text("Abrir la nota").clicked() {
+                            action = Some(Action::Open(p.clone(), None));
+                        }
+                        let mut job = LayoutJob::default();
+                        let rel = self.rel(p);
+                        job.append(&format!("{}   ", rel.trim_end_matches(".md")), 0.0, fmt(theme::bold(13.0), TEXT));
+                        job.append(&start, 0.0, fmt(FontId::proportional(13.0), MUTED));
+                        if clickable_line(ui, job).clicked() {
+                            action = Some(Action::Open(p.clone(), None));
+                        }
+                    });
+                }
+            });
         });
         action
     }

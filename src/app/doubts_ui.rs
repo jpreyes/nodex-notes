@@ -276,7 +276,7 @@ impl NotesApp {
                 self.ws = ws;
             }
         }
-        self.undo = Some(Undo { files, renamed: renamed.clone(), agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), relinks: Vec::new() });
+        self.undo = Some(Undo { files, renamed: renamed.clone(), agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), keep_tasks: Vec::new(), relinks: Vec::new() });
         let what = if done.is_empty() { "listo".to_string() } else { done.join(" · ") };
         self.msg(format!("Respuesta aplicada: {what}"));
         let note = match &renamed {
@@ -366,7 +366,7 @@ impl NotesApp {
             self.note = OpenNote::load(current);
         }
         self.prune_doubts();
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), relinks: Vec::new() });
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), keep_tasks: Vec::new(), relinks: Vec::new() });
         self.msg(format!("Unidas en «{}»", vault::stem(&keep_path)));
         let note = self.rel(&keep_path);
         let details = vec![format!("«{keep_unit}»"), format!("«{drop_unit}» ({})", self.rel(&drop_path))];

@@ -11,13 +11,17 @@
 //! - la línea tiene fecha → vale la de la línea; si no tiene y la tarea sí, se escribe en la línea;
 //! - hay una línea con casilla e identificador sin tarea → se crea la tarea.
 //!
-//! Las tareas sin línea (las agregadas en Tareas o en Microsoft To Do) no se tocan.
+//! Las tareas sin línea (las agregadas en Tareas o en Microsoft To Do) no se tocan, salvo las
+//! repetidas: si una suelta es igual a otra que ya está, sobra y se quita (con Deshacer; lo que se
+//! devuelve con Deshacer se anota en `.nodex/repetidas-conservar.txt` y no se vuelve a quitar).
 
 use super::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 /// Se empareja cuando cambian las notas, pero no más seguido que esto.
 const EVERY: Duration = Duration::from_secs(3);
+/// Tareas que parecían repetidas y se devolvieron con Deshacer (una por línea).
+pub(super) const KEEP_FILE: &str = "repetidas-conservar.txt";
 
 enum Fix {
     /// Línea de tareas.txt para una tarea nueva.
@@ -124,6 +128,83 @@ impl NotesApp {
         }
         n
     }
+
+    /// Busca tareas repetidas cuando cambia tareas.txt (se llama cada segundo).
+    pub(super) fn maybe_dedupe_tasks(&mut self) {
+        let h = ai::fnv(&vault::read_text(&self.vault.root.join(agenda::TASKS_FILE)).unwrap_or_default());
+        if h == self.dedupe_hash || self.note.dirty {
+            return;
+        }
+        self.dedupe_hash = h;
+        self.dedupe_tasks();
+    }
+
+    /// Quita las tareas repetidas (ver `agenda::repeated`), con Deshacer. Devuelve cuántas quitó.
+    pub(super) fn dedupe_tasks(&mut self) -> usize {
+        let mut lines: HashMap<String, String> = HashMap::new();
+        for n in self.vault.all_notes() {
+            if n.path.file_name().is_some_and(|f| crate::conflicts::original_of(&f.to_string_lossy()).is_some()) {
+                continue;
+            }
+            for tl in n.task_lines() {
+                lines.insert(tl.id.clone(), tl.text.clone());
+            }
+        }
+        let keep_path = self.vault.root.join(".nodex").join(KEEP_FILE);
+        let keep: HashSet<String> = vault::read_text(&keep_path).unwrap_or_default().lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+        let tasks = self.agenda.tasks();
+        let gone = agenda::repeated(&tasks, &lines, &keep);
+        if gone.is_empty() {
+            return 0;
+        }
+        let snapshot = self.agenda.snapshot();
+        if let Err(e) = self.agenda.remove_ids(&gone) {
+            self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
+            return 0;
+        }
+        self.dedupe_hash = ai::fnv(&vault::read_text(&self.vault.root.join(agenda::TASKS_FILE)).unwrap_or_default());
+        self.gcal_dirty = true;
+        let n = gone.len();
+        let mut details: Vec<String> =
+            tasks.iter().filter(|t| t.id.as_ref().is_some_and(|i| gone.contains(i))).map(|t| format!("«{}»", agenda::display_text(&t.text))).collect();
+        details.dedup();
+        if details.len() > 8 {
+            let more = details.len() - 6;
+            details.truncate(6);
+            details.push(format!("y {more} más"));
+        }
+        self.undo = Some(Undo {
+            files: Vec::new(),
+            renamed: None,
+            agenda: snapshot,
+            at: Instant::now(),
+            moved: Vec::new(),
+            created_dir: None,
+            apart: Vec::new(),
+            keep_tasks: gone,
+            relinks: Vec::new(),
+        });
+        let text = if n == 1 { "Quitó 1 tarea repetida (ya estaba la misma)".to_string() } else { format!("Quitó {n} tareas repetidas (ya estaba la misma)") };
+        self.log_ai(crate::activity::Kind::Duplicado, "", text.clone(), details.clone(), true);
+        self.show_toast(crate::activity::Kind::Duplicado, text, details);
+        n
+    }
+
+    /// Lo que se devolvió con Deshacer no se vuelve a quitar.
+    pub(super) fn keep_tasks(&mut self, ids: &[String]) {
+        let path = self.vault.root.join(".nodex").join(KEEP_FILE);
+        let mut text = vault::read_text(&path).unwrap_or_default();
+        for id in ids {
+            if !text.lines().any(|l| l.trim() == id) {
+                text += &format!("{id}\n");
+            }
+        }
+        if let Some(dir) = path.parent() {
+            let _ = fs::create_dir_all(dir);
+        }
+        let _ = fs::write(&path, text);
+        self.dedupe_hash = 0;
+    }
 }
 
 #[cfg(test)]
@@ -175,6 +256,35 @@ mod tests {
         assert_eq!(app.agenda.tasks().len(), 5);
         // Ya emparejadas: otra vuelta no cambia nada.
         assert_eq!(app.reconcile_tasks(), 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Las repetidas se quitan; con Deshacer vuelven y ya no se quitan más.
+    #[test]
+    fn repeated_tasks_are_removed_and_undone() {
+        let dir = std::env::temp_dir().join(format!("nodex-tareas-repetidas-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("General")).unwrap();
+        fs::write(dir.join("General").join("Galpón.md"), "- [ ] Hacer el cálculo del galpón due:2026-09-26 ^g1\n").unwrap();
+        fs::write(
+            dir.join("tareas.txt"),
+            "2026-09-26 Hacer el cálculo del galpón +General due:2026-09-26 nota:General/Galpón id:g1\n\
+             2026-10-01 Hacer el cálculo del galpón +General due:2026-09-25 id:g2\n\
+             2026-10-01 Hacer el cálculo del galpón +General due:2026-09-24 id:g3\n\
+             2026-10-01 Otra cosa +General id:o1\n",
+        )
+        .unwrap();
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut app = NotesApp::new(cfg, None, egui::Context::default());
+        let ids = |app: &NotesApp| app.agenda.tasks().into_iter().filter_map(|t| t.id).collect::<Vec<_>>();
+        app.maybe_dedupe_tasks();
+        assert_eq!(ids(&app), ["g1", "o1"]);
+        assert!(app.toast.is_some());
+        app.apply(Action::Undo);
+        assert_eq!(ids(&app), ["g1", "g2", "g3", "o1"]);
+        app.maybe_dedupe_tasks();
+        assert_eq!(ids(&app), ["g1", "g2", "g3", "o1"], "lo devuelto no se vuelve a quitar");
         let _ = fs::remove_dir_all(&dir);
     }
 }

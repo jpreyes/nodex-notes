@@ -304,6 +304,8 @@ struct Undo {
     created_dir: Option<PathBuf>,
     /// Notas del día que se habían juntado en el Diario: al deshacer, quedan aparte para siempre.
     apart: Vec<String>,
+    /// Tareas repetidas que se quitaron: al deshacer, vuelven y no se quitan más.
+    keep_tasks: Vec<String>,
     /// Rutas que cambiaron (nota o espacio movido: antes, después): al deshacer, todo lo que
     /// apuntaba ahí vuelve a apuntar a la ruta de antes.
     relinks: Vec<(String, String)>,
@@ -476,6 +478,8 @@ pub struct NotesApp {
     todo: Option<crate::todo::ToDo>,
     todo_last: Instant,
     todo_hash: u64,
+    /// tareas.txt la última vez que se buscaron tareas repetidas.
+    dedupe_hash: u64,
     /// La agenda cambió y hay que sincronizar con Google.
     gcal_dirty: bool,
     gcal_last_try: Instant,
@@ -534,6 +538,8 @@ pub struct NotesApp {
     summary: Option<std::rc::Rc<Summary>>,
     /// Notas sin organizar: ((estado de las notas, notas analizadas), cuántas).
     unorganized_count: Option<((u64, usize), usize)>,
+    /// En la IA: se ve la lista de las notas sin organizar.
+    show_unorganized: bool,
     /// Ventana de la IA: sección abierta, lo que hizo y cuál de sus cambios se puede deshacer.
     ai_tab: ai_view::AiTab,
     activity: crate::activity::Log,
@@ -780,6 +786,7 @@ impl NotesApp {
             todo: crate::todo::ToDo::start(cfg_root.clone(), ctx.clone()),
             todo_last: long_ago(),
             todo_hash: 0,
+            dedupe_hash: 0,
             gcal_dirty: true,
             gcal_last_try: long_ago(),
             links: editor::LinkCache::new(&cfg_root),
@@ -827,6 +834,7 @@ impl NotesApp {
             found: None,
             summary: None,
             unorganized_count: None,
+            show_unorganized: false,
             ai_tab: ai_view::AiTab::default(),
             activity: crate::activity::Log::load(&cfg_root),
             undo_entry: None,
@@ -1257,6 +1265,7 @@ impl NotesApp {
                         moved: vec![(path.clone(), dest)],
                         created_dir: None,
                         apart: Vec::new(),
+                        keep_tasks: Vec::new(),
                         relinks: Vec::new(),
                     });
                     self.undo_entry = None;
@@ -1297,6 +1306,7 @@ impl NotesApp {
                     moved: vec![(self.vault.root.join(&ws), dest)],
                     created_dir: None,
                     apart: Vec::new(),
+                    keep_tasks: Vec::new(),
                     relinks: Vec::new(),
                 });
                 self.undo_entry = None;
@@ -1364,6 +1374,7 @@ impl NotesApp {
         self.poll_sync();
         self.poll_done_checks();
         self.maybe_reconcile_tasks();
+        self.maybe_dedupe_tasks();
         let m = vault::modified(&self.note.path);
         if m.is_none() || !self.note.changed_on_disk() {
             return;
@@ -1920,6 +1931,7 @@ impl NotesApp {
             moved: Vec::new(),
             created_dir: None,
             apart: Vec::new(),
+            keep_tasks: Vec::new(),
             relinks: Vec::new(),
         });
         let name = if emptied { String::new() } else { format!(" {}:", vault::stem(&new_path)) };
@@ -2041,6 +2053,9 @@ impl NotesApp {
         }
         if !u.apart.is_empty() {
             self.keep_apart(&u.apart);
+        }
+        if !u.keep_tasks.is_empty() {
+            self.keep_tasks(&u.keep_tasks);
         }
         let _ = self.agenda.restore(&u.agenda);
         self.ask.list = None; // pudo volver una conversación borrada
@@ -3345,6 +3360,9 @@ fn task_row(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follows: &t
             if ui.add(b).on_hover_text("Salió de un correo: verlo").clicked() {
                 action = Some(Action::OpenMail(m.clone()));
             }
+        }
+        if t.from.as_deref() == Some("todo") {
+            ui.label(RichText::new(icon::CHECK_SQUARE_OFFSET).size(14.0).color(MUTED)).on_hover_text("Llegó de Microsoft To Do (se agregó allá)");
         }
         let b = egui::Button::new(RichText::new(icon::ARROW_ELBOW_DOWN_RIGHT).size(14.0).color(MUTED)).frame(false);
         if ui.add(b).on_hover_text("Anotar un seguimiento: qué se hizo (la IA lo tiene en cuenta)").clicked() {

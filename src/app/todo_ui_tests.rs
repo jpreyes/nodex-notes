@@ -9,6 +9,14 @@ use std::sync::{Arc, Mutex};
 /// Tareas del To Do falso: (id, título, estado, fecha).
 type Store = Arc<Mutex<Vec<(String, String, String, Value)>>>;
 
+/// Como To Do guarda las fechas: solo el día, que devuelve como la medianoche UTC.
+fn as_todo_keeps_it(due: &Value) -> Value {
+    match due["dateTime"].as_str() {
+        Some(d) => json!({ "dateTime": format!("{}T00:00:00.0000000", &d[..10]), "timeZone": "UTC" }),
+        None => Value::Null,
+    }
+}
+
 /// Un Microsoft falso: token, listas y tareas (lo justo para la app).
 fn fake_microsoft(store: Store) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -55,7 +63,7 @@ fn fake_microsoft(store: Store) -> u16 {
                     let v: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
                     next += 1;
                     let id = format!("R{next}");
-                    tasks.push((id.clone(), v["title"].as_str().unwrap_or("").into(), "notStarted".into(), v["dueDateTime"].clone()));
+                    tasks.push((id.clone(), v["title"].as_str().unwrap_or("").into(), "notStarted".into(), as_todo_keeps_it(&v["dueDateTime"])));
                     json!({ "id": id })
                 }
                 ("PATCH", p) => {
@@ -66,7 +74,7 @@ fn fake_microsoft(store: Store) -> u16 {
                             t.2 = st.into();
                         }
                         if v.get("dueDateTime").is_some() {
-                            t.3 = v["dueDateTime"].clone();
+                            t.3 = as_todo_keeps_it(&v["dueDateTime"]);
                         }
                     }
                     json!({})
@@ -133,9 +141,12 @@ fn syncs_with_microsoft_todo_both_ways() {
     assert_eq!(titles, vec!["Comprar pan", "Enviar planos", "Llamar a Pedro"]);
     let planos = store.lock().unwrap().iter().find(|t| t.1 == "Enviar planos").unwrap().3.clone();
     assert_eq!(crate::todo::tests_due(&planos).as_deref(), Some("2026-10-02"));
+    // Otra vuelta: la fecha sigue en su día (antes, cada vuelta la corría un día antes).
+    sync(&mut app);
+    assert_eq!(app.agenda.tasks().iter().find(|t| t.id.as_deref() == Some("pl001")).unwrap().due.as_deref(), Some("2026-10-02"));
     // Lo agregado en To Do llegó a Tareas.
     let tasks = app.agenda.tasks();
-    assert!(tasks.iter().any(|t| t.text == "Comprar pan" && t.id.is_some() && t.note.is_none()), "{tasks:?}");
+    assert!(tasks.iter().any(|t| t.text == "Comprar pan" && t.id.is_some() && t.note.is_none() && t.from.as_deref() == Some("todo")), "{tasks:?}");
     assert!(tasks.iter().all(|t| t.done || t.id.is_some()));
 
     // Hecha en To Do -> hecha en Notas (y su casilla en la nota).

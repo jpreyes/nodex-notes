@@ -90,7 +90,7 @@ impl NotesApp {
                     r
                 }
                 Change::New(id, title, due) => {
-                    // Agregada en To Do: una tarea de General (sin nota).
+                    // Agregada en To Do: una tarea de General (sin nota), que dice de dónde vino.
                     let ws = self
                         .vault
                         .workspaces
@@ -103,7 +103,7 @@ impl NotesApp {
                     if let Some(d) = due {
                         line += &format!(" due:{d}");
                     }
-                    line += &format!(" id:{id}");
+                    line += &format!(" de:todo id:{id}");
                     self.agenda.add_task(line)
                 }
             };

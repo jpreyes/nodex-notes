@@ -154,7 +154,7 @@ impl NotesApp {
         self.gcal_dirty = true;
         self.follow_ask = None; // lo que pediste ya dice qué se hizo
         let notes: Vec<String> = files.iter().map(|(p, _)| self.rel(p)).collect();
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), relinks: Vec::new() });
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), keep_tasks: Vec::new(), relinks: Vec::new() });
         let what = format!("Hizo lo que pediste: {}", plural(done.len(), "cambio"));
         self.log_ai(crate::activity::Kind::Pedido, notes.first().map_or("", |s| s.as_str()), what, done.clone(), true);
         (done, self.undo_entry.clone())

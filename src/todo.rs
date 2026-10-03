@@ -10,7 +10,7 @@
 //!   y cómo estaban la última vez, para saber de qué lado vino cada cambio.
 
 use crate::gcal::{enc, open_browser, pkce_challenge, random_token, wait_for_code};
-use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -160,8 +160,16 @@ fn reconcile(st: &mut SyncState, locals: &[LocalTask], remote: &[RemoteTask], mu
         }
         ops.push(Op::Create { ours: l.id.clone(), title: l.title.clone(), due: l.due.clone(), body: l.body.clone() });
     }
-    // Agregadas en To Do (pendientes): llegan a Notas.
+    // Agregadas en To Do (pendientes): llegan a Notas. Salvo las que ya están en Notas con el
+    // mismo título: son copias de una tarea que ya está (de otro equipo, o de una pareja que se
+    // perdió) y traerlas la repetiría. Quedan en To Do sin tocar.
+    let mut have: Vec<String> = locals.iter().map(|l| same_title(&l.title)).collect();
     for r in orphans.into_iter().filter(|r| !r.done) {
+        let title = same_title(&r.title);
+        if title.is_empty() || have.contains(&title) {
+            continue;
+        }
+        have.push(title);
         let id = new_id();
         st.links.insert(id.clone(), Link { todo: r.id.clone(), done: false, title: r.title.clone(), due: r.due.clone(), gone: false });
         changes.push(Change::New(id, r.title.clone(), r.due.clone()));
@@ -169,25 +177,25 @@ fn reconcile(st: &mut SyncState, locals: &[LocalTask], remote: &[RemoteTask], mu
     (ops, changes)
 }
 
-/// La fecha de una tarea en To Do: medianoche de ese día, aquí, dicha en UTC.
-fn due_to_remote(date: &str) -> Option<Value> {
-    let d = NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?;
-    let local = Local.from_local_datetime(&d.and_hms_opt(0, 0, 0)?).earliest()?;
-    let utc = local.with_timezone(&Utc).naive_utc();
-    Some(json!({ "dateTime": utc.format("%Y-%m-%dT%H:%M:%S").to_string(), "timeZone": "UTC" }))
+/// Un título para comparar: sin mayúsculas ni espacios de más.
+fn same_title(t: &str) -> String {
+    t.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
 }
 
-/// El día de una fecha de To Do ("2026-09-30T03:00:00.0000000", "UTC") en la hora de aquí.
+/// La fecha de una tarea en To Do. To Do guarda solo el día (sin hora) y lo devuelve como la
+/// medianoche UTC de ese día: se manda el mediodía UTC, que es ese mismo día en casi todo el
+/// mundo, sea cual sea la zona con que To Do lo lea.
+fn due_to_remote(date: &str) -> Option<Value> {
+    let d = NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?;
+    Some(json!({ "dateTime": format!("{}T12:00:00", d.format("%Y-%m-%d")), "timeZone": "UTC" }))
+}
+
+/// El día de una fecha de To Do ("2026-09-30T00:00:00.0000000", "UTC"): el día tal cual, sin
+/// pasarlo a la hora de aquí (en Chile, la medianoche UTC es el día anterior, y cada vuelta por
+/// To Do corría la tarea un día antes).
 fn due_from_remote(v: &Value) -> Option<String> {
     let raw = v["dateTime"].as_str()?;
-    let base = raw.split('.').next().unwrap_or(raw);
-    let ndt = NaiveDateTime::parse_from_str(base, "%Y-%m-%dT%H:%M:%S").ok()?;
-    let tz = v["timeZone"].as_str().unwrap_or("UTC");
-    let date = if tz.eq_ignore_ascii_case("UTC") {
-        Utc.from_utc_datetime(&ndt).with_timezone(&Local).date_naive()
-    } else {
-        ndt.date()
-    };
+    let date = NaiveDate::parse_from_str(raw.get(..10)?, "%Y-%m-%d").ok()?;
     Some(date.format("%Y-%m-%d").to_string())
 }
 
@@ -690,11 +698,33 @@ mod tests {
     }
 
     #[test]
-    fn dates_round_trip_through_utc() {
+    fn dates_keep_their_day() {
         let v = due_to_remote("2026-09-30").unwrap();
         assert_eq!(v["timeZone"], "UTC");
         assert_eq!(due_from_remote(&v).as_deref(), Some("2026-09-30"));
+        // Como lo devuelve To Do: la medianoche UTC de ese día (antes se leía como el día anterior).
+        let v = json!({ "dateTime": "2026-09-30T00:00:00.0000000", "timeZone": "UTC" });
+        assert_eq!(due_from_remote(&v).as_deref(), Some("2026-09-30"));
         let v = json!({ "dateTime": "2026-10-05T00:00:00.0000000", "timeZone": "Pacific SA Standard Time" });
         assert_eq!(due_from_remote(&v).as_deref(), Some("2026-10-05"));
+    }
+
+    #[test]
+    fn copies_in_todo_do_not_come_back() {
+        // En To Do quedaron copias de tareas que ya están en Notas (de otro equipo, o de parejas
+        // perdidas): no se traen. Una nueva de verdad, sí (una sola vez aunque esté repetida).
+        let mut st = SyncState::default();
+        st.links.insert("a1".into(), Link { todo: "R1".into(), title: "Enviar planos".into(), ..Link::default() });
+        let locals = vec![local("a1", "Enviar planos", None, false), local("b2", "Llamar a Juan", None, true)];
+        let remotes = vec![
+            remote("R1", "Enviar planos", None, false),
+            remote("R2", "enviar  planos", Some("2026-09-29"), false),
+            remote("R3", "Llamar a Juan", None, false),
+            remote("R4", "Comprar pan", None, false),
+            remote("R5", "Comprar pan", None, false),
+        ];
+        let (ops, changes) = reconcile(&mut st, &locals, &remotes, || "nuevo".into());
+        assert!(ops.is_empty(), "{ops:?}");
+        assert_eq!(changes, vec![Change::New("nuevo".into(), "Comprar pan".into(), None)]);
     }
 }

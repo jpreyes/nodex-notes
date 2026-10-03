@@ -131,6 +131,7 @@ impl NotesApp {
             moved: vec![(path, target)],
             created_dir: None,
             apart: Vec::new(),
+            keep_tasks: Vec::new(),
             relinks: vec![(old_rel, new_rel)],
         });
         self.undo_entry = None;
@@ -172,6 +173,7 @@ impl NotesApp {
             moved: vec![(from, to)],
             created_dir: None,
             apart: Vec::new(),
+            keep_tasks: Vec::new(),
             relinks: vec![(old.clone(), new.clone())],
         });
         self.undo_entry = None;
@@ -222,6 +224,7 @@ impl NotesApp {
             moved: Vec::new(),
             created_dir: None,
             apart: Vec::new(),
+            keep_tasks: Vec::new(),
             relinks: Vec::new(),
         });
         self.undo_entry = None;

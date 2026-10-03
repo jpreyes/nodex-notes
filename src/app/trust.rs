@@ -286,7 +286,7 @@ impl NotesApp {
         self.save_analyzed();
         self.vault.scan();
         self.gcal_dirty = true;
-        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), relinks: Vec::new() });
+        self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), keep_tasks: Vec::new(), relinks: Vec::new() });
         self.undo_entry = None;
         mails.len()
     }

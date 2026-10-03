@@ -194,6 +194,7 @@ impl NotesApp {
             moved: Vec::new(),
             created_dir: None,
             apart: Vec::new(),
+            keep_tasks: Vec::new(),
             relinks: Vec::new(),
         });
         self.undo_entry = None;
