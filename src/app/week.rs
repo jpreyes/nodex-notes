@@ -187,14 +187,14 @@ impl NotesApp {
             if !events.is_empty() {
                 ui.label(RichText::new("Agenda de los próximos 7 días").font(theme::bold(15.0)));
                 ui.add_space(4.0);
+                let marks = self.event_marks();
                 for e in &events {
-                    let time = e.time.clone().unwrap_or_default();
-                    let mut job = LayoutJob::default();
-                    job.append(&format!("{}  {time}  ", long_date(&e.date)), 0.0, fmt(FontId::proportional(13.5), MUTED));
-                    job.append(&e.title, 0.0, fmt(FontId::proportional(14.5), TEXT));
-                    let r = clickable_line(ui, job);
-                    if let (true, Some(n)) = (r.clicked(), &e.note) {
-                        action = Some(Action::Open(root.join(format!("{n}.md")), None));
+                    let state = marks.get(&super::day_items::event_key(e)).map(String::as_str);
+                    if state == Some("tarea") {
+                        continue;
+                    }
+                    if let Some(a) = super::day_items::event_row(ui, e, state == Some("hecho"), &follows, true) {
+                        action = Some(a);
                     }
                 }
                 ui.add_space(14.0);

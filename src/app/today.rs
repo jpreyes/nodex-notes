@@ -3,36 +3,6 @@
 
 use super::*;
 
-/// Una fila de evento: hora, título y espacio; un clic abre su nota.
-fn event_row(ui: &mut Ui, e: &agenda::Event, root: &Path) -> Option<Action> {
-    let mut action = None;
-    ui.horizontal(|ui| {
-        let mut job = LayoutJob::default();
-        let lead = match &e.time {
-            Some(t) => format!("{t}  "),
-            None => format!("{}  ", icon::CALENDAR_BLANK),
-        };
-        job.append(&lead, 0.0, fmt(FontId::proportional(14.0), MUTED));
-        job.append(&e.title, 0.0, fmt(FontId::proportional(14.5), TEXT));
-        if !e.project.is_empty() {
-            job.append(&format!("   {}", e.project), 0.0, fmt(FontId::proportional(12.5), MUTED));
-        }
-        let r = clickable_line(ui, job);
-        if let Some(n) = &e.note {
-            if r.clicked() {
-                action = Some(Action::Open(root.join(format!("{n}.md")), None));
-            }
-        } else if e.date == today() {
-            // Evento de un calendario: tomar notas abre una reunión con su nombre.
-            ui.add_space(6.0);
-            if ui.link(RichText::new(format!("{} Tomar notas", icon::NOTE_PENCIL)).size(12.5)).clicked() {
-                action = Some(Action::StartMeetingNamed(e.title.clone()));
-            }
-        }
-    });
-    action
-}
-
 fn day(offset: i64) -> String {
     (Local::now() + chrono::Duration::days(offset)).format("%Y-%m-%d").to_string()
 }
@@ -55,7 +25,10 @@ impl NotesApp {
         let for_tomorrow = pick(&|d| d == tomorrow);
         let this_week = pick(&|d| d > tomorrow.as_str() && d <= week.as_str());
         let undated = pending.iter().filter(|t| due(t).is_none()).count();
-        let events = self.all_events();
+        // Los eventos que se convirtieron en tarea ya no se ven como evento.
+        let marks = self.event_marks();
+        let events: Vec<agenda::Event> =
+            self.all_events().into_iter().filter(|e| marks.get(&day_items::event_key(e)).map(String::as_str) != Some("tarea")).collect();
         let ev = |f: &dyn Fn(&str) -> bool| -> Vec<agenda::Event> {
             let mut v: Vec<agenda::Event> = events.iter().filter(|e| f(&e.date)).cloned().collect();
             v.sort_by(|a, b| (a.date.clone(), a.time.clone()).cmp(&(b.date.clone(), b.time.clone())));
@@ -76,7 +49,8 @@ impl NotesApp {
             ui.label(RichText::new(title).font(theme::bold(14.5)).color(color));
             ui.add_space(2.0);
             for e in events {
-                if let Some(a) = event_row(ui, e, &root) {
+                let done = marks.get(&day_items::event_key(e)).map(String::as_str) == Some("hecho");
+                if let Some(a) = day_items::event_row(ui, e, done, &follows, false) {
                     action = Some(a);
                 }
             }

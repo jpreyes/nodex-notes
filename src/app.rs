@@ -32,6 +32,7 @@ mod ask_view;
 mod calendars_ui;
 mod chats;
 mod conflicts_ui;
+mod day_items;
 mod diary;
 mod doubts_ui;
 mod editor;
@@ -354,6 +355,8 @@ enum Action {
     /// Archivar una nota / sacarla del archivo.
     Archive(PathBuf),
     Unarchive(PathBuf),
+    /// Algo con una tarea o un evento de Tu día.
+    Item(day_items::ItemDo),
     ShowTag(String),
     Show(View),
     /// La ventana de la IA, en una de sus secciones.
@@ -2128,6 +2131,7 @@ impl NotesApp {
             Action::RenameTag(old, name) => self.rename_tag(old, &name),
             Action::Restore(t) => self.restore(t),
             Action::Archive(p) => self.archive_note(p),
+            Action::Item(w) => self.item_do(w),
             Action::Unarchive(p) => self.unarchive(p),
             Action::NoteToTask(p) => self.note_to_task(p),
             Action::ShowTag(t) => {
@@ -3386,12 +3390,18 @@ fn task_row(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follows: &t
         if r.double_clicked() {
             action = Some(Action::ToggleTask(t.raw.clone()));
         }
-        if let Some(n) = &t.note {
+        r.context_menu(|ui| {
+            if let Some(a) = day_items::task_menu(ui, t) {
+                action = Some(a);
+            }
+        });
+        if let Some(n) = t.note.as_deref().filter(|n| !n.is_empty()) {
             let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(MUTED)).frame(false);
-            if ui.add(b).on_hover_text(format!("Abrir nota «{n}»")).clicked() {
-                action = Some(Action::Open(root.join(format!("{n}.md")), None));
+            if ui.add(b).on_hover_text(format!("Ir a donde está escrita («{n}»)")).clicked() {
+                action = Some(Action::Item(day_items::ItemDo::OpenTask(t.raw.clone())));
             }
         }
+        let _ = root;
         if let Some(m) = &t.mail {
             let b = egui::Button::new(RichText::new(icon::ENVELOPE_SIMPLE).size(14.0).color(MUTED)).frame(false);
             if ui.add(b).on_hover_text("Salió de un correo: verlo").clicked() {
@@ -3405,6 +3415,13 @@ fn task_row(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follows: &t
         if ui.add(b).on_hover_text("Anotar un seguimiento: qué se hizo (la IA lo tiene en cuenta)").clicked() {
             action = Some(Action::FollowUp(t.raw.clone()));
         }
+        let b = egui::Button::new(RichText::new(icon::DOTS_THREE).size(16.0).color(MUTED)).frame(false);
+        let r = ui.add(b).on_hover_text("Más: cambiar fecha, convertir en nota, borrar…");
+        egui::Popup::menu(&r).show(|ui| {
+            if let Some(a) = day_items::task_menu(ui, t) {
+                action = Some(a);
+            }
+        });
     });
     // Sus seguimientos, debajo.
     for (date, text) in follow.into_iter().flatten() {

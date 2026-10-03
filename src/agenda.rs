@@ -485,6 +485,27 @@ impl Agenda {
         self.write_ics()
     }
 
+    /// Cambia la tarea con esa línea exacta (None = la borra).
+    pub fn replace_task(&self, raw: &str, new: Option<String>) -> io::Result<()> {
+        let mut lines = Vec::new();
+        for l in self.read_lines(TASKS_FILE) {
+            if l != raw {
+                lines.push(l);
+            } else if let Some(n) = &new {
+                lines.push(n.clone());
+            }
+        }
+        self.write_lines(TASKS_FILE, &lines)?;
+        self.write_ics()
+    }
+
+    /// Quita un evento de la agenda.
+    pub fn remove_event(&self, e: &Event) -> io::Result<()> {
+        let keep: Vec<String> = self.read_lines(AGENDA_FILE).into_iter().filter(|l| parse_event(l).as_ref() != Some(e)).collect();
+        self.write_lines(AGENDA_FILE, &keep)?;
+        self.write_ics()
+    }
+
     /// Borra las tareas con esos identificadores.
     pub fn remove_ids(&self, ids: &[String]) -> io::Result<()> {
         let lines: Vec<String> =
