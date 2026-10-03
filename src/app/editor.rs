@@ -638,6 +638,7 @@ impl NotesApp {
         let mut follow: Option<String> = None;
         let mut open_backlink: Option<PathBuf> = None;
         let mut show_history = false;
+        let mut archive_it = false;
         let mut attach_now = false;
         let mut table_now = false;
         let mut template_now = false;
@@ -717,6 +718,14 @@ impl NotesApp {
                         .on_hover_text("Ver y recuperar cómo estaba la nota antes");
                     if r.clicked() {
                         show_history = true;
+                    }
+                    ui.label(RichText::new("   ·   ").size(12.5).color(MUTED));
+                    let r = ui
+                        .add(egui::Label::new(RichText::new(format!("{} Archivar", icon::ARCHIVE)).size(12.5).color(MUTED)).sense(Sense::click()))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text("Sacarla de la vista sin borrarla (queda en Archivadas, abajo a la izquierda)");
+                    if r.clicked() {
+                        archive_it = true;
                     }
                 }
                 // Las notas que enlazan a esta.
@@ -947,6 +956,10 @@ impl NotesApp {
         }
         if show_history {
             self.open_history();
+        }
+        if archive_it {
+            let p = self.note.path.clone();
+            self.archive_note(p);
         }
     }
 

@@ -56,6 +56,7 @@ pub(super) fn encode(tab: &Tab, root: &Path) -> String {
                 View::Agenda => "agenda".into(),
                 View::Trash => "papelera".into(),
                 View::Bloc => "bloc".into(),
+                View::Archive => "archivadas".into(),
                 View::Tag(t) => format!("#{t}"),
                 View::Editor => "inicio".into(),
             }
@@ -77,6 +78,7 @@ pub(super) fn decode(s: &str, root: &Path) -> Option<Tab> {
         "agenda" => View::Agenda,
         "papelera" => View::Trash,
         "bloc" => View::Bloc,
+        "archivadas" => View::Archive,
         t => View::Tag(t.strip_prefix('#')?.to_string()),
     };
     Some(Tab::View(v))
@@ -92,6 +94,7 @@ fn view_label(v: &View) -> (&'static str, String) {
         View::Agenda => (icon::CALENDAR_BLANK, "Agenda".into()),
         View::Trash => (icon::TRASH, "Papelera".into()),
         View::Bloc => (icon::NOTEPAD, "Bloc".into()),
+        View::Archive => (icon::ARCHIVE, "Archivadas".into()),
         View::Tag(t) => (icon::HASH, t.clone()),
     }
 }

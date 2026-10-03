@@ -130,6 +130,9 @@ impl NotesApp {
             Step::Applying(rx) => match rx.try_recv() {
                 Ok(Ok(())) => {
                     // La nueva ya se está abriendo (y espera a que esta termine de guardar).
+                    if let Some(b) = &self.background {
+                        b.set_quitting();
+                    }
                     self.ctx.send_viewport_cmd(ViewportCommand::Close);
                     Step::Idle
                 }

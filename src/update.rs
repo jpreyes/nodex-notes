@@ -367,7 +367,8 @@ pub fn finished_closing() {
 
 /// Al abrir: si la versión anterior se está cerrando (recién actualizada), espera a que termine
 /// de guardar (como mucho 20 s). Después borra lo que quedó de la versión anterior.
-pub fn wait_for_previous() {
+/// Devuelve si se acaba de actualizar.
+pub fn wait_for_previous() -> bool {
     let m = marker();
     let recent = fs::metadata(&m)
         .and_then(|md| md.modified())
@@ -380,6 +381,7 @@ pub fn wait_for_previous() {
     }
     let _ = fs::remove_file(&m);
     cleanup();
+    recent
 }
 
 /// Borra el ejecutable anterior, la Notas.app anterior y las descargas ya usadas.

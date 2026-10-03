@@ -6,6 +6,7 @@ mod agenda;
 mod ai;
 mod app;
 mod ask;
+mod background;
 mod calendars;
 mod capture;
 mod claims;
@@ -34,13 +35,21 @@ mod vault;
 
 fn main() -> eframe::Result {
     // Recién actualizada: la versión anterior termina de guardar antes de leer nada.
-    update::wait_for_previous();
+    let after_update = update::wait_for_previous();
+    // Una sola Notas: si ya hay una (quizás en segundo plano), se muestra esa.
+    let listener = match background::single_instance(after_update) {
+        background::Instance::Shown => return Ok(()),
+        background::Instance::First(l) => l,
+    };
+    // Abierta con Windows: empieza escondida, junto al reloj.
+    let hidden = cfg!(windows) && std::env::args().any(|a| a == background::HIDDEN_ARG);
     let (cfg, cfg_msg) = config::load();
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Notas")
             .with_inner_size([1040.0, 680.0])
             .with_min_inner_size([640.0, 420.0])
+            .with_visible(!hidden)
             .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon-256.png")).unwrap_or_default()),
         centered: true,
         ..Default::default()
@@ -50,7 +59,9 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             theme::setup(&cc.egui_ctx);
-            Ok(Box::new(app::NotesApp::new(cfg, cfg_msg, cc.egui_ctx.clone())))
+            let mut app = app::NotesApp::new(cfg, cfg_msg, cc.egui_ctx.clone());
+            app.set_background(background::Background::start(cc, listener));
+            Ok(Box::new(app))
         }),
     )
 }

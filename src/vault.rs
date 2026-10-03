@@ -39,6 +39,8 @@ pub const DIARY: &str = "Diario";
 pub const ATTACHMENTS: &str = "Adjuntos";
 /// Las plantillas. No es un espacio: sus notas no se leen con las demás.
 pub const TEMPLATES: &str = "Plantillas";
+/// Las notas archivadas (fuera de la vista): `Archivo/<espacio>/<nota>.md`.
+pub const ARCHIVE: &str = "Archivo";
 const TRASH: &str = ".papelera";
 /// De dónde vino cada cosa de la papelera (en `.nodex/`): nombre, ruta original y cuándo.
 pub const TRASH_LIST: &str = "papelera.txt";
@@ -282,9 +284,9 @@ pub fn is_attachments_dir(name: &str) -> bool {
     name.eq_ignore_ascii_case(ATTACHMENTS)
 }
 
-/// ¿Es un nombre que no puede tener un espacio? (Diario, Adjuntos, Plantillas)
+/// ¿Es un nombre que no puede tener un espacio? (Diario, Adjuntos, Plantillas, Bloc, Archivo)
 pub fn is_reserved_dir(name: &str) -> bool {
-    is_diary_dir(name) || is_attachments_dir(name) || name.eq_ignore_ascii_case(TEMPLATES) || name.eq_ignore_ascii_case("Bloc")
+    is_diary_dir(name) || is_attachments_dir(name) || name.eq_ignore_ascii_case(TEMPLATES) || name.eq_ignore_ascii_case("Bloc") || name.eq_ignore_ascii_case(ARCHIVE)
 }
 
 /// ¿Es una plantilla?
@@ -624,7 +626,7 @@ impl Vault {
     pub fn create_workspace(&mut self, name: &str) -> io::Result<String> {
         let name = sanitize(name);
         if is_reserved_dir(&name) {
-            return Err(io::Error::other(format!("«{name}» es una carpeta reservada (Diario, Adjuntos, Plantillas o Bloc)")));
+            return Err(io::Error::other(format!("«{name}» es una carpeta reservada (Diario, Adjuntos, Plantillas, Bloc o Archivo)")));
         }
         fs::create_dir_all(self.root.join(&name))?;
         self.scan();

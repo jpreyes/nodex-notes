@@ -5,7 +5,8 @@
 //! Un equipo sube un cambio diciendo de qué versión partió (`base`); si no es la vigente, el
 //! servidor responde 409 con la vigente y el equipo junta y vuelve a subir. Nada se pisa.
 //!
-//! - Contenido: `sync/<cuenta>/blobs/ab/abcdef…` por su huella SHA-256 (no se borra: es el historial).
+//! - Contenido: `sync/<cuenta>/blobs/ab/abcdef….gz` por su huella SHA-256, comprimido (no se borra:
+//!   es el historial). Si comprimirlo no ahorra nada (una foto, un PDF) queda sin `.gz`, tal cual.
 //! - Índice: `sync/<cuenta>/diario.jsonl`, una línea por cambio; al arrancar se rehace leyéndolo.
 //! - Avisos al instante: `GET /v1/sync/esperar?desde=N` responde apenas hay algo más nuevo que N
 //!   (o a los 25 s).
@@ -69,6 +70,60 @@ fn dir(data: &Path, account: &str) -> PathBuf {
 
 fn blob_path(data: &Path, account: &str, hash: &str) -> PathBuf {
     dir(data, account).join("blobs").join(&hash[..2]).join(hash)
+}
+
+/// El contenido de una versión (comprimido o no).
+fn read_blob(file: &Path) -> std::io::Result<Vec<u8>> {
+    match std::fs::File::open(file.with_extension("gz")) {
+        Ok(f) => {
+            let mut out = Vec::new();
+            std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(f), &mut out)?;
+            Ok(out)
+        }
+        Err(_) => std::fs::read(file),
+    }
+}
+
+fn has_blob(file: &Path) -> bool {
+    file.exists() || file.with_extension("gz").exists()
+}
+
+/// Guarda el contenido de una versión: comprimido si así ocupa menos.
+fn write_blob(file: &Path, body: &[u8]) -> std::io::Result<()> {
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    enc.write_all(body)?;
+    let gz = enc.finish()?;
+    let (dest, bytes) = if gz.len() < body.len() { (file.with_extension("gz"), gz.as_slice()) } else { (file.to_path_buf(), body) };
+    let tmp = file.with_extension("tmp");
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, &dest)
+}
+
+/// Comprime lo que se guardó antes sin comprimir (al arrancar el servidor). Devuelve cuántos bytes ahorró.
+pub fn compress_old(data: &Path) -> u64 {
+    let mut saved = 0;
+    for acc in std::fs::read_dir(data.join("sync")).into_iter().flatten().flatten() {
+        for sub in std::fs::read_dir(acc.path().join("blobs")).into_iter().flatten().flatten() {
+            for f in std::fs::read_dir(sub.path()).into_iter().flatten().flatten() {
+                let p = f.path();
+                let name = f.file_name().to_string_lossy().into_owned();
+                if !valid_hash(&name) || p.with_extension("gz").exists() {
+                    continue;
+                }
+                let Ok(body) = std::fs::read(&p) else { continue };
+                if write_blob(&p, &body).is_ok() && p.with_extension("gz").exists() {
+                    let gz = std::fs::metadata(p.with_extension("gz")).map(|m| m.len()).unwrap_or(0);
+                    if read_blob(&p).is_ok_and(|b| b == body) && std::fs::remove_file(&p).is_ok() {
+                        saved += (body.len() as u64).saturating_sub(gz);
+                    }
+                }
+            }
+        }
+    }
+    saved
 }
 
 fn valid_hash(h: &str) -> bool {
@@ -190,7 +245,7 @@ pub async fn blob(State(state): State<Arc<AppState>>, headers: HeaderMap, UrlPat
     if !valid_hash(&hash) {
         return error(StatusCode::BAD_REQUEST, "Huella inválida.");
     }
-    match std::fs::read(blob_path(&state.settings.data, &acc.id, &hash)) {
+    match read_blob(&blob_path(&state.settings.data, &acc.id, &hash)) {
         Ok(b) => ([("content-type", "application/octet-stream")], b).into_response(),
         Err(_) => error(StatusCode::NOT_FOUND, "No existe esa versión."),
     }
@@ -239,14 +294,8 @@ pub async fn put(State(state): State<Arc<AppState>>, headers: HeaderMap, Query(t
         return error(StatusCode::INSUFFICIENT_STORAGE, "Se llenó el espacio de tu cuenta para sincronizar.");
     }
     let file = blob_path(&data, &acc.id, &hash);
-    if !file.exists() {
-        let ok = file.parent().is_some_and(|p| std::fs::create_dir_all(p).is_ok()) && {
-            let tmp = file.with_extension("tmp");
-            std::fs::write(&tmp, &body).and_then(|_| std::fs::rename(&tmp, &file)).is_ok()
-        };
-        if !ok {
-            return error(StatusCode::INTERNAL_SERVER_ERROR, "No se pudo guardar el archivo; inténtalo de nuevo.");
-        }
+    if !has_blob(&file) && write_blob(&file, &body).is_err() {
+        return error(StatusCode::INTERNAL_SERVER_ERROR, "No se pudo guardar el archivo; inténtalo de nuevo.");
     }
     let e = Entry { ruta: t.ruta.clone(), seq: 0, hash: hash.clone(), tam: body.len() as u64, borrado: false };
     match record(&state, &acc.id, &mut ix, e).await {
@@ -284,6 +333,42 @@ pub async fn delete(State(state): State<Arc<AppState>>, headers: HeaderMap, Quer
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stores_compressed() {
+        let data = std::env::temp_dir().join(format!("nodex-ia-blobs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&data);
+        let text = "Revisar el muro del eje 3 y enviar los planos.
+".repeat(200).into_bytes();
+        let f = blob_path(&data, "c1", &sha256(&text));
+        write_blob(&f, &text).unwrap();
+        assert!(f.with_extension("gz").exists() && !f.exists(), "el texto queda comprimido");
+        assert!(std::fs::metadata(f.with_extension("gz")).unwrap().len() < text.len() as u64 / 10);
+        assert_eq!(read_blob(&f).unwrap(), text);
+        // Lo que no se achica (ya comprimido) queda tal cual.
+        let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+        let noise: Vec<u8> = (0..4000)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                (x >> 24) as u8
+            })
+            .collect();
+        let g = blob_path(&data, "c1", &sha256(&noise));
+        write_blob(&g, &noise).unwrap();
+        assert!(g.exists() && !g.with_extension("gz").exists());
+        assert_eq!(read_blob(&g).unwrap(), noise);
+        // Lo guardado antes sin comprimir se comprime al arrancar.
+        let old = b"una nota vieja, una nota vieja, una nota vieja, una nota vieja".to_vec();
+        let h = blob_path(&data, "c2", &sha256(&old));
+        std::fs::create_dir_all(h.parent().unwrap()).unwrap();
+        std::fs::write(&h, &old).unwrap();
+        assert!(compress_old(&data) > 0);
+        assert!(!h.exists() && has_blob(&h));
+        assert_eq!(read_blob(&h).unwrap(), old);
+        let _ = std::fs::remove_dir_all(&data);
+    }
 
     #[test]
     fn paths() {

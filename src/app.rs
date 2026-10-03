@@ -25,6 +25,7 @@ use std::time::{Duration, Instant, SystemTime};
 mod account_ui;
 mod ai_actions;
 mod ai_view;
+mod archive;
 mod attachments;
 mod bloc;
 mod ask_view;
@@ -324,6 +325,8 @@ enum View {
     Trash,
     /// El Bloc: texto libre, tal cual.
     Bloc,
+    /// Las notas archivadas.
+    Archive,
 }
 
 enum Action {
@@ -348,6 +351,9 @@ enum Action {
     Reject(String),
     /// Devolver algo de la papelera a su lugar.
     Restore(crate::vault::Trashed),
+    /// Archivar una nota / sacarla del archivo.
+    Archive(PathBuf),
+    Unarchive(PathBuf),
     ShowTag(String),
     Show(View),
     /// La ventana de la IA, en una de sus secciones.
@@ -448,6 +454,9 @@ pub struct NotesApp {
     recurring_form: Option<recurring::Form>,
     /// Borrar para siempre: qué, y si se marcó «Entiendo que no se puede recuperar».
     forever: Option<(trash_view::Forever, bool)>,
+    /// Archivadas: lo que se busca y la que se está viendo completa.
+    archive_filter: String,
+    archive_open: Option<PathBuf>,
     new_task: String,
     message: Option<(String, Instant)>,
     last_poll: Instant,
@@ -540,6 +549,8 @@ pub struct NotesApp {
     unorganized_count: Option<((u64, usize), usize)>,
     /// En la IA: se ve la lista de las notas sin organizar.
     show_unorganized: bool,
+    /// El ícono junto al reloj (Windows): al cerrar la ventana, Notas sigue ahí.
+    background: Option<crate::background::Background>,
     /// Ventana de la IA: sección abierta, lo que hizo y cuál de sus cambios se puede deshacer.
     ai_tab: ai_view::AiTab,
     activity: crate::activity::Log,
@@ -763,6 +774,8 @@ impl NotesApp {
             menu_line: None,
             chats_wide: true,
             forever: None,
+            archive_filter: String::new(),
+            archive_open: None,
             new_task: String::new(),
             message: message.map(|m| (m, Instant::now())),
             last_poll: Instant::now(),
@@ -835,6 +848,7 @@ impl NotesApp {
             summary: None,
             unorganized_count: None,
             show_unorganized: false,
+            background: None,
             ai_tab: ai_view::AiTab::default(),
             activity: crate::activity::Log::load(&cfg_root),
             undo_entry: None,
@@ -1246,6 +1260,11 @@ impl NotesApp {
         }
         self.touched.remove(&old_path);
         self.save_estado();
+    }
+
+    /// El ícono junto al reloj (lo pone `main` al abrir la ventana).
+    pub fn set_background(&mut self, b: Option<crate::background::Background>) {
+        self.background = b;
     }
 
     fn trash(&mut self, path: PathBuf) {
@@ -2108,6 +2127,8 @@ impl NotesApp {
             Action::RenameWorkspace(old, name) => self.rename_space(old, &name),
             Action::RenameTag(old, name) => self.rename_tag(old, &name),
             Action::Restore(t) => self.restore(t),
+            Action::Archive(p) => self.archive_note(p),
+            Action::Unarchive(p) => self.unarchive(p),
             Action::NoteToTask(p) => self.note_to_task(p),
             Action::ShowTag(t) => {
                 self.save();
@@ -2390,6 +2411,9 @@ impl NotesApp {
                 if rail_item(ui, icon::TRASH, "Papelera", "Lo que borraste: restaurar o borrar para siempre", self.view == View::Trash, TEXT).clicked() {
                     action = Some(Action::ShowTab(View::Trash));
                 }
+                if rail_item(ui, icon::ARCHIVE, "Archivo", "Notas archivadas: fuera de la vista, sin borrarlas", self.view == View::Archive, TEXT).clicked() {
+                    action = Some(Action::ShowTab(View::Archive));
+                }
                 if rail_item(ui, icon::FOLDER_OPEN, "Carpeta", "Abrir la carpeta de notas", false, TEXT).clicked() {
                     action = Some(Action::OpenExternal(self.vault.root.clone()));
                 }
@@ -2449,6 +2473,10 @@ impl NotesApp {
                     }
                     if ui.button(format!("{}  Convertir en tarea", icon::CHECK_SQUARE)).clicked() {
                         act = Some(Action::NoteToTask(path.clone()));
+                        ui.close();
+                    }
+                    if ui.button(format!("{}  Archivar", icon::ARCHIVE)).on_hover_text("Sale de la vista sin borrarse (queda en Archivadas)").clicked() {
+                        act = Some(Action::Archive(path.clone()));
                         ui.close();
                     }
                     if ui.button(format!("{}  Mover a la papelera", icon::TRASH)).clicked() {
@@ -3200,6 +3228,7 @@ impl NotesApp {
                     View::Tasks => actions.extend(self.tasks_view(ui)),
                     View::Agenda => actions.extend(self.agenda_view(ui)),
                     View::Trash => actions.extend(self.trash_view(ui)),
+                    View::Archive => actions.extend(self.archive_view(ui)),
                     View::Bloc => actions.extend(self.bloc_view(ui)),
                 }
             }
@@ -3239,6 +3268,14 @@ impl NotesApp {
             self.close_meeting(Local::now());
             self.save();
             self.save_estado();
+            // En segundo plano: la ventana se esconde y Notas sigue (sincronizando) junto al reloj.
+            if self.cfg.segundo_plano
+                && let Some(b) = &self.background
+                && !b.quitting()
+            {
+                ctx.send_viewport_cmd(ViewportCommand::CancelClose);
+                b.hide();
+            }
         }
 
         let title = format!("{} — Notas", display_title(&self.note.title));

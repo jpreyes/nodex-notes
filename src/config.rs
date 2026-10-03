@@ -35,6 +35,10 @@ pub struct Config {
     pub cuenta: String,
     /// Buscar y bajar sola las versiones nuevas (se instalan con un clic en «Actualizar»).
     pub actualizar_sola: bool,
+    /// Al cerrar la ventana, Notas sigue en segundo plano junto al reloj (Windows).
+    pub segundo_plano: bool,
+    /// Abrir Notas al iniciar Windows, ya en segundo plano.
+    pub iniciar_con_windows: bool,
     /// No sincronizar la carpeta de notas con la cuenta (se sincroniza sola al entrar, salvo que
     /// se apague o que la carpeta esté en Dropbox/OneDrive y se elija seguir con ellos).
     pub sin_sincronizar: bool,
@@ -87,6 +91,8 @@ impl Default for Config {
             servidor_ia: String::new(),
             cuenta: String::new(),
             actualizar_sola: true,
+            segundo_plano: true,
+            iniciar_con_windows: false,
             sin_sincronizar: false,
             first_run: false,
         }
@@ -186,6 +192,12 @@ fn render(c: &Config) -> String {
          # Buscar y bajar sola las versiones nuevas (se instalan cuando haces clic en «Actualizar»)\n\
          actualizar_sola = {}\n\
          \n\
+         # Al cerrar la ventana, seguir en segundo plano junto al reloj (sincroniza tus notas)\n\
+         segundo_plano = {}\n\
+         \n\
+         # Abrir Notas al iniciar Windows, ya en segundo plano\n\
+         iniciar_con_windows = {}\n\
+         \n\
          # No sincronizar tus notas con tu cuenta (al entrar con tu cuenta se sincronizan solas)\n\
          sin_sincronizar = {}\n",
         q(&c.carpeta_notas.to_string_lossy()),
@@ -202,6 +214,8 @@ fn render(c: &Config) -> String {
         c.correo_al_llegar,
         q(&c.correo_diario),
         c.actualizar_sola,
+        c.segundo_plano,
+        c.iniciar_con_windows,
         c.sin_sincronizar,
     );
     main + &calendars

@@ -107,6 +107,8 @@ pub(super) enum Change {
     MailDaily(String),
     TestConnection,
     UpdateAuto(bool),
+    Background(bool),
+    StartWithWindows(bool),
     Do(Action),
     OpenUrl(&'static str),
 }
@@ -372,6 +374,17 @@ impl NotesApp {
                 s.test_result = None;
                 s.test = Some(ai::test_connection(&self.cfg, self.ctx.clone()));
             }
+            Change::Background(on) => {
+                self.cfg.segundo_plano = on;
+                self.save_config();
+            }
+            Change::StartWithWindows(on) => match crate::background::set_start_with_windows(on) {
+                Ok(()) => {
+                    self.cfg.iniciar_con_windows = on;
+                    self.save_config();
+                }
+                Err(e) => self.msg(format!("No se pudo cambiar: {e}")),
+            },
             Change::UpdateAuto(on) => {
                 self.cfg.actualizar_sola = on;
                 self.save_config();
@@ -509,6 +522,22 @@ impl NotesApp {
                 changes.push(Change::Do(Action::OpenExternal(config::config_path())));
             }
         });
+        if cfg!(windows) {
+            ui.add_space(16.0);
+            row(ui, "Seguir en segundo plano", "Al cerrar la ventana, Notas queda junto al reloj y sigue sincronizando; un clic en su ícono la vuelve a abrir (clic derecho → Salir, para cerrarla)", |ui| {
+                let mut on = self.cfg.segundo_plano;
+                if toggle(ui, &mut on).changed() {
+                    changes.push(Change::Background(on));
+                }
+            });
+            ui.add_space(6.0);
+            row(ui, "Abrir al iniciar Windows", "Notas se abre sola al prender el computador, ya en segundo plano", |ui| {
+                let mut on = self.cfg.iniciar_con_windows;
+                if toggle(ui, &mut on).changed() {
+                    changes.push(Change::StartWithWindows(on));
+                }
+            });
+        }
     }
 
     fn section_ai(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {

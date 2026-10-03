@@ -37,6 +37,14 @@ async fn main() {
             let host = std::env::var("NOTAS_IA_DIRECCION").ok().filter(|h| !h.is_empty()).unwrap_or_else(|| "127.0.0.1".into());
             let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await.expect("no se pudo abrir el puerto");
             println!("nodex-ia en el puerto {port} · modelo {} · datos en {}", settings.model, settings.data.display());
+            // Lo que se guardó antes sin comprimir, se comprime (de a poco, sin detener nada).
+            let data = settings.data.clone();
+            tokio::task::spawn_blocking(move || {
+                let saved = nodex_ia::sync::compress_old(&data);
+                if saved > 0 {
+                    println!("archivos de notas comprimidos: {} KB menos", saved / 1024);
+                }
+            });
             axum::serve(listener, router(state(settings)))
                 .with_graceful_shutdown(async {
                     let _ = tokio::signal::ctrl_c().await;
