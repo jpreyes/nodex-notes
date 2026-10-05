@@ -438,7 +438,7 @@ async fn finish_sign_in_with(state: &AppState, correo: &str, nombre: &str, clave
             if let Err(e) = store.accounts.save(&state.settings.data) {
                 eprintln!("no se pudo guardar cuentas.json: {e}");
             }
-            store.accounts_mtime = std::fs::metadata(Accounts::file(&state.settings.data)).and_then(|m| m.modified()).ok();
+            store.accounts_mtime = crate::file_stamp(&Accounts::file(&state.settings.data));
             drop(store);
             // Una cuenta nueva: aviso para aprobarla.
             if new && !state.settings.admin.is_empty() {
@@ -452,7 +452,7 @@ async fn finish_sign_in_with(state: &AppState, correo: &str, nombre: &str, clave
         eprintln!("no se pudo guardar cuentas.json: {e}");
         return error(StatusCode::INTERNAL_SERVER_ERROR, "No se pudo guardar tu cuenta; inténtalo de nuevo.");
     }
-    store.accounts_mtime = std::fs::metadata(Accounts::file(&state.settings.data)).and_then(|m| m.modified()).ok();
+    store.accounts_mtime = crate::file_stamp(&Accounts::file(&state.settings.data));
     Json(SignedIn { token, cuenta: AccountInfo::of(&acc) }).into_response()
 }
 

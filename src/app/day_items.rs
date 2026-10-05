@@ -14,6 +14,16 @@ use tracking::Target;
 
 /// Lo anotado de los eventos.
 pub(super) const EVENTS_FILE: &str = "eventos.txt";
+/// En la memoria de egui: la clave de lo que está recibiendo un seguimiento.
+pub(super) const FOCUS: &str = "seguimiento-foco";
+
+/// Mientras se anota un seguimiento, lo demás se atenúa (para ver a qué se le está anotando).
+pub(super) fn dim_unless(ui: &mut Ui, key: &str) {
+    let focus = ui.ctx().data(|d| d.get_temp::<Option<String>>(Id::new(FOCUS))).flatten();
+    if focus.is_some_and(|f| f != key) {
+        ui.multiply_opacity(0.3);
+    }
+}
 
 /// Lo que se hace con una tarea o un evento de Tu día.
 pub(super) enum ItemDo {
@@ -89,6 +99,14 @@ pub(super) fn task_menu(ui: &mut Ui, t: &agenda::Task) -> Option<Action> {
 /// Una fila de evento: casilla, hora, título y espacio; y lo que se puede hacer con él.
 /// `date` = mostrar el día (en la Semana).
 pub(super) fn event_row(ui: &mut Ui, e: &agenda::Event, done: bool, follows: &tracking::FollowUps, date: bool) -> Option<Action> {
+    ui.scope(|ui| {
+        dim_unless(ui, &event_key(e));
+        event_row_inner(ui, e, done, follows, date)
+    })
+    .inner
+}
+
+fn event_row_inner(ui: &mut Ui, e: &agenda::Event, done: bool, follows: &tracking::FollowUps, date: bool) -> Option<Action> {
     let mut action = None;
     ui.horizontal(|ui| {
         let (glyph, color) = if done { (icon::CHECK_SQUARE, ACCENT) } else { (icon::SQUARE, MUTED) };

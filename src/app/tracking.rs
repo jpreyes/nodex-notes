@@ -94,10 +94,35 @@ pub(super) fn short_day(date: &str) -> String {
     NaiveDate::parse_from_str(date, "%Y-%m-%d").map(|d| format!("{} {}", d.day(), MESES[d.month0() as usize])).unwrap_or_else(|_| date.to_string())
 }
 
+/// El comienzo de una nota para mostrarla en una lista: sus primeras líneas, sin títulos de
+/// Markdown, casillas, fechas ni identificadores.
+pub(super) fn preview(text: &str, lines_n: usize, chars: usize) -> String {
+    text.lines()
+        .map(|l| line_title(l.trim_start_matches('#').trim()))
+        .filter(|l| !l.is_empty())
+        .take(lines_n)
+        .collect::<Vec<_>>()
+        .join(" · ")
+        .chars()
+        .take(chars)
+        .collect()
+}
+
 /// Lo que se ve de una línea de tarea: sin casilla, fecha ni identificador.
 pub(super) fn line_title(line: &str) -> String {
     let info = lines::parse(line);
     line[info.prefix..].split_whitespace().filter(|w| !w.starts_with("due:") && !(w.starts_with('^') && w.len() > 3)).collect::<Vec<_>>().join(" ")
+}
+
+impl Ask {
+    /// La clave de lo que recibe el seguimiento (para atenuar lo demás).
+    pub(super) fn focus_key(&self) -> Option<String> {
+        match &self.target {
+            Target::Line { id: Some(id), .. } => Some(id.clone()),
+            Target::Task(k) => Some(k.clone()),
+            Target::Line { .. } => None,
+        }
+    }
 }
 
 impl NotesApp {

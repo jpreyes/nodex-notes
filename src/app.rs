@@ -37,6 +37,9 @@ mod diary;
 mod doubts_ui;
 mod editor;
 mod manage;
+mod month;
+mod nav;
+mod notes_view;
 mod followup;
 mod history_ui;
 mod home;
@@ -328,6 +331,8 @@ enum View {
     Bloc,
     /// Las notas archivadas.
     Archive,
+    /// Todas las notas.
+    Notes,
 }
 
 enum Action {
@@ -355,6 +360,9 @@ enum Action {
     /// Archivar una nota / sacarla del archivo.
     Archive(PathBuf),
     Unarchive(PathBuf),
+    /// Archivar un espacio completo / sacarlo del archivo.
+    ArchiveSpace(String),
+    UnarchiveSpace(String),
     /// Algo con una tarea o un evento de Tu día.
     Item(day_items::ItemDo),
     ShowTag(String),
@@ -460,6 +468,15 @@ pub struct NotesApp {
     /// Archivadas: lo que se busca y la que se está viendo completa.
     archive_filter: String,
     archive_open: Option<PathBuf>,
+    /// Anterior y siguiente.
+    nav: nav::History,
+    /// «Notas»: lo que se busca y el espacio elegido.
+    notes_filter: String,
+    notes_space: Option<String>,
+    /// Agenda: el mes que se ve (None = el actual), el día elegido y si se ve como lista.
+    agenda_month: Option<NaiveDate>,
+    agenda_day: Option<String>,
+    agenda_list: bool,
     new_task: String,
     message: Option<(String, Instant)>,
     last_poll: Instant,
@@ -779,6 +796,12 @@ impl NotesApp {
             forever: None,
             archive_filter: String::new(),
             archive_open: None,
+            nav: nav::History::default(),
+            notes_filter: String::new(),
+            notes_space: None,
+            agenda_month: None,
+            agenda_day: None,
+            agenda_list: false,
             new_task: String::new(),
             message: message.map(|m| (m, Instant::now())),
             last_poll: Instant::now(),
@@ -2131,6 +2154,8 @@ impl NotesApp {
             Action::RenameTag(old, name) => self.rename_tag(old, &name),
             Action::Restore(t) => self.restore(t),
             Action::Archive(p) => self.archive_note(p),
+            Action::ArchiveSpace(ws) => self.archive_space(ws),
+            Action::UnarchiveSpace(ws) => self.unarchive_space(ws),
             Action::Item(w) => self.item_do(w),
             Action::Unarchive(p) => self.unarchive(p),
             Action::NoteToTask(p) => self.note_to_task(p),
@@ -2361,6 +2386,9 @@ impl NotesApp {
 
     fn rail(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
+        // Con la ventana baja, los accesos se achican para que quepan los 13.
+        let h = ((ui.available_height() - 8.0) / 13.0 - 4.0).clamp(30.0, 50.0);
+        ui.ctx().data_mut(|d| d.insert_temp(Id::new(RAIL_H), h));
         ui.vertical_centered(|ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
             if rail_item(ui, icon::HOUSE, "Inicio", "Inicio: tu día y un resumen de todo (Ctrl+H)", self.view == View::Home, TEXT).clicked() {
@@ -2372,6 +2400,9 @@ impl NotesApp {
             };
             if rail_item(ui, icon::USERS, "Reunión", &tip, self.meeting.is_some(), color).clicked() {
                 action = Some(if self.meeting.is_some() { Action::CloseMeeting } else { Action::StartMeeting });
+            }
+            if rail_item(ui, icon::FILE_TEXT, "Notas", "Todas tus notas, la más reciente primero", self.view == View::Notes, TEXT).clicked() {
+                action = Some(Action::ShowTab(View::Notes));
             }
             if rail_item(ui, icon::CHECK_SQUARE, "Tareas", "Todas las tareas", self.view == View::Tasks, TEXT).clicked() {
                 action = Some(Action::ShowTab(View::Tasks));
@@ -2569,6 +2600,10 @@ impl NotesApp {
                 r.context_menu(|ui| {
                     if ui.button(format!("{}  Cambiar nombre", icon::PENCIL_SIMPLE)).clicked() {
                         self.renaming_ws = Some((ws.clone(), ws.clone()));
+                        ui.close();
+                    }
+                    if ui.button(format!("{}  Archivar el espacio", icon::ARCHIVE)).on_hover_text("Sus notas salen de la vista sin borrarse (quedan en Archivo)").clicked() {
+                        action = Some(Action::ArchiveSpace(ws.clone()));
                         ui.close();
                     }
                     if ui.button(format!("{}  Mover el espacio a la papelera", icon::TRASH)).clicked() {
@@ -3051,7 +3086,7 @@ impl NotesApp {
 
         let root = self.vault.root.clone();
         let follows = self.follow_up_map();
-        Self::column(ui, "agenda", |ui, _| {
+        Self::column(ui, "agenda", |ui, col_w| {
             let subtitle = "Tus calendarios, los eventos de tus notas y las tareas con fecha".to_string();
             view_header(ui, "Agenda", &subtitle);
             let subs = self.cfg.calendarios.clone();
@@ -3064,6 +3099,17 @@ impl NotesApp {
             if ui.link(RichText::new(format!("{} {label}", icon::ARROWS_CLOCKWISE)).size(12.5)).clicked() {
                 action = Some(Action::OpenRecurring);
             }
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.agenda_list, false, RichText::new(format!("{} Mes", icon::CALENDAR_BLANK)).size(13.0));
+                ui.selectable_value(&mut self.agenda_list, true, RichText::new(format!("{} Lista", icon::LIST_BULLETS)).size(13.0));
+            });
+            ui.add_space(10.0);
+            if !self.agenda_list {
+                if let Some(a) = self.month_calendar(ui, col_w) {
+                    action = Some(a);
+                }
+            }
             ui.add_space(14.0);
             if !overdue.is_empty() {
                 ui.label(RichText::new("Atrasadas").font(theme::bold(15.0)).color(RED));
@@ -3075,11 +3121,11 @@ impl NotesApp {
                 }
                 ui.add_space(14.0);
             }
-            if items.is_empty() {
+            if items.is_empty() && self.agenda_list {
                 ui.label(RichText::new("Nada agendado. La IA agrega aquí las fechas que menciones en tus notas.").color(MUTED));
             }
             let mut current = String::new();
-            for (date, time, text, project, note, task, external) in &items {
+            for (date, time, text, project, note, task, external) in items.iter().filter(|_| self.agenda_list) {
                 if *date != current {
                     current = date.clone();
                     let label = if *date == today {
@@ -3217,7 +3263,12 @@ impl NotesApp {
             .exact_size(36.0)
             .show_separator_line(false)
             .frame(Frame::new().fill(BG_SIDE).inner_margin(Margin { left: 6, right: 6, top: 5, bottom: 0 }))
-            .show(ui, |ui| self.tab_bar(ui));
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    self.nav_arrows(ui);
+                    self.tab_bar(ui);
+                })
+            });
         egui::CentralPanel::default().frame(Frame::new().fill(BG_EDITOR)).show(ui, |ui| {
             if !self.search.trim().is_empty() {
                 actions.extend(self.results(ui));
@@ -3233,6 +3284,7 @@ impl NotesApp {
                     View::Agenda => actions.extend(self.agenda_view(ui)),
                     View::Trash => actions.extend(self.trash_view(ui)),
                     View::Archive => actions.extend(self.archive_view(ui)),
+                    View::Notes => actions.extend(self.notes_view(ui)),
                     View::Bloc => actions.extend(self.bloc_view(ui)),
                 }
             }
@@ -3282,6 +3334,10 @@ impl NotesApp {
             }
         }
 
+        self.track_history();
+        let focus = self.follow_ask.as_ref().and_then(tracking::Ask::focus_key);
+        ctx.data_mut(|d| d.insert_temp(Id::new(day_items::FOCUS), focus));
+
         let title = format!("{} — Notas", display_title(&self.note.title));
         if title != self.window_title {
             ctx.send_viewport_cmd(ViewportCommand::Title(title.clone()));
@@ -3293,9 +3349,13 @@ impl NotesApp {
 
 // ---------- Widgets ----------
 
-/// Un acceso de la barra izquierda: ícono con su nombre debajo.
+/// La altura de los accesos de la barra izquierda (en la memoria de egui).
+const RAIL_H: &str = "riel-alto";
+
+/// Un acceso de la barra izquierda: ícono con su nombre debajo (si cabe).
 fn rail_item(ui: &mut Ui, glyph: &str, label: &str, tip: &str, selected: bool, color: Color32) -> Response {
-    let (rect, r) = ui.allocate_exact_size(egui::vec2(56.0, 50.0), Sense::click());
+    let h = ui.ctx().data(|d| d.get_temp::<f32>(Id::new(RAIL_H))).unwrap_or(50.0);
+    let (rect, r) = ui.allocate_exact_size(egui::vec2(56.0, h), Sense::click());
     let p = ui.painter();
     if selected {
         p.rect_filled(rect, 8, ACCENT_BG);
@@ -3303,9 +3363,13 @@ fn rail_item(ui: &mut Ui, glyph: &str, label: &str, tip: &str, selected: bool, c
         p.rect_filled(rect, 8, HOVER);
     }
     let color = if selected && color == TEXT { ACCENT } else { color };
-    p.text(egui::pos2(rect.center().x, rect.top() + 18.0), Align2::CENTER_CENTER, glyph, FontId::proportional(20.0), color);
     let label_color = if selected { ACCENT } else { MUTED };
-    p.text(egui::pos2(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_CENTER, label, FontId::proportional(11.0), label_color);
+    if h >= 42.0 {
+        p.text(egui::pos2(rect.center().x, rect.top() + h * 0.36), Align2::CENTER_CENTER, glyph, FontId::proportional(20.0), color);
+        p.text(egui::pos2(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_CENTER, label, FontId::proportional(11.0), label_color);
+    } else {
+        p.text(rect.center(), Align2::CENTER_CENTER, glyph, FontId::proportional(19.0), color);
+    }
     r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tip)
 }
 
@@ -3364,6 +3428,14 @@ fn sort_tasks(tasks: Vec<agenda::Task>, by_due: bool, today: &str) -> Vec<agenda
 }
 
 fn task_row(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follows: &tracking::FollowUps) -> Option<Action> {
+    ui.scope(|ui| {
+        day_items::dim_unless(ui, &tracking::task_key(t));
+        task_row_inner(ui, t, today, root, follows)
+    })
+    .inner
+}
+
+fn task_row_inner(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follows: &tracking::FollowUps) -> Option<Action> {
     let mut action = None;
     let follow = follows.get(&tracking::task_key(t));
     ui.horizontal(|ui| {

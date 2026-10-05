@@ -338,7 +338,7 @@ impl NotesApp {
                         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                             Frame::new().fill(BG_SIDE).corner_radius(12).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
                                 ui.set_max_width(col_w * 0.8);
-                                ui.label(RichText::new(&turn.question).size(14.5).color(TEXT));
+                                ui.add(egui::Label::new(RichText::new(&turn.question).size(14.5).color(TEXT)).wrap());
                             });
                         });
                         ui.add_space(10.0);

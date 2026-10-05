@@ -139,7 +139,9 @@ pub struct Store {
     /// Cuándo cambió `usuarios.json` la última vez que se leyó (para ver altas sin reiniciar).
     users_mtime: Option<std::time::SystemTime>,
     pub accounts: accounts::Accounts,
-    accounts_mtime: Option<std::time::SystemTime>,
+    /// Fecha y tamaño de cuentas.json la última vez que se leyó (el tamaño, por si dos cambios
+    /// caen en la misma fecha).
+    accounts_mtime: Option<(std::time::SystemTime, u64)>,
     pub month: String,
     pub usage: BTreeMap<String, Usage>,
 }
@@ -168,6 +170,12 @@ pub(crate) fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     std::fs::rename(tmp, path)
 }
 
+/// Fecha y tamaño de un archivo (para saber si alguien lo cambió).
+pub(crate) fn file_stamp(p: &Path) -> Option<(std::time::SystemTime, u64)> {
+    let m = std::fs::metadata(p).ok()?;
+    Some((m.modified().ok()?, m.len()))
+}
+
 impl Store {
     fn users_file(data: &Path) -> PathBuf {
         data.join("usuarios.json")
@@ -184,13 +192,13 @@ impl Store {
         let usage = read(Self::usage_file(data, &month)).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let users_mtime = std::fs::metadata(Self::users_file(data)).and_then(|m| m.modified()).ok();
         let accounts = accounts::Accounts::load(data);
-        let accounts_mtime = std::fs::metadata(accounts::Accounts::file(data)).and_then(|m| m.modified()).ok();
+        let accounts_mtime = file_stamp(&accounts::Accounts::file(data));
         Store { users, users_mtime, accounts, accounts_mtime, month, usage }
     }
 
     /// Relee las cuentas si alguien cambió el archivo (`nodex-ia plan` con el servidor andando).
     fn refresh_accounts(&mut self, data: &Path) {
-        let now = std::fs::metadata(accounts::Accounts::file(data)).and_then(|m| m.modified()).ok();
+        let now = file_stamp(&accounts::Accounts::file(data));
         if now != self.accounts_mtime {
             self.accounts = accounts::Accounts::load(data);
             self.accounts_mtime = now;

@@ -394,16 +394,7 @@ impl NotesApp {
             egui::ScrollArea::vertical().id_salt("sin-organizar").max_height(230.0).auto_shrink([false, true]).show(ui, |ui| {
                 for p in &paths {
                     let Some(n) = notes.iter().find(|n| &n.path == p) else { continue };
-                    let start: String = n
-                        .text
-                        .lines()
-                        .map(|l| l.trim().trim_start_matches(['#', '-', '*', ' ']))
-                        .filter(|l| !l.is_empty())
-                        .collect::<Vec<_>>()
-                        .join(" · ")
-                        .chars()
-                        .take(140)
-                        .collect();
+                    let start = tracking::preview(&n.text, 6, 140);
                     ui.horizontal(|ui| {
                         let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(ACCENT)).frame(false);
                         if ui.add(b).on_hover_text("Abrir la nota").clicked() {
