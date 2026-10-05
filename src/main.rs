@@ -17,6 +17,7 @@ mod dropbox;
 mod dups;
 mod gcal;
 mod history;
+mod import;
 mod ics;
 mod lines;
 mod links;

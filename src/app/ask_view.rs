@@ -140,6 +140,9 @@ impl NotesApp {
     /// Arma la pregunta con las notas (todas, o solo las editadas desde `since`), tareas y agenda.
     pub(super) fn build_request(&mut self, question: String, history: Vec<(String, String)>, since: Option<&str>) -> (ask::Input, Turn) {
         let mut sources = HashMap::new();
+        // Desde la IA de la derecha: lo que se está mirando (y su nota, que va siempre).
+        let context = self.ask_context.clone();
+        let focus = context.as_ref().and_then(|c| c.1.clone());
         let mut notes: Vec<&vault::Note> = self.vault.all_notes().into_iter().filter(|n| since.is_none_or(|s| n.day() >= s)).collect();
         // Con muchas notas no se mandan todas: la app se queda con las más relevantes para la
         // pregunta (sin IA) y, si aún son muchas, la IA elige entre esas.
@@ -156,7 +159,13 @@ impl NotesApp {
                 })
                 .collect();
             let picked = ask::rank(&question, &history, &candidates, &today(), ask::MAX_CANDIDATES);
-            notes = picked.into_iter().map(|i| notes[i]).collect();
+            let all = std::mem::take(&mut notes);
+            notes = picked.iter().map(|i| all[*i]).collect();
+            if let Some(n) = focus.as_ref().and_then(|p| all.iter().find(|n| n.path == *p)) {
+                if !notes.iter().any(|x| x.path == n.path) {
+                    notes.insert(0, n);
+                }
+            }
         }
         let mut docs: Vec<ask::Doc> = notes
             .into_iter()
@@ -202,7 +211,15 @@ impl NotesApp {
             .collect();
         let month_ago = (Local::now() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
         let events: Vec<agenda::Event> = self.all_events().into_iter().filter(|e| e.date >= month_ago).collect();
-        let input = ask::Input { question: question.clone(), history, docs, tasks: task_list, events, mails: self.mail_context(), today: today() };
+        // La pregunta dice qué se está mirando («esta nota» es esa).
+        let asked = match &context {
+            Some((label, _)) => {
+                let key = focus.as_ref().and_then(|p| docs.iter().find(|d| d.path == *p)).map(|d| format!(" [{}]", d.key)).unwrap_or_default();
+                format!("{question}\n\n(Contexto: estoy viendo {label}{key}. Si digo «esta nota», «aquí» o «esto», me refiero a eso.)")
+            }
+            None => question.clone(),
+        };
+        let input = ask::Input { question: asked, history, docs, tasks: task_list, events, mails: self.mail_context(), today: today() };
         let turn = Turn { question, answer: None, blocks: Vec::new(), progress: "Buscando en tus notas…".into(), sources, tasks, actions: Vec::new(), done: Vec::new(), entry: None };
         (input, turn)
     }

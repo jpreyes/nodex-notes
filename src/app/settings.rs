@@ -108,6 +108,7 @@ pub(super) enum Change {
     TestConnection,
     UpdateAuto(bool),
     Background(bool),
+    Import,
     StartWithWindows(bool),
     Do(Action),
     OpenUrl(&'static str),
@@ -374,6 +375,7 @@ impl NotesApp {
                 s.test_result = None;
                 s.test = Some(ai::test_connection(&self.cfg, self.ctx.clone()));
             }
+            Change::Import => self.pick_import(),
             Change::Background(on) => {
                 self.cfg.segundo_plano = on;
                 self.save_config();
@@ -515,6 +517,12 @@ impl NotesApp {
             .size(12.5)
             .color(MUTED),
         );
+        ui.add_space(16.0);
+        row(ui, "Importar notas", "De Obsidian, Notion (exportado a Markdown) o cualquier carpeta de archivos .md", |ui| {
+            if ui.button(format!("{}  Elegir carpeta…", icon::DOWNLOAD_SIMPLE)).clicked() {
+                changes.push(Change::Import);
+            }
+        });
         ui.add_space(16.0);
         let cfg_path = config::config_path().display().to_string();
         row(ui, "Archivo de configuración", &cfg_path, |ui| {

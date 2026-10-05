@@ -44,6 +44,7 @@ mod followup;
 mod history_ui;
 mod home;
 mod images;
+mod import_ui;
 mod mail_ui;
 mod notelinks;
 mod onboarding;
@@ -51,6 +52,7 @@ mod recurring;
 #[cfg(test)]
 mod rendimiento;
 mod settings;
+mod side_ai;
 mod spaces_ui;
 mod sync_ui;
 mod tabs;
@@ -365,6 +367,8 @@ enum Action {
     UnarchiveSpace(String),
     /// Algo con una tarea o un evento de Tu día.
     Item(day_items::ItemDo),
+    /// Abrir o cerrar la IA de la derecha (Ctrl+J).
+    ToggleSideAi,
     ShowTag(String),
     Show(View),
     /// La ventana de la IA, en una de sus secciones.
@@ -477,6 +481,14 @@ pub struct NotesApp {
     agenda_month: Option<NaiveDate>,
     agenda_day: Option<String>,
     agenda_list: bool,
+    /// La IA de la derecha: abierta, lo que se escribe y si hay que poner el cursor ahí.
+    side_ai: bool,
+    side_input: String,
+    side_focus: bool,
+    /// Lo que se está mirando, para la próxima pregunta (desde la IA de la derecha).
+    ask_context: Option<(String, Option<PathBuf>)>,
+    /// Importar notas Markdown: confirmar o en curso.
+    import: Option<import_ui::ImportStep>,
     new_task: String,
     message: Option<(String, Instant)>,
     last_poll: Instant,
@@ -802,6 +814,11 @@ impl NotesApp {
             agenda_month: None,
             agenda_day: None,
             agenda_list: false,
+            side_ai: false,
+            side_input: String::new(),
+            side_focus: false,
+            ask_context: None,
+            import: None,
             new_task: String::new(),
             message: message.map(|m| (m, Instant::now())),
             last_poll: Instant::now(),
@@ -934,6 +951,11 @@ impl NotesApp {
         app.focus_editor = app.view == View::Editor;
         app.take_update_news();
         app.restart_sync();
+        // Solo en compilaciones de prueba: la IA de la derecha abierta (para capturas).
+        #[cfg(debug_assertions)]
+        if std::env::var("NODEX_DEMO_LADO").is_ok() {
+            app.side_ai = true;
+        }
         // Solo en compilaciones de prueba: abrir Preguntar con una pregunta (para capturas).
         #[cfg(debug_assertions)]
         if let Ok(q) = std::env::var("NODEX_DEMO_ASK") {
@@ -2157,6 +2179,7 @@ impl NotesApp {
             Action::ArchiveSpace(ws) => self.archive_space(ws),
             Action::UnarchiveSpace(ws) => self.unarchive_space(ws),
             Action::Item(w) => self.item_do(w),
+            Action::ToggleSideAi => self.toggle_side_ai(),
             Action::Unarchive(p) => self.unarchive(p),
             Action::NoteToTask(p) => self.note_to_task(p),
             Action::ShowTag(t) => {
@@ -2362,6 +2385,9 @@ impl NotesApp {
         }
         if pressed(Key::K) {
             return Some(Action::ShowAi(ai_view::AiTab::Chat));
+        }
+        if pressed(Key::J) {
+            return Some(Action::ToggleSideAi);
         }
         if pressed(Key::B) {
             return Some(Action::OpenBloc);
@@ -3259,6 +3285,19 @@ impl NotesApp {
                 ui.painter().vline(r.right() - 0.5, r.y_range(), Stroke::new(1.0, theme::BORDER));
                 actions.extend(self.sidebar(ui))
             });
+        // La IA de la derecha, en todas las vistas (salvo en la ventana de la IA).
+        if self.side_ai && self.view != View::Ai {
+            egui::Panel::right("ia-lado")
+                .default_size(side_ai::WIDTH)
+                .size_range(300.0..=640.0)
+                .show_separator_line(false)
+                .frame(Frame::new().fill(BG_SIDE).inner_margin(Margin::symmetric(12, 0)))
+                .show(ui, |ui| {
+                    let r = ui.max_rect().expand2(egui::vec2(12.0, 0.0));
+                    ui.painter().vline(r.left() + 0.5, r.y_range(), Stroke::new(1.0, theme::BORDER));
+                    actions.extend(self.side_ai_panel(ui))
+                });
+        }
         egui::Panel::top("pestanas")
             .exact_size(36.0)
             .show_separator_line(false)
@@ -3310,6 +3349,8 @@ impl NotesApp {
         self.update_news_window(&ctx);
         self.history_window(&ctx);
         self.sync_offer_window(&ctx);
+        self.side_ai_button(&ctx);
+        self.import_window(&ctx);
         self.follow_up_window(&ctx);
         self.done_suggest_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {
