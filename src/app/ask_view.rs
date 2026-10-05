@@ -143,7 +143,18 @@ impl NotesApp {
         // Desde la IA de la derecha: lo que se está mirando (y su nota, que va siempre).
         let context = self.ask_context.clone();
         let focus = context.as_ref().and_then(|c| c.1.clone());
-        let mut notes: Vec<&vault::Note> = self.vault.all_notes().into_iter().filter(|n| since.is_none_or(|s| n.day() >= s)).collect();
+        // Desde la derecha se pregunta por lo que se está viendo: va solo eso (la nota abierta y
+        // sus tareas, las tareas, la agenda o los correos), salvo «Buscar en todas mis notas».
+        let only = context.is_some() && !self.side_all;
+        let view = self.view.clone();
+        let focus_rel = focus.as_ref().map(|p| self.rel(p));
+        let mut notes: Vec<&vault::Note> = self
+            .vault
+            .all_notes()
+            .into_iter()
+            .filter(|n| since.is_none_or(|s| n.day() >= s))
+            .filter(|n| !only || Some(&n.path) == focus.as_ref())
+            .collect();
         // Con muchas notas no se mandan todas: la app se queda con las más relevantes para la
         // pregunta (sin IA) y, si aún son muchas, la IA elige entre esas.
         let total: usize = notes.iter().map(|n| n.text.len()).sum();
@@ -184,7 +195,7 @@ impl NotesApp {
             })
             .collect();
         // El Bloc también (con las claves ocultas).
-        let pages = if since.is_none() { self.bloc_for_ai() } else { Vec::new() };
+        let pages = if since.is_none() && (!only || view == View::Bloc) { self.bloc_for_ai() } else { Vec::new() };
         for (path, page, text) in pages {
             let doc = ask::Doc { key: format!("n{}", docs.len() + 1), path, workspace: "Bloc".into(), title: page.clone(), date: today(), text };
             sources.insert(doc.key.clone(), Source { path: doc.path.clone(), label: format!("Bloc / {page}") });
@@ -192,7 +203,16 @@ impl NotesApp {
         }
         let all = self.agenda.tasks();
         let (pending, done): (Vec<_>, Vec<_>) = all.into_iter().partition(|t| !t.done);
-        let chosen: Vec<agenda::Task> = pending.into_iter().chain(done.into_iter().rev().take(30)).collect();
+        let mut chosen: Vec<agenda::Task> = pending.into_iter().chain(done.into_iter().rev().take(30)).collect();
+        if only {
+            match &view {
+                View::Editor => chosen.retain(|t| t.note.is_some() && t.note == focus_rel),
+                View::Tasks => {}
+                View::Mail | View::Bloc => chosen.clear(),
+                View::Agenda | View::Week | View::Home => chosen.retain(|t| !t.done && t.due.is_some()),
+                _ => chosen.retain(|t| !t.done),
+            }
+        }
         let mut tasks = HashMap::new();
         let follows = self.follow_up_map();
         let task_list: Vec<(String, agenda::Task)> = chosen
@@ -210,7 +230,19 @@ impl NotesApp {
             })
             .collect();
         let month_ago = (Local::now() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
-        let events: Vec<agenda::Event> = self.all_events().into_iter().filter(|e| e.date >= month_ago).collect();
+        let week_ago = (Local::now() - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+        let events: Vec<agenda::Event> = self
+            .all_events()
+            .into_iter()
+            .filter(|e| e.date >= month_ago)
+            .filter(|e| match (&view, only) {
+                (_, false) => true,
+                (View::Editor, true) => e.note.is_some() && e.note == focus_rel,
+                (View::Tasks | View::Mail | View::Bloc, true) => false,
+                (_, true) => e.date >= week_ago,
+            })
+            .collect();
+        let mails = if only && view != View::Mail { Vec::new() } else { self.mail_context() };
         // La pregunta dice qué se está mirando («esta nota» es esa).
         let asked = match &context {
             Some((label, _)) => {
@@ -219,7 +251,7 @@ impl NotesApp {
             }
             None => question.clone(),
         };
-        let input = ask::Input { question: asked, history, docs, tasks: task_list, events, mails: self.mail_context(), today: today() };
+        let input = ask::Input { question: asked, history, docs, tasks: task_list, events, mails, today: today() };
         let turn = Turn { question, answer: None, blocks: Vec::new(), progress: "Buscando en tus notas…".into(), sources, tasks, actions: Vec::new(), done: Vec::new(), entry: None };
         (input, turn)
     }

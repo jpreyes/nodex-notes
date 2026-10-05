@@ -384,7 +384,8 @@ async fn chat(State(state): State<Arc<AppState>>, headers: HeaderMap, Json(mut b
 
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/v1/chat/completions", post(chat))
+        // Una pregunta con muchas notas puede pesar varios MB (el límite por omisión es 2 MB).
+        .route("/v1/chat/completions", post(chat).layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024)))
         .route("/v1/uso", get(usage))
         .route("/v1/cuenta/codigo", post(accounts::send_code))
         .route("/v1/cuenta/entrar", post(accounts::sign_in_code))

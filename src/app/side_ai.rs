@@ -177,6 +177,9 @@ impl NotesApp {
             ui.add_space(6.0);
         }
 
+        ui.checkbox(&mut self.side_all, RichText::new("Buscar en todas mis notas").size(12.5))
+            .on_hover_text("Apagado, la IA solo ve lo que estás mirando (más rápido y liviano)");
+        ui.add_space(4.0);
         // Escribir: Enter envía, Shift+Enter hace otra línea.
         let id = Id::new("ia-lado-campo");
         let focused = ui.memory(|m| m.has_focus(id));
@@ -254,11 +257,19 @@ mod tests {
         let (label, note) = app.side_context();
         assert_eq!((label.as_str(), note.as_ref()), ("la nota «Muro de contención»", Some(&muro)));
 
+        // Por omisión va solo lo que se está viendo: la nota abierta.
         app.ask_context = Some(app.side_context());
+        let (input, _) = app.build_request("Resume esta nota".into(), Vec::new(), None);
+        assert_eq!(input.docs.len(), 1);
+        assert_eq!(input.docs[0].path, muro);
+        assert!(input.mails.is_empty());
+
+        // «Buscar en todas mis notas»: van las más relevantes, y la abierta siempre.
+        app.side_all = true;
         let (input, turn) = app.build_request("Resume esta nota de la losa".into(), Vec::new(), None);
         app.ask_context = None;
         let doc = input.docs.iter().find(|d| d.path == muro).expect("la nota abierta va siempre");
-        assert!(input.docs.len() <= crate::ask::MAX_CANDIDATES + 1);
+        assert!(input.docs.len() > 1 && input.docs.len() <= crate::ask::MAX_CANDIDATES + 1);
         assert!(input.question.contains(&format!("estoy viendo la nota «Muro de contención» [{}]", doc.key)), "{}", input.question);
         assert_eq!(turn.question, "Resume esta nota de la losa", "lo que se ve es solo la pregunta");
         let _ = fs::remove_dir_all(&dir);

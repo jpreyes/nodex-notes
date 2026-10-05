@@ -295,6 +295,32 @@ fn connection(cfg: &Config) -> Result<(Client, ModelSpec), String> {
     Ok((builder.build(), model))
 }
 
+/// Esperas antes de reintentar cuando la conexión se corta (no cuando el servidor responde un error).
+const RETRY_AFTER: [std::time::Duration; 2] = [std::time::Duration::from_millis(1500), std::time::Duration::from_secs(4)];
+
+/// ¿Se cortó la conexión (sin respuesta del servidor)? Eso se reintenta; un error con estado
+/// (clave mala, límite del mes…) no.
+fn is_transport(e: &str) -> bool {
+    !e.contains("status code '") && (e.contains("Reqwest error") || e.contains("error sending request") || e.contains("connection") || e.contains("timed out"))
+}
+
+/// Una consulta, reintentando un par de veces si la conexión se corta.
+fn exec_with_retry(rt: &tokio::runtime::Runtime, client: &Client, model: &ModelSpec, req: &ChatRequest, options: &ChatOptions) -> Result<genai::chat::ChatResponse, String> {
+    let mut waits = RETRY_AFTER.iter();
+    loop {
+        match rt.block_on(client.exec_chat(model.clone(), req.clone(), Some(options))) {
+            Ok(r) => return Ok(r),
+            Err(e) => {
+                let e = e.to_string();
+                match waits.next() {
+                    Some(w) if is_transport(&e) => std::thread::sleep(*w),
+                    _ => return Err(e),
+                }
+            }
+        }
+    }
+}
+
 /// Prueba la conexión con un mensaje mínimo; devuelve los milisegundos que tardó o el motivo del error.
 pub fn test_connection(cfg: &Config, ctx: eframe::egui::Context) -> Receiver<Result<u128, String>> {
     let (tx, rx) = mpsc::channel();
@@ -325,7 +351,7 @@ pub fn complete(cfg: &Config, system: &str, user: &str) -> Result<String, String
         .with_normalize_reasoning_content(true)
         .with_extra_headers(request_headers(cfg));
     let req = ChatRequest::default().with_system(system).append_message(ChatMessage::user(user));
-    let r = rt.block_on(client.exec_chat(model, req, Some(&options))).map_err(|e| friendly_error(&e.to_string()))?;
+    let r = exec_with_retry(&rt, &client, &model, &req, &options).map_err(|e| friendly_error(&e))?;
     let text = r.first_text().unwrap_or("").trim().to_string();
     if text.is_empty() {
         let stop = r.stop_reason.as_ref().map(|s| format!("{s:?}")).unwrap_or_else(|| "?".into());
@@ -359,7 +385,7 @@ impl Ai {
                     .with_extra_headers(headers);
                 for job in job_rx {
                     let req = ChatRequest::default().with_system(&job.system).append_message(ChatMessage::user(&job.user));
-                    let result = match rt.block_on(client.exec_chat(model.clone(), req, Some(&options))) {
+                    let result = match exec_with_retry(&rt, &client, &model, &req, &options) {
                         Ok(r) => {
                             let text = r.first_text().unwrap_or("").trim().to_string();
                             let reasoning = r.reasoning_content.clone().unwrap_or_default();
@@ -369,7 +395,7 @@ impl Ai {
                             result
                         }
                         Err(e) => {
-                            let e = friendly_error(&e.to_string());
+                            let e = friendly_error(&e);
                             log_exchange(&label, &job, "", "error", "", "", &Err(e.clone()));
                             Err(e)
                         }
@@ -401,6 +427,12 @@ pub fn friendly_error(e: &str) -> String {
         (Some(_), Some(msg)) if msg.contains("IA incluida") => msg,
         (Some(status), Some(msg)) => format!("{status}: {msg}"),
         (Some(status), None) => status,
+        // Sin respuesta del servidor: la conexión se cortó (se dice por qué, en corto).
+        _ if is_transport(e) => {
+            let cause = e.rsplit("Cause:").next().unwrap_or(e).trim();
+            let cause: String = cause.lines().last().unwrap_or(cause).trim().chars().take(140).collect();
+            format!("No se pudo conectar con la IA ({cause}). Revisa tu conexión a internet; si sigue, inténtalo en un rato")
+        }
         _ => e.lines().next().unwrap_or(e).to_string(),
     }
 }
@@ -590,6 +622,50 @@ Hoy es {}."###,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Si la conexión se corta, se reintenta sola; y si igual falla, el error dice por qué.
+    #[test]
+    fn retries_when_the_connection_drops() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for (i, s) in listener.incoming().enumerate() {
+                let Ok(mut s) = s else { continue };
+                if i == 0 {
+                    drop(s); // la primera vez, se corta
+                    continue;
+                }
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 8192];
+                loop {
+                    let n = s.read(&mut chunk).unwrap_or(0);
+                    buf.extend_from_slice(&chunk[..n]);
+                    let t = String::from_utf8_lossy(&buf).to_string();
+                    if let Some(end) = t.find("\r\n\r\n") {
+                        let len = t[..end].lines().find_map(|l| l.to_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0))).unwrap_or(0);
+                        if buf.len() >= end + 4 + len || n == 0 {
+                            break;
+                        }
+                    } else if n == 0 {
+                        break;
+                    }
+                }
+                let body = r#"{"id":"x","object":"chat.completion","created":1,"model":"incluida","choices":[{"index":0,"message":{"role":"assistant","content":"hola"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
+                let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes());
+            }
+        });
+        let cfg = Config { proveedor: "notas".into(), modelo: "incluida".into(), servidor_ia: format!("http://127.0.0.1:{port}"), codigo_ia: "prueba".into(), ..Config::default() };
+        assert_eq!(complete(&cfg, "sistema", "hola").unwrap(), "hola");
+
+        // Un servidor que no existe: el error se entiende.
+        let dead = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let gone = dead.local_addr().unwrap().port();
+        drop(dead);
+        let cfg = Config { servidor_ia: format!("http://127.0.0.1:{gone}"), ..cfg };
+        let e = complete(&cfg, "sistema", "hola").unwrap_err();
+        assert!(e.starts_with("No se pudo conectar con la IA ("), "{e}");
+    }
 
     #[test]
     fn empty_answers_are_explained_or_rescued() {

@@ -485,6 +485,8 @@ pub struct NotesApp {
     side_ai: bool,
     side_input: String,
     side_focus: bool,
+    /// La IA de la derecha busca en todas las notas (si no, solo en lo que se está viendo).
+    side_all: bool,
     /// Lo que se está mirando, para la próxima pregunta (desde la IA de la derecha).
     ask_context: Option<(String, Option<PathBuf>)>,
     /// Importar notas Markdown: confirmar o en curso.
@@ -817,6 +819,7 @@ impl NotesApp {
             side_ai: false,
             side_input: String::new(),
             side_focus: false,
+            side_all: false,
             ask_context: None,
             import: None,
             new_task: String::new(),
