@@ -37,6 +37,11 @@ pub(super) enum ItemDo {
     EventDone(agenda::Event, bool),
     EventFollowUp(agenda::Event),
     EventToTask(agenda::Event),
+    /// Sacar un evento de la agenda (y que no vuelva).
+    EventRemove(agenda::Event),
+    /// «Por agendar»: agendar o descartar (por su clave).
+    Schedule(String),
+    Dismiss(String),
 }
 
 /// La clave de un evento (para lo anotado y sus seguimientos).
@@ -149,6 +154,7 @@ fn event_row_inner(ui: &mut Ui, e: &agenda::Event, done: bool, follows: &trackin
             item(ui, format!("{}  {}", icon::NOTE_PENCIL, t!("Tomar notas")), Action::StartMeetingNamed(e.title.clone()));
             item(ui, format!("{}  {}", icon::ARROW_ELBOW_DOWN_RIGHT, t!("Seguimiento")), Action::Item(ItemDo::EventFollowUp(e.clone())));
             item(ui, format!("{}  {}", icon::CHECK_SQUARE, t!("Convertir en tarea")), Action::Item(ItemDo::EventToTask(e.clone())));
+            item(ui, format!("{}  {}", icon::CALENDAR_X, t!("Quitar de la agenda")), Action::Item(ItemDo::EventRemove(e.clone())));
             let label = if done { format!("{}  {}", icon::SQUARE, t!("Marcar pendiente")) } else { format!("{}  {}", icon::CHECK_SQUARE, t!("Marcar hecho")) };
             item(ui, label, Action::Item(ItemDo::EventDone(e.clone(), !done)));
             a
@@ -226,6 +232,17 @@ impl NotesApp {
             }
             ItemDo::EventFollowUp(e) => self.ask_follow_up(e.title.clone(), Target::Task(event_key(&e)), false),
             ItemDo::EventToTask(e) => self.event_to_task(&e),
+            ItemDo::EventRemove(e) => {
+                if e.note.is_some() || self.agenda.events().contains(&e) {
+                    self.unschedule(&e);
+                } else {
+                    // De un calendario: no se puede cambiar allá; deja de verse aquí.
+                    self.mark_event(&e, "quitado");
+                    self.msg(tf!("«{title}» salió de la agenda", title = e.title));
+                }
+            }
+            ItemDo::Schedule(key) => self.schedule(&key),
+            ItemDo::Dismiss(key) => self.dismiss(&key),
         }
     }
 

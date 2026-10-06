@@ -190,7 +190,7 @@ impl NotesApp {
                 let marks = self.event_marks();
                 for e in &events {
                     let state = marks.get(&super::day_items::event_key(e)).map(String::as_str);
-                    if state == Some("tarea") {
+                    if state == Some("tarea") || state == Some("quitado") {
                         continue;
                     }
                     if let Some(a) = super::day_items::event_row(ui, e, state == Some("hecho"), &follows, true) {

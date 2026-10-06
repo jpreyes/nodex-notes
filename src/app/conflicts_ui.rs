@@ -15,7 +15,7 @@ const ORPHAN: Duration = Duration::from_secs(600);
 /// Cada cuánto se buscan copias aunque no haya cambiado ninguna nota (las de tareas.txt).
 const LOOK_EVERY: Duration = Duration::from_secs(30);
 /// Datos internos (`.nodex/`) cuyas copias en conflicto se saben juntar.
-const INTERNAL: [&str; 15] = [
+const INTERNAL: [&str; 16] = [
     "sugerencias.json",
     "seguimiento.txt",
     "seguimiento-revisado.txt",
@@ -31,6 +31,7 @@ const INTERNAL: [&str; 15] = [
     "google.json",
     tasks_sync::KEEP_FILE,
     day_items::EVENTS_FILE,
+    proposals::FILE,
 ];
 
 impl NotesApp {
@@ -178,7 +179,7 @@ impl NotesApp {
                 self.analyzed.extend(text.lines().filter_map(|l| u64::from_str_radix(l.trim(), 16).ok()));
                 self.save_analyzed();
             }
-            "correos-anotados.txt" | "diario-aparte.txt" | "seguimiento.txt" | "seguimiento-revisado.txt" | tasks_sync::KEEP_FILE | day_items::EVENTS_FILE | vault::TRASH_LIST => {
+            "correos-anotados.txt" | "diario-aparte.txt" | "seguimiento.txt" | "seguimiento-revisado.txt" | tasks_sync::KEEP_FILE | day_items::EVENTS_FILE | proposals::FILE | vault::TRASH_LIST => {
                 let merged = conflicts::merge_lines(&vault::read_text(main).unwrap_or_default(), &text);
                 let _ = fs::write(main, merged);
             }

@@ -626,3 +626,45 @@ Copiado
 
 Copiar este bloque
 = Copy this block
+
+Un correo trae algo para la agenda: está en «Por agendar», en Tu día
+= An email has something for your calendar: it's in “To schedule”, in Your day
+
+{n} cosas de correos esperan en «Por agendar», en Tu día
+= {n} things from emails are waiting in “To schedule”, in Your day
+
+No se pudo escribir la agenda: {e}
+= Couldn't write the calendar: {e}
+
+Agendado: «{title}», {when}
+= Scheduled: “{title}”, {when}
+
+«{title}» salió de la agenda
+= “{title}” was removed from the calendar
+
+Por agendar ({n})
+= To schedule ({n})
+
+Vienen de correos: no están en tu agenda hasta que las agendes.
+= From your emails: they're not on your calendar until you schedule them.
+
+Ver el correo en su nota
+= See the email in its note
+
+Agendar
+= Schedule
+
+Descartar
+= Dismiss
+
+No va a la agenda y no se vuelve a proponer
+= It won't go on your calendar and won't be suggested again
+
+Quitar de la agenda
+= Remove from calendar
+
+Pasé {n} a «Por agendar» (en Tu día): venían de correos y habían entrado solos a la agenda
+= Moved {n} to “To schedule” (in Your day): they came from emails and had gone straight onto your calendar
+
+plural:evento
+= event|events

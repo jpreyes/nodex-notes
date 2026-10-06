@@ -38,7 +38,7 @@ impl NotesApp {
         let events: Vec<agenda::Event> = self
             .all_events()
             .into_iter()
-            .filter(|e| marks.get(&day_items::event_key(e)).map(String::as_str) != Some("tarea"))
+            .filter(|e| marks.get(&day_items::event_key(e)).map(String::as_str).is_none_or(|s| s != "tarea" && s != "quitado"))
             .filter(|e| e.date >= key(start) && e.date <= key(end))
             .collect();
         let tasks: Vec<agenda::Task> = self

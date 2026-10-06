@@ -40,6 +40,7 @@ mod manage;
 mod month;
 mod nav;
 mod notes_view;
+mod proposals;
 mod followup;
 mod history_ui;
 mod home;
@@ -951,6 +952,7 @@ impl NotesApp {
         app.focus_editor = app.view == View::Editor;
         app.take_update_news();
         app.restart_sync();
+        app.migrate_mail_events();
         // Solo en compilaciones de prueba: la IA de la derecha abierta (para capturas).
         #[cfg(debug_assertions)]
         if std::env::var("NODEX_DEMO_LADO").is_ok() {
@@ -1856,6 +1858,8 @@ impl NotesApp {
                 .unwrap_or_else(|| home.clone())
         };
         let (mut src_tasks, mut src_events, mut other_tasks, mut other_events) = (vec![], vec![], vec![], vec![]);
+        // Qué eventos salieron de un correo (quedan «por agendar»).
+        let (mut src_mail, mut other_mail): (Vec<bool>, Vec<bool>) = (vec![], vec![]);
         // Acuerdos de reuniones: los de otros llevan "@Nombre" (lo que se espera de cada uno).
         let meeting_units: HashSet<String> = plan.agreements.iter().map(|g| g.unit.clone()).collect();
         for g in &plan.agreements {
@@ -1879,11 +1883,21 @@ impl NotesApp {
         }
         for e in a.eventos.iter().filter(|e| agenda::is_date(e.fecha.trim()) && !e.titulo.trim().is_empty()) {
             let time = Some(e.hora.trim()).filter(|h| agenda::is_time(h));
+            let from_mail = proposals::is_mail_unit(&text, &e.unidad);
             match place(&e.unidad) {
-                Some((rel, w)) => other_events.push(agenda::format_event(e.fecha.trim(), time, &e.titulo, &w, &rel)),
-                None => src_events.push(agenda::format_event(e.fecha.trim(), time, &e.titulo, &src_ws(&e.unidad), &source_rel)),
+                Some((rel, w)) => {
+                    other_events.push(agenda::format_event(e.fecha.trim(), time, &e.titulo, &w, &rel));
+                    other_mail.push(from_mail);
+                }
+                None => {
+                    src_events.push(agenda::format_event(e.fecha.trim(), time, &e.titulo, &src_ws(&e.unidad), &source_rel));
+                    src_mail.push(from_mail);
+                }
             }
         }
+        // Lo de los correos espera a que se agende; lo quitado a mano no vuelve.
+        let src_events = self.gate_events(src_events, |i| src_mail[i]);
+        let other_events = self.gate_events(other_events, |i| other_mail[i]);
         let r1 = self.agenda.replace_for_note(&source_old, &source_rel, &src_tasks, &src_events);
         let r2 = self.agenda.add_lines(&other_tasks, &other_events);
         if let Err(e) = r1.and(r2) {
@@ -3115,6 +3129,9 @@ impl NotesApp {
         Self::column(ui, "agenda", |ui, col_w| {
             let subtitle = t!("Tus calendarios, los eventos de tus notas y las tareas con fecha").to_string();
             view_header(ui, t!("Agenda"), &subtitle);
+            if let Some(a) = self.proposals_ui(ui) {
+                action = Some(a);
+            }
             let subs = self.cfg.calendarios.clone();
             if let Some(a) = calendars_ui::calendars_panel(ui, &subs, &self.cals, &mut self.cal_form) {
                 action = Some(a);

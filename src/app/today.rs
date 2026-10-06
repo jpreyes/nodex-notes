@@ -11,6 +11,10 @@ impl NotesApp {
     /// Lo atrasado, hoy, mañana y esta semana, con sus accesos.
     pub(super) fn day_sections(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
+        // Lo que trajo un correo y espera que se agende.
+        if let Some(a) = self.proposals_ui(ui) {
+            action = Some(a);
+        }
         let (today, tomorrow, week) = (today(), day(1), day(7));
         let tasks = self.agenda.tasks();
         let pending: Vec<&agenda::Task> = tasks.iter().filter(|t| !t.done).collect();
@@ -28,7 +32,7 @@ impl NotesApp {
         // Los eventos que se convirtieron en tarea ya no se ven como evento.
         let marks = self.event_marks();
         let events: Vec<agenda::Event> =
-            self.all_events().into_iter().filter(|e| marks.get(&day_items::event_key(e)).map(String::as_str) != Some("tarea")).collect();
+            self.all_events().into_iter().filter(|e| marks.get(&day_items::event_key(e)).map(String::as_str).is_none_or(|s| s != "tarea" && s != "quitado")).collect();
         let ev = |f: &dyn Fn(&str) -> bool| -> Vec<agenda::Event> {
             let mut v: Vec<agenda::Event> = events.iter().filter(|e| f(&e.date)).cloned().collect();
             v.sort_by(|a, b| (a.date.clone(), a.time.clone()).cmp(&(b.date.clone(), b.time.clone())));
