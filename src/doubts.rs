@@ -153,6 +153,12 @@ pub fn core(line: &str) -> String {
         .join(" ")
 }
 
+/// Todas las notas de adentro cuya primera línea tiene ese texto (en orden).
+pub fn find_units(text: &str, unit: &str) -> Vec<lines::Unit> {
+    let all: Vec<&str> = text.lines().collect();
+    lines::units(text).into_iter().filter(|u| all.get(u.first).is_some_and(|l| core(l) == unit)).collect()
+}
+
 /// La nota de adentro cuya primera línea tiene ese texto.
 pub fn find_unit(text: &str, unit: &str) -> Option<lines::Unit> {
     let all: Vec<&str> = text.lines().collect();

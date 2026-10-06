@@ -561,6 +561,8 @@ pub struct NotesApp {
     dropbox: Option<crate::dropbox::Watch>,
     /// Estado de las notas la última vez que se emparejaron las tareas con sus líneas, y cuándo.
     tasks_gen: Option<u64>,
+    /// Huella de cada nota la última vez que se buscaron líneas repetidas en ella.
+    dups_checked: HashMap<PathBuf, u64>,
     tasks_at: Instant,
     /// Lo mismo para juntar en el Diario las notas del día que quedaron en los espacios.
     days_gen: Option<u64>,
@@ -880,6 +882,7 @@ impl NotesApp {
             diary_open: false,
             dropbox: crate::dropbox::contains(&cfg_root).then(|| crate::dropbox::Watch::start(ctx.clone())),
             tasks_gen: None,
+            dups_checked: HashMap::new(),
             tasks_at: long_ago(),
             days_gen: None,
             days_at: long_ago(),

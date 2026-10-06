@@ -11,6 +11,24 @@ pub(super) enum Reply {
     Text(String, String),
     Ignore(String),
     Open(PathBuf),
+    /// Abrir la nota en una línea (desde 0).
+    OpenLine(PathBuf, usize),
+}
+
+/// Una pregunta «¿es lo mismo que…?»: dónde están las dos líneas (desde 0) y en qué nota está
+/// la otra. `None` si alguna ya no está.
+pub(super) fn dup_places(text_of: impl Fn(&str) -> Option<String>, d: &Doubt) -> Option<Option<(usize, String, usize)>> {
+    let Some(c) = d.choices.iter().find(|c| !c.unir.is_empty()) else { return Some(None) };
+    let here = text_of(&d.note)?;
+    let mine = doubts::find_units(&here, &d.unit);
+    if c.unir_nota == d.note {
+        let others = doubts::find_units(&here, &c.unir);
+        let a = mine.last()?.first;
+        let b = others.iter().map(|u| u.first).find(|f| *f != a)?;
+        return Some(Some((a, c.unir_nota.clone(), b)));
+    }
+    let there = text_of(&c.unir_nota)?;
+    Some(Some((mine.first()?.first, c.unir_nota.clone(), doubts::find_unit(&there, &c.unir)?.first)))
 }
 
 fn join_lines(lines: &[String], trailing: bool) -> String {
@@ -44,6 +62,8 @@ impl NotesApp {
             .iter()
             .filter_map(|d| {
                 let text = self.note_text(&d.note)?;
+                // Un «¿es lo mismo que…?» vale mientras estén las dos líneas.
+                dup_places(|rel| self.note_text(rel), d)?;
                 Some((d.clone(), Self::doubt_unit_number(&text, d)?))
             })
             .collect()
@@ -95,6 +115,11 @@ impl NotesApp {
                 self.msg("Pregunta descartada; no se volverá a preguntar");
             }
             Reply::Open(p) => self.open(p, None),
+            Reply::OpenLine(p, line) => {
+                let text = vault::read_text(&p).unwrap_or_default();
+                let at: usize = text.split('\n').take(line).map(|l| l.chars().count() + 1).sum();
+                self.open_in_tab(p, Some(at));
+            }
         }
         self.doubt_reply = None;
     }
@@ -395,13 +420,58 @@ impl NotesApp {
                         }
                     }
                 });
-                ui.label(RichText::new(&d.question).size(14.5).color(TEXT));
-                ui.label(RichText::new(format!("«{}»", d.unit)).size(12.5).color(MUTED).italics());
+                // «¿Es lo mismo que…?»: las dos líneas, con su número y un enlace para verlas.
+                let places = dup_places(|rel| self.note_text(rel), d).flatten();
+                let mut labels: Vec<String> = d.choices.iter().map(|c| c.label.clone()).collect();
+                match &places {
+                    Some((a, other, b)) => {
+                        let same = *other == d.note;
+                        let title = if same { "Estas dos líneas de la nota parecen decir lo mismo:".to_string() } else { format!("Esta línea se parece a una de «{}»:", other.replace('/', " / ")) };
+                        ui.label(RichText::new(title).size(14.5).color(TEXT));
+                        ui.add_space(2.0);
+                        let rows = if same && b < a { [(*b, other.clone(), d.choices.iter().find(|c| !c.unir.is_empty()).map(|c| c.unir.clone()).unwrap_or_default()), (*a, d.note.clone(), d.unit.clone())] } else { [(*a, d.note.clone(), d.unit.clone()), (*b, other.clone(), d.choices.iter().find(|c| !c.unir.is_empty()).map(|c| c.unir.clone()).unwrap_or_default())] };
+                        for (line, rel, text) in rows {
+                            ui.horizontal_wrapped(|ui| {
+                                let where_ = if same { format!("Línea {}", line + 1) } else { format!("{} · línea {}", rel.replace('/', " / "), line + 1) };
+                                let r = ui.add(egui::Label::new(RichText::new(where_).size(12.5).color(ACCENT)).sense(Sense::click()));
+                                if r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Ver esa línea").clicked() {
+                                    reply = Some(Reply::OpenLine(self.vault.root.join(format!("{rel}.md")), line));
+                                }
+                                ui.label(RichText::new(format!("«{text}»")).size(13.0).color(MUTED).italics());
+                            });
+                        }
+                        // Los botones dicen en qué línea queda.
+                        if same {
+                            for (i, c) in d.choices.iter().enumerate() {
+                                if !c.distintas && !c.unir.is_empty() {
+                                    let keep = if c.al_reves { a } else { b };
+                                    labels[i] = format!("Dejar una sola (en la línea {})", keep + 1);
+                                }
+                            }
+                            if d.unit == d.choices.iter().find(|c| !c.unir.is_empty()).map(|c| c.unir.clone()).unwrap_or_default() {
+                                // Son iguales: da lo mismo cuál queda.
+                                if let Some(i) = d.choices.iter().position(|c| c.al_reves) {
+                                    labels[i].clear();
+                                }
+                                if let Some(l) = labels.iter_mut().find(|l| l.starts_with("Dejar una sola")) {
+                                    *l = "Dejar una sola".into();
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        ui.label(RichText::new(&d.question).size(14.5).color(TEXT));
+                        ui.label(RichText::new(format!("«{}»", d.unit)).size(12.5).color(MUTED).italics());
+                    }
+                }
                 ui.add_space(4.0);
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
                     for (i, c) in d.choices.iter().enumerate() {
-                        let b = egui::Button::new(RichText::new(&c.label).size(13.0)).fill(Color32::WHITE).corner_radius(8);
+                        if labels[i].is_empty() {
+                            continue;
+                        }
+                        let b = egui::Button::new(RichText::new(&labels[i]).size(13.0)).fill(Color32::WHITE).corner_radius(8);
                         let mut tip = Vec::new();
                         if !c.espacio.is_empty() {
                             tip.push(if c.nota.is_empty() { format!("mover a {}", c.espacio) } else { format!("mover a {}/{}", c.espacio, c.nota) });

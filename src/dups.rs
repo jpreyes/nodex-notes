@@ -147,6 +147,86 @@ pub fn find(notes: &[(String, String)], all: &[(String, String)], store: &Store,
     out
 }
 
+/// Las líneas repetidas dentro de una nota se juntan en la primera: la misma tarea (el mismo
+/// `^id`) o el mismo texto (sin contar etiquetas ni fecha, y de al menos 4 palabras). Queda hecha
+/// si alguna lo estaba, con todas las etiquetas, la fecha que hubiera y los seguimientos de las
+/// dos. Pasa cuando dos equipos cambian las mismas líneas a la vez y la sincronización guarda las
+/// dos versiones. Devuelve el texto nuevo y cuántas juntó.
+pub fn merge_same_ids(text: &str) -> Option<(String, usize)> {
+    let ls: Vec<&str> = text.lines().collect();
+    let units = lines::units(text);
+    let mut first_of: HashMap<String, usize> = HashMap::new();
+    let mut heads: HashMap<usize, String> = HashMap::new();
+    let mut extra: HashMap<usize, Vec<String>> = HashMap::new();
+    let mut removed: HashSet<usize> = HashSet::new();
+    for (ui, u) in units.iter().enumerate() {
+        if u.block {
+            continue;
+        }
+        let head = ls[u.first];
+        let core = doubts::core(head);
+        let key = match lines::id_of(head) {
+            Some(id) => format!("id:{id}"),
+            None if core.split_whitespace().count() >= 4 && !lines::is_heading(head) => format!("texto:{}", core.to_lowercase()),
+            None => continue,
+        };
+        let Some(&k) = first_of.get(&key) else {
+            first_of.insert(key, ui);
+            continue;
+        };
+        let ku = &units[k];
+        if doubts::core(ls[ku.first]) != doubts::core(head) {
+            continue;
+        }
+        let mut h = heads.get(&k).cloned().unwrap_or_else(|| ls[ku.first].to_string());
+        if lines::parse(head).check == Some(true) && lines::parse(&h).check == Some(false) {
+            h = lines::toggle_check(&h);
+        }
+        let have: HashSet<String> = crate::tags::line_tags(&h).into_iter().collect();
+        let add: Vec<String> = crate::tags::line_tags(head).into_iter().filter(|t| !have.contains(t)).map(|t| format!("#{t}")).collect();
+        if !add.is_empty() {
+            h = lines::insert_words(&h, &add.join(" "));
+        }
+        if lines::due_of(&h).is_none() {
+            if let Some(d) = lines::due_of(head) {
+                h = lines::set_meta(&h, Some(&d), None);
+            }
+        }
+        heads.insert(k, h);
+        let kept: Vec<&str> = ls[ku.first + 1..=ku.last].to_vec();
+        let e = extra.entry(k).or_default();
+        for c in &ls[u.first + 1..=u.last] {
+            if !kept.contains(c) && !e.iter().any(|x| x == c) {
+                e.push(c.to_string());
+            }
+        }
+        removed.extend(u.first..=u.last);
+    }
+    if removed.is_empty() {
+        return None;
+    }
+    let n = units.iter().filter(|u| removed.contains(&u.first)).count();
+    let mut out: Vec<String> = Vec::new();
+    for (i, l) in ls.iter().enumerate() {
+        if removed.contains(&i) {
+            continue;
+        }
+        let at = units.iter().position(|u| u.first == i);
+        match at.and_then(|k| heads.get(&k)) {
+            Some(h) => out.push(h.clone()),
+            None => out.push(l.to_string()),
+        }
+        if let Some(k) = units.iter().position(|u| u.last == i) {
+            out.extend(extra.get(&k).cloned().unwrap_or_default());
+        }
+    }
+    let mut new = out.join("\n");
+    if text.ends_with('\n') {
+        new.push('\n');
+    }
+    Some((new, n))
+}
+
 /// Resultado de unir dos notas de adentro.
 #[derive(Debug, PartialEq)]
 pub struct Merged {
@@ -164,7 +244,8 @@ pub struct Merged {
 /// sus etiquetas, sus detalles y, si hace falta, su casilla y su fecha; la otra se quita.
 pub fn merge(keep_text: &str, keep_unit: &str, drop_text: &str, drop_unit: &str, same: bool) -> Option<Merged> {
     let k = doubts::find_unit(keep_text, keep_unit)?;
-    let d = doubts::find_unit(drop_text, drop_unit)?;
+    // Dos líneas iguales en la misma nota: se queda la primera y se quita la segunda.
+    let d = if same && keep_unit == drop_unit { doubts::find_units(drop_text, drop_unit).into_iter().nth(1)? } else { doubts::find_unit(drop_text, drop_unit)? };
     if same && k.first == d.first {
         return None;
     }
@@ -240,6 +321,52 @@ pub fn merge(keep_text: &str, keep_unit: &str, drop_text: &str, drop_unit: &str,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// La misma tarea dos veces en una nota (lo que deja la sincronización cuando dos equipos
+    /// cambian la misma línea): queda una, con las etiquetas, la fecha y los seguimientos de las dos.
+    #[test]
+    fn same_task_twice_becomes_one() {
+        let text = "- [x] Poder cambiar de espacio las notas. #espacios #interfaz ^44r0o\n\
+                    - [ ] Poder editar calendarios #calendarios ^517ym\n\
+                    Otra cosa\n\
+                    - [x] Poder cambiar de espacio las notas. #espacios #mover-notas ^44r0o\n\
+                    - [ ] Poder editar calendarios #agenda due:2026-10-09 ^517ym\n\
+                    \u{20}\u{20}↳ 2026-10-05: lo vi con Pedro\n\
+                    - [ ] Algo distinto con el mismo id ^517ym\n";
+        let (new, n) = merge_same_ids(text).unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(
+            new,
+            "- [x] Poder cambiar de espacio las notas. #espacios #interfaz #mover-notas ^44r0o\n\
+             - [ ] Poder editar calendarios #calendarios #agenda due:2026-10-09 ^517ym\n\
+             \u{20}\u{20}↳ 2026-10-05: lo vi con Pedro\n\
+             Otra cosa\n\
+             - [ ] Algo distinto con el mismo id ^517ym\n"
+        );
+        assert!(merge_same_ids(&new).is_none(), "ya no hay nada que juntar");
+
+        // El mismo texto sin casilla (de 4 palabras o más) también; lo corto, no.
+        let text = "Que las tarjetas se minimicen #interfaz
+Revisar
+Otra
+Que las tarjetas se minimicen #hoy
+Revisar
+";
+        let (new, n) = merge_same_ids(text).unwrap();
+        assert_eq!((new.as_str(), n), ("Que las tarjetas se minimicen #interfaz #hoy
+Revisar
+Otra
+Revisar
+", 1));
+    }
+
+    /// «Dejar una sola» con dos líneas iguales en la misma nota: queda la primera.
+    #[test]
+    fn identical_lines_in_one_note_merge() {
+        let text = "- [ ] Revisar el muro #obra\nOtra cosa\n- [ ] Revisar el muro #muro\n";
+        let m = merge(text, "Revisar el muro", text, "Revisar el muro", true).unwrap();
+        assert_eq!(m.keep, "- [ ] Revisar el muro #obra #muro\nOtra cosa\n");
+    }
 
     #[test]
     fn similar_lines_are_found_once() {

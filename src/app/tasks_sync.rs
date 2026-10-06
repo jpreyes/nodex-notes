@@ -44,7 +44,71 @@ impl NotesApp {
         if self.tasks_gen == Some(self.vault.generation) || self.note.dirty || self.tasks_at.elapsed() < EVERY {
             return;
         }
+        self.merge_repeated_lines();
         self.reconcile_tasks();
+    }
+
+    /// Las notas con la misma tarea repetida (el mismo `^id` dos veces) quedan con una sola
+    /// línea (ver `dups::merge_same_ids`). Con Deshacer y en «Lo que hizo».
+    pub(super) fn merge_repeated_lines(&mut self) -> usize {
+        let mut fixes: Vec<(PathBuf, String, String, usize)> = Vec::new();
+        let mut checked = std::mem::take(&mut self.dups_checked);
+        for n in self.vault.all_notes() {
+            // Cada nota se revisa una vez por versión.
+            if checked.get(&n.path) == Some(&n.hash()) {
+                continue;
+            }
+            checked.insert(n.path.clone(), n.hash());
+            if n.path.file_name().is_some_and(|f| crate::conflicts::original_of(&f.to_string_lossy()).is_some()) {
+                continue;
+            }
+            let text = if n.path == self.note.path { self.note.text.clone() } else { n.text.clone() };
+            if let Some((new, k)) = crate::dups::merge_same_ids(&text) {
+                fixes.push((n.path.clone(), text, new, k));
+            }
+        }
+        self.dups_checked = checked;
+        if fixes.is_empty() {
+            return 0;
+        }
+        let total: usize = fixes.iter().map(|f| f.3).sum();
+        let mut files = Vec::new();
+        let mut details = Vec::new();
+        for (path, old, new, k) in fixes {
+            if path == self.note.path {
+                self.note.text = new.clone();
+                self.note.dirty = true;
+                self.save();
+            } else if fs::write(&path, &new).is_ok() {
+                let m = vault::modified(&path).unwrap_or_else(SystemTime::now);
+                self.vault.upsert(path.clone(), new.clone(), m);
+            } else {
+                continue;
+            }
+            if self.analyzed.contains(&ai::fnv(&old)) {
+                self.analyzed.insert(ai::fnv(&new));
+            }
+            details.push(format!("«{}»: {}", vault::stem(&path), if k == 1 { "1 línea".to_string() } else { format!("{k} líneas") }));
+            files.push((path, Some(old)));
+        }
+        self.save_analyzed();
+        self.prune_doubts();
+        let note = files.first().map(|(p, _)| self.rel(p)).unwrap_or_default();
+        self.undo = Some(Undo {
+            files,
+            renamed: None,
+            agenda: self.agenda.snapshot(),
+            at: Instant::now(),
+            moved: Vec::new(),
+            created_dir: None,
+            apart: Vec::new(),
+            keep_tasks: Vec::new(),
+            relinks: Vec::new(),
+        });
+        let text = if total == 1 { "Juntó 1 línea repetida".to_string() } else { format!("Juntó {total} líneas repetidas") };
+        self.log_ai(crate::activity::Kind::Duplicado, &note, text.clone(), details.clone(), true);
+        self.show_toast(crate::activity::Kind::Duplicado, text, details);
+        total
     }
 
     /// Empareja las líneas de tarea de las notas con tareas.txt. Devuelve cuántas cosas corrigió.
