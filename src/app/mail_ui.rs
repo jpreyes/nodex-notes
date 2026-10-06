@@ -85,7 +85,7 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
         ui.horizontal(|ui| {
             ui.label(RichText::new(format!("{}  {}", icon::ENVELOPE_SIMPLE, a.correo)).size(14.0));
             let (host, _) = mail::server_for(a);
-            ui.label(RichText::new(host).size(12.5).color(MUTED));
+            ui.label(RichText::new(host).size(12.5).color(MUTED()));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui.button("Quitar").clicked() {
                     action = Some(Action::RemoveMailAccount(i));
@@ -101,10 +101,10 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
         let status = state.tests.get(&a.correo).cloned().or_else(|| state.errors.get(&a.correo).cloned().map(Err));
         match status {
             Some(Ok(())) => {
-                ui.label(RichText::new(format!("{} Conexión correcta", icon::CHECK_CIRCLE)).size(12.5).color(SUCCESS));
+                ui.label(RichText::new(format!("{} Conexión correcta", icon::CHECK_CIRCLE)).size(12.5).color(SUCCESS()));
             }
             Some(Err(e)) => {
-                ui.label(RichText::new(format!("{} {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED));
+                ui.label(RichText::new(format!("{} {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED()));
             }
             None => {}
         }
@@ -119,7 +119,7 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
         Some((email, pass, server, editing)) => {
             let editing = *editing;
             let mut close = false;
-            Frame::new().fill(BG_SIDE).stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
+            Frame::new().fill(BG_SIDE()).stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 if editing.is_some() {
                     ui.label(RichText::new("Cambiar la conexión").font(theme::bold(14.0)));
@@ -144,11 +144,11 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
                     }
                 });
                 ui.add_space(4.0);
-                ui.label(RichText::new("¿Qué es la contraseña de aplicación? Una contraseña especial que se crea en tu cuenta y sirve solo para esta app; se puede borrar cuando quieras.").size(12.5).color(MUTED));
+                ui.label(RichText::new("¿Qué es la contraseña de aplicación? Una contraseña especial que se crea en tu cuenta y sirve solo para esta app; se puede borrar cuando quieras.").size(12.5).color(MUTED()));
                 for (service, steps, url) in HELP {
                     ui.horizontal_wrapped(|ui| {
                         ui.label(RichText::new(service).size(12.5).strong());
-                        ui.label(RichText::new(steps).size(12.5).color(MUTED));
+                        ui.label(RichText::new(steps).size(12.5).color(MUTED()));
                         if ui.link(RichText::new("Abrir").size(12.5)).clicked() {
                             gcal::open_browser(url);
                         }
@@ -635,7 +635,7 @@ impl NotesApp {
         Self::column(ui, "correos", |ui, _| {
             view_header(ui, "Correos", "Lo que la IA encontró en tu bandeja de entrada y en tus enviados");
             if accounts.is_empty() {
-                ui.label(RichText::new("Agrega tu correo y la IA revisará tus correos para no perder compromisos ni fechas.").color(MUTED));
+                ui.label(RichText::new("Agrega tu correo y la IA revisará tus correos para no perder compromisos ni fechas.").color(MUTED()));
                 ui.add_space(6.0);
                 if ui.button(format!("{}  Agregar correo", icon::PLUS)).clicked() {
                     action = Some(Action::OpenSettings(Section::Mail));
@@ -660,7 +660,7 @@ impl NotesApp {
                     when.push(format!("a diario a las {}", self.cfg.correo_diario.trim()));
                 }
                 let status = if when.is_empty() { status } else { format!("{status} · revisa {}", when.join(" y ")) };
-                ui.label(RichText::new(format!("{} · {status}", accounts.join(", "))).size(12.5).color(MUTED));
+                ui.label(RichText::new(format!("{} · {status}", accounts.join(", "))).size(12.5).color(MUTED()));
                 if self.mail.busy() {
                     ui.spinner();
                 } else if ui.link(RichText::new("Revisar ahora").size(12.5)).clicked() {
@@ -668,21 +668,21 @@ impl NotesApp {
                 }
             });
             for (a, e) in &self.mail.errors {
-                ui.label(RichText::new(format!("{} {a}: {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED));
+                ui.label(RichText::new(format!("{} {a}: {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED()));
             }
             if let Some(e) = &self.mail.ai_error {
-                ui.label(RichText::new(format!("{} La IA no pudo leer los correos: {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED));
+                ui.label(RichText::new(format!("{} La IA no pudo leer los correos: {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED()));
             }
             ui.add_space(10.0);
 
             // Verificar compromisos.
             for (m, i) in &checks {
                 let f = &m.fulfills[*i];
-                Frame::new().fill(Color32::from_rgb(236, 248, 241)).stroke(Stroke::new(1.0, Color32::from_rgb(170, 220, 190))).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
+                Frame::new().fill(theme::c(Color32::from_rgb(236, 248, 241))).stroke(Stroke::new(1.0, theme::c(Color32::from_rgb(170, 220, 190)))).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.label(RichText::new(format!("{} Verificar un compromiso", icon::CHECK_CIRCLE)).size(12.5).color(SUCCESS));
+                    ui.label(RichText::new(format!("{} Verificar un compromiso", icon::CHECK_CIRCLE)).size(12.5).color(SUCCESS()));
                     ui.label(RichText::new(format!("¿Se cumplió «{}»?", f.task_text)).size(14.5));
-                    ui.label(RichText::new(format!("Llegó «{}» de {} · {}", m.subject, short_name(&m.from), m.date)).size(12.5).color(MUTED));
+                    ui.label(RichText::new(format!("Llegó «{}» de {} · {}", m.subject, short_name(&m.from), m.date)).size(12.5).color(MUTED()));
                     ui.horizontal(|ui| {
                         if ui.button("Sí, marcar hecho").clicked() {
                             action = Some(Action::MailFulfill(m.id.clone(), *i, true));
@@ -711,11 +711,11 @@ impl NotesApp {
                     head = ui
                         .vertical(|ui| {
                             ui.horizontal(|ui| {
-                                let color = if m.important { TEXT } else { MUTED };
+                                let color = if m.important { TEXT() } else { MUTED() };
                                 ui.label(RichText::new(&who).size(14.0).strong().color(color));
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     let time = m.date.get(11..).unwrap_or("");
-                                    ui.label(RichText::new(if m.sent { format!("{time} · enviado") } else { time.to_string() }).size(12.5).color(MUTED));
+                                    ui.label(RichText::new(if m.sent { format!("{time} · enviado") } else { time.to_string() }).size(12.5).color(MUTED()));
                                 });
                             });
                             ui.label(RichText::new(&m.subject).size(14.0));
@@ -723,9 +723,9 @@ impl NotesApp {
                         .response
                         .rect;
                     if !m.summary.is_empty() {
-                        ui.label(RichText::new(&m.summary).size(12.5).color(MUTED));
+                        ui.label(RichText::new(&m.summary).size(12.5).color(MUTED()));
                     } else if !m.analyzed {
-                        ui.label(RichText::new("La IA todavía no lo lee…").size(12.5).color(MUTED));
+                        ui.label(RichText::new("La IA todavía no lo lee…").size(12.5).color(MUTED()));
                     }
                     if !m.items.is_empty() || !m.workspace.is_empty() {
                         ui.horizontal_wrapped(|ui| {
@@ -735,17 +735,17 @@ impl NotesApp {
                                 ui.label(RichText::new(format!("{} {it}", icon::CHECK_SQUARE)).size(12.5).color(c.text).background_color(c.bg));
                             }
                             if !m.noted.is_empty() {
-                                ui.label(RichText::new(format!("→ anotado en {}", m.noted.replace('/', " / "))).size(12.5).color(MUTED));
+                                ui.label(RichText::new(format!("→ anotado en {}", m.noted.replace('/', " / "))).size(12.5).color(MUTED()));
                             } else if !m.workspace.is_empty() {
-                                ui.label(RichText::new(format!("→ {}", m.workspace)).size(12.5).color(MUTED));
+                                ui.label(RichText::new(format!("→ {}", m.workspace)).size(12.5).color(MUTED()));
                             }
                         });
                     }
                     if self.mail.open.as_deref() == Some(m.id.as_str()) {
                         ui.add_space(6.0);
-                        Frame::new().fill(BG_SIDE).corner_radius(8).inner_margin(Margin::symmetric(10, 8)).show(ui, |ui| {
+                        Frame::new().fill(BG_SIDE()).corner_radius(8).inner_margin(Margin::symmetric(10, 8)).show(ui, |ui| {
                             ui.set_width(ui.available_width());
-                            ui.label(RichText::new(format!("De: {}\nPara: {}", m.from, m.to)).size(12.5).color(MUTED));
+                            ui.label(RichText::new(format!("De: {}\nPara: {}", m.from, m.to)).size(12.5).color(MUTED()));
                             ui.add_space(4.0);
                             ui.label(RichText::new(m.body.chars().take(3000).collect::<String>()).size(13.0));
                         });
@@ -768,19 +768,19 @@ impl NotesApp {
                 });
                 let hit = ui.interact(head, Id::new(("correo", &m.id)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
                 if hit.hovered() {
-                    ui.painter().rect_stroke(r.response.rect, 6, Stroke::new(1.0, theme::BORDER), egui::StrokeKind::Inside);
+                    ui.painter().rect_stroke(r.response.rect, 6, Stroke::new(1.0, theme::BORDER()), egui::StrokeKind::Inside);
                 }
                 if hit.clicked() {
                     toggle_open = Some(m.id.clone());
                 }
             }
             if self.mail.store.mails.is_empty() {
-                ui.label(RichText::new("Todavía no hay correos: la primera revisión trae los de la última semana.").color(MUTED));
+                ui.label(RichText::new("Todavía no hay correos: la primera revisión trae los de la última semana.").color(MUTED()));
             }
             if bulk > 0 {
                 ui.add_space(8.0);
                 let label = if self.mail.show_bulk { "Ocultar boletines y correos sin compromisos".to_string() } else { format!("{} sin compromisos (boletines, avisos…): ver", plural(bulk, "correo")) };
-                if ui.link(RichText::new(label).size(12.5).color(MUTED)).clicked() {
+                if ui.link(RichText::new(label).size(12.5).color(MUTED())).clicked() {
                     toggle_bulk = true;
                 }
             }

@@ -45,7 +45,7 @@ impl NotesApp {
             let dots = |ui: &mut Ui| {
                 ui.horizontal(|ui| {
                     for s in [Step::Folder, Step::Account, Step::Ready] {
-                        let c = if s == step { ACCENT } else { theme::BORDER };
+                        let c = if s == step { ACCENT() } else { theme::BORDER() };
                         let (r, _) = ui.allocate_exact_size(egui::vec2(22.0, 5.0), Sense::hover());
                         ui.painter().rect_filled(r, 2.5, c);
                     }
@@ -59,7 +59,7 @@ impl NotesApp {
                     ui.add_space(4.0);
                     ui.label(RichText::new("Escribe como en un bloc, una idea por línea. La IA las ordena sola: cada cosa a su espacio, con etiquetas, tareas y fechas.").size(13.5));
                     ui.add_space(12.0);
-                    ui.label(RichText::new("Tus notas se guardan aquí, como archivos de texto que siempre son tuyos:").size(13.0).color(MUTED));
+                    ui.label(RichText::new("Tus notas se guardan aquí, como archivos de texto que siempre son tuyos:").size(13.0).color(MUTED()));
                     let path = folder.display().to_string();
                     ui.add(egui::Label::new(RichText::new(format!("{} {path}", icon::FOLDER_SIMPLE)).size(13.0)).truncate()).on_hover_text(&path);
                     if ui.small_button("Elegir otra carpeta…").clicked() {
@@ -74,10 +74,10 @@ impl NotesApp {
                             "Con tu cuenta (en el paso siguiente), tus notas se sincronizan solas en todos tus equipos."
                         })
                         .size(12.5)
-                        .color(MUTED),
+                        .color(MUTED()),
                     );
                     ui.add_space(14.0);
-                    if ui.add(egui::Button::new(RichText::new("Seguir").color(Color32::WHITE)).fill(ACCENT)).clicked() {
+                    if ui.add(egui::Button::new(RichText::new("Seguir").color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                         next = Some(if server.is_some() && !signed_in { Step::Account } else { Step::Ready });
                     }
                 }
@@ -105,15 +105,15 @@ impl NotesApp {
                     ] {
                         ui.horizontal_wrapped(|ui| {
                             ui.label(RichText::new(k).size(13.5).strong());
-                            ui.label(RichText::new(format!("— {what}")).size(13.0).color(MUTED));
+                            ui.label(RichText::new(format!("— {what}")).size(13.0).color(MUTED()));
                         });
                     }
                     if !signed_in && self.ai.is_err() {
                         ui.add_space(8.0);
-                        ui.label(RichText::new("La IA aún no está activa: entra con tu cuenta o pon tu clave en Configuración → Inteligencia artificial.").size(12.5).color(WARN));
+                        ui.label(RichText::new("La IA aún no está activa: entra con tu cuenta o pon tu clave en Configuración → Inteligencia artificial.").size(12.5).color(WARN()));
                     }
                     ui.add_space(14.0);
-                    if ui.add(egui::Button::new(RichText::new("Empezar a escribir").color(Color32::WHITE)).fill(ACCENT)).clicked() {
+                    if ui.add(egui::Button::new(RichText::new("Empezar a escribir").color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                         done = true;
                     }
                 }

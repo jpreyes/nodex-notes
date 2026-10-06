@@ -137,7 +137,7 @@ impl NotesApp {
             } else {
                 format!("{}  Abre una nota para adjuntarle archivos", icon::PAPERCLIP)
             };
-            p.text(rect.center(), Align2::CENTER_CENTER, text, theme::bold(20.0), ACCENT);
+            p.text(rect.center(), Align2::CENTER_CENTER, text, theme::bold(20.0), ACCENT());
         }
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
         if dropped.is_empty() {

@@ -37,6 +37,8 @@ pub struct Config {
     pub actualizar_sola: bool,
     /// Al cerrar la ventana, Notas sigue en segundo plano junto al reloj (Windows).
     pub segundo_plano: bool,
+    /// Tema: "claro", "oscuro" o "sistema" (el de Windows / Mac).
+    pub tema: String,
     /// Abrir Notas al iniciar Windows, ya en segundo plano.
     pub iniciar_con_windows: bool,
     /// No sincronizar la carpeta de notas con la cuenta (se sincroniza sola al entrar, salvo que
@@ -92,6 +94,7 @@ impl Default for Config {
             cuenta: String::new(),
             actualizar_sola: true,
             segundo_plano: true,
+            tema: "sistema".into(),
             iniciar_con_windows: false,
             sin_sincronizar: false,
             first_run: false,
@@ -195,6 +198,9 @@ fn render(c: &Config) -> String {
          # Al cerrar la ventana, seguir en segundo plano junto al reloj (sincroniza tus notas)\n\
          segundo_plano = {}\n\
          \n\
+         # Tema: claro, oscuro o sistema (el mismo de Windows)\n\
+         tema = {}\n\
+         \n\
          # Abrir Notas al iniciar Windows, ya en segundo plano\n\
          iniciar_con_windows = {}\n\
          \n\
@@ -215,6 +221,7 @@ fn render(c: &Config) -> String {
         q(&c.correo_diario),
         c.actualizar_sola,
         c.segundo_plano,
+        q(&c.tema),
         c.iniciar_con_windows,
         c.sin_sincronizar,
     );

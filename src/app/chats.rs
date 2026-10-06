@@ -213,7 +213,7 @@ impl NotesApp {
         ui.add_space(10.0);
         section(ui, "Conversaciones", None);
         if list.is_empty() {
-            ui.label(RichText::new("Aquí quedan tus conversaciones con la IA, para retomarlas.").size(12.5).color(MUTED));
+            ui.label(RichText::new("Aquí quedan tus conversaciones con la IA, para retomarlas.").size(12.5).color(MUTED()));
         }
         let mut open = None;
         let mut delete = None;
@@ -227,7 +227,7 @@ impl NotesApp {
                         t @ ("Hoy" | "Ayer") => t.to_string(),
                         _ => long_date(&day),
                     };
-                    ui.label(RichText::new(label).size(12.0).color(MUTED));
+                    ui.label(RichText::new(label).size(12.0).color(MUTED()));
                     last_day = day;
                 }
                 let selected = self.ask.chat_id.as_deref() == Some(c.id.as_str());

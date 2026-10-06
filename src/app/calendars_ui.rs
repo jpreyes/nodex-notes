@@ -33,7 +33,7 @@ pub(super) fn calendars_panel(ui: &mut Ui, subs: &[Subscription], cals: &Calenda
                 (None, false) => "Descargando…".to_string(),
             };
             let label = if error.is_some() { format!("{}  {}", icon::WARNING_CIRCLE, s.nombre) } else { format!("●  {}", s.nombre) };
-            let chip = egui::Button::new(RichText::new(label).size(12.5).color(if error.is_some() { RED } else { c.text })).fill(c.bg).stroke(Stroke::new(1.0, c.border)).corner_radius(11);
+            let chip = egui::Button::new(RichText::new(label).size(12.5).color(if error.is_some() { RED() } else { c.text })).fill(c.bg).stroke(Stroke::new(1.0, c.border)).corner_radius(11);
             let r = ui.add(chip).on_hover_text(format!("{state}\n{url}\nClic: cambiar nombre o enlace · Clic derecho: más"));
             if r.clicked() {
                 *form = Some((s.nombre.clone(), s.url.clone(), Some(i)));
@@ -67,7 +67,7 @@ pub(super) fn calendars_panel(ui: &mut Ui, subs: &[Subscription], cals: &Calenda
     if let Some((name, url, editing)) = form {
         let editing = *editing;
         ui.add_space(6.0);
-        Frame::new().fill(BG_SIDE).stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
+        Frame::new().fill(BG_SIDE()).stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(RichText::new(if editing.is_some() { "Cambiar el calendario" } else { "Agregar un calendario" }).font(theme::bold(14.0)));
             ui.add_space(4.0);
@@ -78,7 +78,7 @@ pub(super) fn calendars_panel(ui: &mut Ui, subs: &[Subscription], cals: &Calenda
                 u.starts_with("https://") || u.starts_with("http://") || u.starts_with("webcal://")
             };
             if !url.trim().is_empty() && !valid {
-                ui.label(RichText::new("El enlace debe empezar con https:// o webcal://").size(12.5).color(RED));
+                ui.label(RichText::new("El enlace debe empezar con https:// o webcal://").size(12.5).color(RED()));
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
@@ -98,10 +98,10 @@ pub(super) fn calendars_panel(ui: &mut Ui, subs: &[Subscription], cals: &Calenda
             egui::CollapsingHeader::new(RichText::new("¿Dónde saco el enlace?").size(12.5)).default_open(subs.is_empty() && editing.is_none()).show(ui, |ui| {
                 for (service, steps) in HELP {
                     ui.label(RichText::new(service).size(12.5).strong());
-                    ui.label(RichText::new(steps).size(12.5).color(MUTED));
+                    ui.label(RichText::new(steps).size(12.5).color(MUTED()));
                     ui.add_space(4.0);
                 }
-                ui.label(RichText::new("Solo se lee: la app no cambia esos calendarios. Se actualizan al abrir la app y cada 15 minutos.").size(12.5).color(MUTED));
+                ui.label(RichText::new("Solo se lee: la app no cambia esos calendarios. Se actualizan al abrir la app y cada 15 minutos.").size(12.5).color(MUTED()));
             });
         });
     }

@@ -48,23 +48,23 @@ impl NotesApp {
             });
             ui.add_space(12.0);
             if notes.is_empty() {
-                ui.label(RichText::new("Ninguna nota tiene eso.").color(MUTED));
+                ui.label(RichText::new("Ninguna nota tiene eso.").color(MUTED()));
             }
             for (path, title, ws, modified, preview) in notes.iter().take(SHOW) {
                 let when = modified.map(|m| long_date(&chrono::DateTime::<Local>::from(m).format("%Y-%m-%d").to_string())).unwrap_or_default();
                 let r = Frame::new()
-                    .stroke(Stroke::new(1.0, theme::BORDER))
+                    .stroke(Stroke::new(1.0, theme::BORDER()))
                     .corner_radius(10)
                     .inner_margin(Margin::symmetric(12, 8))
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         let mut job = LayoutJob::default();
-                        job.append(&format!("{}  ", icon::FILE_TEXT), 0.0, fmt(FontId::proportional(14.0), MUTED));
-                        job.append(title, 0.0, fmt(theme::bold(14.5), TEXT));
-                        job.append(&format!("   {ws} · {when}"), 0.0, fmt(FontId::proportional(12.5), MUTED));
+                        job.append(&format!("{}  ", icon::FILE_TEXT), 0.0, fmt(FontId::proportional(14.0), MUTED()));
+                        job.append(title, 0.0, fmt(theme::bold(14.5), TEXT()));
+                        job.append(&format!("   {ws} · {when}"), 0.0, fmt(FontId::proportional(12.5), MUTED()));
                         ui.label(job);
                         if !preview.is_empty() {
-                            ui.label(RichText::new(preview).size(12.5).color(MUTED));
+                            ui.label(RichText::new(preview).size(12.5).color(MUTED()));
                         }
                     })
                     .response
@@ -90,7 +90,7 @@ impl NotesApp {
                 ui.add_space(6.0);
             }
             if notes.len() > SHOW {
-                ui.label(RichText::new(format!("y {} más: busca para encontrarlas", notes.len() - SHOW)).size(12.5).color(MUTED));
+                ui.label(RichText::new(format!("y {} más: busca para encontrarlas", notes.len() - SHOW)).size(12.5).color(MUTED()));
             }
         });
         action

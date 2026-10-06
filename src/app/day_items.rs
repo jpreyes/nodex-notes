@@ -109,27 +109,27 @@ pub(super) fn event_row(ui: &mut Ui, e: &agenda::Event, done: bool, follows: &tr
 fn event_row_inner(ui: &mut Ui, e: &agenda::Event, done: bool, follows: &tracking::FollowUps, date: bool) -> Option<Action> {
     let mut action = None;
     ui.horizontal(|ui| {
-        let (glyph, color) = if done { (icon::CHECK_SQUARE, ACCENT) } else { (icon::SQUARE, MUTED) };
+        let (glyph, color) = if done { (icon::CHECK_SQUARE, ACCENT()) } else { (icon::SQUARE, MUTED()) };
         let check = egui::Button::new(RichText::new(glyph).size(18.0).color(color)).frame(false);
         if ui.add(check).on_hover_text(if done { "Marcar pendiente" } else { "Marcar hecho" }).clicked() {
             action = Some(Action::Item(ItemDo::EventDone(e.clone(), !done)));
         }
         let mut job = LayoutJob::default();
         if date {
-            job.append(&format!("{}  ", long_date(&e.date)), 0.0, fmt(FontId::proportional(13.5), MUTED));
+            job.append(&format!("{}  ", long_date(&e.date)), 0.0, fmt(FontId::proportional(13.5), MUTED()));
         }
         let lead = match &e.time {
             Some(t) => format!("{t}  "),
             None => format!("{}  ", icon::CALENDAR_BLANK),
         };
-        job.append(&lead, 0.0, fmt(FontId::proportional(14.0), MUTED));
-        let mut body = fmt(FontId::proportional(14.5), if done { MUTED } else { TEXT });
+        job.append(&lead, 0.0, fmt(FontId::proportional(14.0), MUTED()));
+        let mut body = fmt(FontId::proportional(14.5), if done { MUTED() } else { TEXT() });
         if done {
-            body.strikethrough = Stroke::new(1.0, MUTED);
+            body.strikethrough = Stroke::new(1.0, MUTED());
         }
         job.append(&e.title, 0.0, body);
         if !e.project.is_empty() {
-            job.append(&format!("   {}", e.project), 0.0, fmt(FontId::proportional(12.5), MUTED));
+            job.append(&format!("   {}", e.project), 0.0, fmt(FontId::proportional(12.5), MUTED()));
         }
         let r = ui.add(egui::Label::new(job).wrap().sense(Sense::click()));
         if r.clicked() && e.note.is_some() {
@@ -159,16 +159,16 @@ fn event_row_inner(ui: &mut Ui, e: &agenda::Event, done: bool, follows: &trackin
             }
         });
         if e.note.is_some() {
-            let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(MUTED)).frame(false);
+            let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(MUTED())).frame(false);
             if ui.add(b).on_hover_text("Ir a donde está escrito").clicked() {
                 action = Some(Action::Item(ItemDo::OpenEvent(e.clone())));
             }
         }
-        let b = egui::Button::new(RichText::new(icon::ARROW_ELBOW_DOWN_RIGHT).size(14.0).color(MUTED)).frame(false);
+        let b = egui::Button::new(RichText::new(icon::ARROW_ELBOW_DOWN_RIGHT).size(14.0).color(MUTED())).frame(false);
         if ui.add(b).on_hover_text("Anotar un seguimiento: qué se hizo").clicked() {
             action = Some(Action::Item(ItemDo::EventFollowUp(e.clone())));
         }
-        let b = egui::Button::new(RichText::new(icon::DOTS_THREE).size(16.0).color(MUTED)).frame(false);
+        let b = egui::Button::new(RichText::new(icon::DOTS_THREE).size(16.0).color(MUTED())).frame(false);
         let r = ui.add(b).on_hover_text("Más: tomar notas, convertir en tarea…");
         egui::Popup::menu(&r).show(|ui| {
             if let Some(a) = menu(ui) {
@@ -180,7 +180,7 @@ fn event_row_inner(ui: &mut Ui, e: &agenda::Event, done: bool, follows: &trackin
         let when = if d.is_empty() { String::new() } else { format!("{}  ·  ", tracking::short_day(d)) };
         ui.horizontal_wrapped(|ui| {
             ui.add_space(30.0);
-            ui.label(RichText::new(format!("{}  {when}{text}", icon::ARROW_ELBOW_DOWN_RIGHT)).size(12.5).color(Color32::from_rgb(70, 110, 75)));
+            ui.label(RichText::new(format!("{}  {when}{text}", icon::ARROW_ELBOW_DOWN_RIGHT)).size(12.5).color(theme::c(Color32::from_rgb(70, 110, 75))));
         });
     }
     action

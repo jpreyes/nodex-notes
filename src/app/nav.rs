@@ -86,7 +86,7 @@ impl NotesApp {
         let can_back = !self.nav.back.is_empty();
         let can_fwd = !self.nav.forward.is_empty();
         let arrow = |ui: &mut Ui, glyph: &str, on: bool, tip: &str| {
-            let color = if on { TEXT } else { theme::BORDER };
+            let color = if on { TEXT() } else { theme::BORDER() };
             ui.add_enabled(on, egui::Button::new(RichText::new(glyph).size(15.0).color(color)).frame(false).min_size(egui::vec2(24.0, 28.0)))
                 .on_hover_text(tip)
                 .clicked()

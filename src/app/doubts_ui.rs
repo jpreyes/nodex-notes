@@ -402,19 +402,19 @@ impl NotesApp {
     pub(super) fn doubt_card(&mut self, ui: &mut Ui, d: &Doubt, number: usize, note_label: Option<String>) -> Option<Reply> {
         let mut reply = None;
         Frame::new()
-            .fill(Color32::from_rgb(244, 248, 254))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(200, 220, 246)))
+            .fill(theme::c(Color32::from_rgb(244, 248, 254)))
+            .stroke(Stroke::new(1.0, theme::c(Color32::from_rgb(200, 220, 246))))
             .corner_radius(10)
             .inner_margin(Margin::symmetric(14, 10))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal_wrapped(|ui| {
                     if note_label.is_none() {
-                        ui.label(RichText::new(format!("{} La IA pregunta ·", icon::SPARKLE)).size(12.5).color(ACCENT));
+                        ui.label(RichText::new(format!("{} La IA pregunta ·", icon::SPARKLE)).size(12.5).color(ACCENT()));
                     }
-                    ui.label(RichText::new(format!("Nota {number}")).size(12.5).color(MUTED));
+                    ui.label(RichText::new(format!("Nota {number}")).size(12.5).color(MUTED()));
                     if let Some(label) = &note_label {
-                        let r = ui.add(egui::Label::new(RichText::new(format!("· {label}")).size(12.5).color(MUTED)).sense(Sense::click()));
+                        let r = ui.add(egui::Label::new(RichText::new(format!("· {label}")).size(12.5).color(MUTED())).sense(Sense::click()));
                         if r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Abrir la nota").clicked() {
                             reply = Some(Reply::Open(self.vault.root.join(format!("{}.md", d.note))));
                         }
@@ -427,17 +427,17 @@ impl NotesApp {
                     Some((a, other, b)) => {
                         let same = *other == d.note;
                         let title = if same { "Estas dos líneas de la nota parecen decir lo mismo:".to_string() } else { format!("Esta línea se parece a una de «{}»:", other.replace('/', " / ")) };
-                        ui.label(RichText::new(title).size(14.5).color(TEXT));
+                        ui.label(RichText::new(title).size(14.5).color(TEXT()));
                         ui.add_space(2.0);
                         let rows = if same && b < a { [(*b, other.clone(), d.choices.iter().find(|c| !c.unir.is_empty()).map(|c| c.unir.clone()).unwrap_or_default()), (*a, d.note.clone(), d.unit.clone())] } else { [(*a, d.note.clone(), d.unit.clone()), (*b, other.clone(), d.choices.iter().find(|c| !c.unir.is_empty()).map(|c| c.unir.clone()).unwrap_or_default())] };
                         for (line, rel, text) in rows {
                             ui.horizontal_wrapped(|ui| {
                                 let where_ = if same { format!("Línea {}", line + 1) } else { format!("{} · línea {}", rel.replace('/', " / "), line + 1) };
-                                let r = ui.add(egui::Label::new(RichText::new(where_).size(12.5).color(ACCENT)).sense(Sense::click()));
+                                let r = ui.add(egui::Label::new(RichText::new(where_).size(12.5).color(ACCENT())).sense(Sense::click()));
                                 if r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Ver esa línea").clicked() {
                                     reply = Some(Reply::OpenLine(self.vault.root.join(format!("{rel}.md")), line));
                                 }
-                                ui.label(RichText::new(format!("«{text}»")).size(13.0).color(MUTED).italics());
+                                ui.label(RichText::new(format!("«{text}»")).size(13.0).color(MUTED()).italics());
                             });
                         }
                         // Los botones dicen en qué línea queda.
@@ -460,8 +460,8 @@ impl NotesApp {
                         }
                     }
                     None => {
-                        ui.label(RichText::new(&d.question).size(14.5).color(TEXT));
-                        ui.label(RichText::new(format!("«{}»", d.unit)).size(12.5).color(MUTED).italics());
+                        ui.label(RichText::new(&d.question).size(14.5).color(TEXT()));
+                        ui.label(RichText::new(format!("«{}»", d.unit)).size(12.5).color(MUTED()).italics());
                     }
                 }
                 ui.add_space(4.0);
@@ -471,7 +471,7 @@ impl NotesApp {
                         if labels[i].is_empty() {
                             continue;
                         }
-                        let b = egui::Button::new(RichText::new(&labels[i]).size(13.0)).fill(Color32::WHITE).corner_radius(8);
+                        let b = egui::Button::new(RichText::new(&labels[i]).size(13.0)).fill(theme::c(Color32::WHITE)).corner_radius(8);
                         let mut tip = Vec::new();
                         if !c.espacio.is_empty() {
                             tip.push(if c.nota.is_empty() { format!("mover a {}", c.espacio) } else { format!("mover a {}/{}", c.espacio, c.nota) });
@@ -498,7 +498,7 @@ impl NotesApp {
                     if ui.link(RichText::new("Otra respuesta…").size(12.5)).clicked() {
                         self.doubt_reply = Some((d.id.clone(), String::new()));
                     }
-                    if ui.link(RichText::new("Ignorar").size(12.5).color(MUTED)).on_hover_text("Descarta la pregunta: no se aplica nada y no se vuelve a preguntar").clicked() {
+                    if ui.link(RichText::new("Ignorar").size(12.5).color(MUTED())).on_hover_text("Descarta la pregunta: no se aplica nada y no se vuelve a preguntar").clicked() {
                         reply = Some(Reply::Ignore(d.id.clone()));
                     }
                 });

@@ -358,13 +358,13 @@ impl NotesApp {
             ui.set_width(440.0);
             ui.label(RichText::new(format!("{} Reuniones y notas que se repiten", icon::ARROWS_CLOCKWISE)).font(theme::bold(16.0)));
             ui.add_space(4.0);
-            ui.label(RichText::new("A esa hora se crea sola su nota del día, con los acuerdos que quedaron pendientes de la anterior.").size(12.5).color(MUTED));
+            ui.label(RichText::new("A esa hora se crea sola su nota del día, con los acuerdos que quedaron pendientes de la anterior.").size(12.5).color(MUTED()));
             ui.add_space(8.0);
             for (id, r) in &list {
                 ui.horizontal(|ui| {
                     let glyph = if r.reunion { icon::USERS } else { icon::FILE_TEXT };
                     ui.label(RichText::new(format!("{glyph}  {}", r.titulo)).size(13.5));
-                    ui.label(RichText::new(format!("{} · {}", r.describe(), r.espacio)).size(12.0).color(MUTED));
+                    ui.label(RichText::new(format!("{} · {}", r.describe(), r.espacio)).size(12.0).color(MUTED()));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.small_button(icon::TRASH).on_hover_text("Que ya no se repita (sus notas quedan)").clicked() {
                             remove = Some(id.clone());
@@ -436,7 +436,7 @@ impl NotesApp {
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 let ok = form.complete();
-                if ui.add_enabled(ok, egui::Button::new(RichText::new("Agregar").color(Color32::WHITE)).fill(ACCENT)).clicked() {
+                if ui.add_enabled(ok, egui::Button::new(RichText::new("Agregar").color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                     add = true;
                 }
                 if ui.button("Cerrar").clicked() {

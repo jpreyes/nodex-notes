@@ -263,7 +263,7 @@ impl NotesApp {
             ui.set_width(360.0);
             ui.label(RichText::new(format!("Cambiar el nombre de #{old}")).font(theme::bold(16.0)));
             ui.add_space(4.0);
-            ui.label(RichText::new("Cambia en todas las notas. Si ya existe la etiqueta nueva, se juntan.").size(13.0).color(MUTED));
+            ui.label(RichText::new("Cambia en todas las notas. Si ya existe la etiqueta nueva, se juntan.").size(13.0).color(MUTED()));
             ui.add_space(8.0);
             let r = ui.add(egui::TextEdit::singleline(name).hint_text("Nombre nuevo").desired_width(f32::INFINITY));
             if !r.has_focus() && !r.lost_focus() && ui.memory(|m| m.focused().is_none()) {
@@ -272,7 +272,7 @@ impl NotesApp {
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                if ui.add(egui::Button::new(RichText::new("Cambiar").color(Color32::WHITE)).fill(ACCENT)).clicked() || enter {
+                if ui.add(egui::Button::new(RichText::new("Cambiar").color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() || enter {
                     action = Some(Action::RenameTag(old.clone(), name.clone()));
                     close = true;
                 }

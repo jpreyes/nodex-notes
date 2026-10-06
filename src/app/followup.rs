@@ -78,17 +78,17 @@ impl NotesApp {
                     }
                 });
             });
-            ui.label(RichText::new(format!("Borrador para «{}». Puedes editarlo antes de enviarlo.", self.followup.title)).size(12.5).color(MUTED));
+            ui.label(RichText::new(format!("Borrador para «{}». Puedes editarlo antes de enviarlo.", self.followup.title)).size(12.5).color(MUTED()));
             ui.add_space(8.0);
             if self.followup.rx.is_some() {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label(RichText::new("Redactando…").color(MUTED));
+                    ui.label(RichText::new("Redactando…").color(MUTED()));
                 });
                 return;
             }
             if let Some(e) = &self.followup.error {
-                ui.label(RichText::new(format!("No se pudo redactar: {e}")).color(RED));
+                ui.label(RichText::new(format!("No se pudo redactar: {e}")).color(RED()));
                 if ui.button("Intentar de nuevo").clicked() {
                     retry = true;
                 }

@@ -100,16 +100,16 @@ impl NotesApp {
                     ui.label(
                         RichText::new("Cada carpeta de primer nivel pasa a ser un espacio. Las imágenes y archivos se copian a Adjuntos, y los enlaces entre páginas quedan como [[enlaces]]. Tu carpeta original no se toca, y si importas dos veces no se repite nada.")
                             .size(12.5)
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                     ui.add_space(8.0);
                     ui.checkbox(organize, "Que la IA las organice después (etiquetas, tareas y fechas)");
                     if *organize && *notes > 200 {
-                        ui.label(RichText::new(format!("Con {} usa bastante IA y toma un buen rato.", plural(*notes, "nota"))).size(12.0).color(WARN));
+                        ui.label(RichText::new(format!("Con {} usa bastante IA y toma un buen rato.", plural(*notes, "nota"))).size(12.0).color(WARN()));
                     }
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
-                        if ui.add(egui::Button::new(RichText::new("Importar").color(Color32::WHITE)).fill(ACCENT)).clicked() {
+                        if ui.add(egui::Button::new(RichText::new("Importar").color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                             go = Some((src.clone(), *organize));
                         }
                         if ui.button("Cancelar").clicked() {

@@ -28,14 +28,14 @@ pub(super) struct Toast {
 
 fn kind_icon(k: Kind) -> (&'static str, Color32) {
     match k {
-        Kind::Organizar => (icon::SPARKLE, ACCENT),
-        Kind::Correo => (icon::ENVELOPE_SIMPLE, ACCENT),
-        Kind::Respuesta => (icon::CHAT_CIRCLE_TEXT, SUCCESS),
-        Kind::Duplicado => (icon::COPY, SUCCESS),
-        Kind::Espacio => (icon::FOLDER_SIMPLE_PLUS, SUCCESS),
-        Kind::Error => (icon::WARNING_CIRCLE, RED),
-        Kind::Sincronizar => (icon::ARROWS_MERGE, SUCCESS),
-        Kind::Pedido => (icon::CHECK_CIRCLE, SUCCESS),
+        Kind::Organizar => (icon::SPARKLE, ACCENT()),
+        Kind::Correo => (icon::ENVELOPE_SIMPLE, ACCENT()),
+        Kind::Respuesta => (icon::CHAT_CIRCLE_TEXT, SUCCESS()),
+        Kind::Duplicado => (icon::COPY, SUCCESS()),
+        Kind::Espacio => (icon::FOLDER_SIMPLE_PLUS, SUCCESS()),
+        Kind::Error => (icon::WARNING_CIRCLE, RED()),
+        Kind::Sincronizar => (icon::ARROWS_MERGE, SUCCESS()),
+        Kind::Pedido => (icon::CHECK_CIRCLE, SUCCESS()),
     }
 }
 
@@ -111,8 +111,8 @@ impl NotesApp {
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 Frame::new()
-                    .fill(Color32::WHITE)
-                    .stroke(Stroke::new(1.0, theme::BORDER))
+                    .fill(theme::c(Color32::WHITE))
+                    .stroke(Stroke::new(1.0, theme::BORDER()))
                     .corner_radius(12)
                     .shadow(egui::epaint::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(28) })
                     .inner_margin(Margin::symmetric(14, 12))
@@ -120,20 +120,20 @@ impl NotesApp {
                         ui.set_width(340.0);
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(glyph).size(16.0).color(color));
-                            ui.label(RichText::new(title).font(theme::bold(14.0)).color(TEXT));
+                            ui.label(RichText::new(title).font(theme::bold(14.0)).color(TEXT()));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                let b = egui::Button::new(RichText::new(icon::X).size(13.0).color(MUTED)).frame(false);
+                                let b = egui::Button::new(RichText::new(icon::X).size(13.0).color(MUTED())).frame(false);
                                 if ui.add(b).on_hover_text("Cerrar el aviso (lo que hizo la IA se queda; se puede deshacer en «Lo que hizo»)").clicked() {
                                     close = true;
                                 }
                             });
                         });
-                        ui.label(RichText::new(&t.text).size(13.0).color(TEXT));
+                        ui.label(RichText::new(&t.text).size(13.0).color(TEXT()));
                         for d in t.details.iter().take(4) {
-                            ui.label(RichText::new(format!("·  {d}")).size(12.5).color(MUTED));
+                            ui.label(RichText::new(format!("·  {d}")).size(12.5).color(MUTED()));
                         }
                         if t.details.len() > 4 {
-                            ui.label(RichText::new(format!("·  y {} más", t.details.len() - 4)).size(12.5).color(MUTED));
+                            ui.label(RichText::new(format!("·  y {} más", t.details.len() - 4)).size(12.5).color(MUTED()));
                         }
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
@@ -217,10 +217,10 @@ impl NotesApp {
                 ui.set_width(col_w);
                 ui.add_space(22.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(icon::SPARKLE).size(24.0).color(ACCENT));
+                    ui.label(RichText::new(icon::SPARKLE).size(24.0).color(ACCENT()));
                     ui.label(RichText::new("IA").font(theme::bold(26.0)));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let b = egui::Button::new(RichText::new(icon::GEAR).size(16.0).color(MUTED)).frame(false);
+                        let b = egui::Button::new(RichText::new(icon::GEAR).size(16.0).color(MUTED())).frame(false);
                         if ui.add(b).on_hover_text("Configurar la IA").clicked() {
                             action = Some(Action::OpenSettings(Section::Ai));
                         }
@@ -244,7 +244,7 @@ impl NotesApp {
                         (AiTab::Log, format!("{}  Lo que hizo", icon::CLOCK_COUNTER_CLOCKWISE)),
                     ] {
                         let selected = self.ai_tab == tab;
-                        let color = if selected { ACCENT } else if tab == AiTab::Asks && asks > 0 { TEXT } else { MUTED };
+                        let color = if selected { ACCENT() } else if tab == AiTab::Asks && asks > 0 { TEXT() } else { MUTED() };
                         let b = egui::Button::selectable(selected, RichText::new(label).size(14.0).color(color))
                             .corner_radius(8)
                             .min_size(egui::vec2(0.0, 30.0));
@@ -258,7 +258,7 @@ impl NotesApp {
             });
         });
         let r = ui.min_rect();
-        ui.painter().hline(r.x_range(), ui.cursor().top(), Stroke::new(1.0, theme::BORDER));
+        ui.painter().hline(r.x_range(), ui.cursor().top(), Stroke::new(1.0, theme::BORDER()));
 
         let body = match self.ai_tab {
             AiTab::Chat => self.chat_view(ui),
@@ -313,10 +313,10 @@ impl NotesApp {
     pub(super) fn usage_label(&self) -> Option<(String, Color32)> {
         match self.ai_usage.as_ref()? {
             Ok(u) => {
-                let color = if u.percent() >= 100 { RED } else if u.percent() >= 80 { WARN } else { MUTED };
+                let color = if u.percent() >= 100 { RED() } else if u.percent() >= 80 { WARN() } else { MUTED() };
                 Some((format!("{} % del mes usado · vuelve a cero el {}", u.percent(), long_date(&u.renueva)), color))
             }
-            Err(e) => Some((format!("no se pudo ver el uso: {e}"), RED)),
+            Err(e) => Some((format!("no se pudo ver el uso: {e}"), RED())),
         }
     }
 
@@ -328,25 +328,25 @@ impl NotesApp {
             let ai = match &self.ai {
                 Ok(ai) => ai,
                 Err(e) => {
-                    ui.label(RichText::new(format!("No disponible: {e}")).size(13.0).color(RED));
+                    ui.label(RichText::new(format!("No disponible: {e}")).size(13.0).color(RED()));
                     if ui.link(RichText::new("Configurar").size(13.0)).clicked() {
                         action = Some(Action::OpenSettings(Section::Ai));
                     }
                     return;
                 }
             };
-            ui.label(RichText::new(&ai.label).size(13.0).color(MUTED));
+            ui.label(RichText::new(&ai.label).size(13.0).color(MUTED()));
             if let Some((text, color)) = self.usage_label() {
                 ui.label(RichText::new(format!("({text})")).size(12.5).color(color));
             }
             // La prueba de la cuenta: cuántos días le quedan (en color de aviso los últimos 3).
             if let Some(Ok(info)) = self.acct.info.as_ref().filter(|_| ai::is_included(&self.cfg)) {
                 if info.plan == "prueba" {
-                    let color = if info.dias_prueba <= 3 { WARN } else { MUTED };
+                    let color = if info.dias_prueba <= 3 { WARN() } else { MUTED() };
                     ui.label(RichText::new(format!("· {}", info.plan_label())).size(12.5).color(color));
                 }
             }
-            ui.label(RichText::new("·").size(13.0).color(MUTED));
+            ui.label(RichText::new("·").size(13.0).color(MUTED()));
             if let Some(p) = &self.in_flight {
                 ui.spinner();
                 let progress = if self.backlog_total > 0 {
@@ -354,15 +354,15 @@ impl NotesApp {
                 } else {
                     String::new()
                 };
-                ui.label(RichText::new(format!("Organizando «{}»{progress}", vault::stem(p))).size(13.0).color(ACCENT));
+                ui.label(RichText::new(format!("Organizando «{}»{progress}", vault::stem(p))).size(13.0).color(ACCENT()));
                 return;
             }
             if pending == 0 {
-                ui.label(RichText::new(format!("{} Todo organizado", icon::CHECK_CIRCLE)).size(13.0).color(SUCCESS));
+                ui.label(RichText::new(format!("{} Todo organizado", icon::CHECK_CIRCLE)).size(13.0).color(SUCCESS()));
             } else {
                 let what = if pending == 1 { "1 nota sin organizar".to_string() } else { format!("{pending} notas sin organizar") };
                 let arrow = if self.show_unorganized { icon::CARET_UP } else { icon::CARET_DOWN };
-                let r = ui.add(egui::Button::new(RichText::new(format!("{what} {arrow}")).size(13.0).color(TEXT)).frame(false));
+                let r = ui.add(egui::Button::new(RichText::new(format!("{what} {arrow}")).size(13.0).color(TEXT())).frame(false));
                 if r.on_hover_text(if self.show_unorganized { "Ocultar cuáles son" } else { "Ver cuáles son" }).clicked() {
                     toggle = true;
                 }
@@ -372,10 +372,10 @@ impl NotesApp {
                 }
             }
             if !self.ai_auto {
-                ui.label(RichText::new("· organizar sola: apagado").size(12.5).color(MUTED));
+                ui.label(RichText::new("· organizar sola: apagado").size(12.5).color(MUTED()));
             }
             if let Some(e) = &self.ai_error {
-                ui.label(RichText::new(format!("· último error: {e}")).size(12.5).color(RED));
+                ui.label(RichText::new(format!("· último error: {e}")).size(12.5).color(RED()));
             }
         });
         if toggle {
@@ -390,20 +390,20 @@ impl NotesApp {
         let paths = self.unorganized();
         let notes = self.vault.all_notes();
         ui.add_space(6.0);
-        Frame::new().fill(BG_SIDE).corner_radius(10).inner_margin(Margin::symmetric(10, 8)).show(ui, |ui| {
+        Frame::new().fill(BG_SIDE()).corner_radius(10).inner_margin(Margin::symmetric(10, 8)).show(ui, |ui| {
             egui::ScrollArea::vertical().id_salt("sin-organizar").max_height(230.0).auto_shrink([false, true]).show(ui, |ui| {
                 for p in &paths {
                     let Some(n) = notes.iter().find(|n| &n.path == p) else { continue };
                     let start = tracking::preview(&n.text, 6, 140);
                     ui.horizontal(|ui| {
-                        let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(ACCENT)).frame(false);
+                        let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(ACCENT())).frame(false);
                         if ui.add(b).on_hover_text("Abrir la nota").clicked() {
                             action = Some(Action::Open(p.clone(), None));
                         }
                         let mut job = LayoutJob::default();
                         let rel = self.rel(p);
-                        job.append(&format!("{}   ", rel.trim_end_matches(".md")), 0.0, fmt(theme::bold(13.0), TEXT));
-                        job.append(&start, 0.0, fmt(FontId::proportional(13.0), MUTED));
+                        job.append(&format!("{}   ", rel.trim_end_matches(".md")), 0.0, fmt(theme::bold(13.0), TEXT()));
+                        job.append(&start, 0.0, fmt(FontId::proportional(13.0), MUTED()));
                         if clickable_line(ui, job).clicked() {
                             action = Some(Action::Open(p.clone(), None));
                         }
@@ -431,17 +431,17 @@ impl NotesApp {
             }
             if asks.is_empty() && ideas.is_empty() && !suggested {
                 ui.add_space(8.0);
-                ui.label(RichText::new(format!("{} No hay preguntas pendientes.", icon::CHECK_CIRCLE)).size(15.0).color(SUCCESS));
+                ui.label(RichText::new(format!("{} No hay preguntas pendientes.", icon::CHECK_CIRCLE)).size(15.0).color(SUCCESS()));
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new("Cuando la IA no esté segura de algo (a qué proyecto va una nota, de qué fecha habla, si dos notas son la misma), te preguntará aquí. Lo que respondas lo recuerda.")
                         .size(13.0)
-                        .color(MUTED),
+                        .color(MUTED()),
                 );
                 ui.add_space(18.0);
             }
             if !ideas.is_empty() {
-                ui.label(RichText::new("Sugerencias").font(theme::bold(15.0)).color(SUCCESS));
+                ui.label(RichText::new("Sugerencias").font(theme::bold(15.0)).color(SUCCESS()));
                 ui.add_space(6.0);
                 for i in &ideas {
                     if let Some(r) = self.idea_card(ui, i) {
@@ -451,7 +451,7 @@ impl NotesApp {
                 ui.add_space(10.0);
             }
             if !asks.is_empty() {
-                ui.label(RichText::new("Sobre tus notas").font(theme::bold(15.0)).color(ACCENT));
+                ui.label(RichText::new("Sobre tus notas").font(theme::bold(15.0)).color(ACCENT()));
                 ui.add_space(6.0);
                 for (d, n) in &asks {
                     let label = d.note.replace('/', " / ");
@@ -501,44 +501,44 @@ impl NotesApp {
                     plural(n, "cambio de la IA"),
                     if bad == 1 { "1 deshecho o que no quisiste".to_string() } else { format!("{bad} deshechos o que no quisiste") }
                 );
-                ui.label(RichText::new(text).size(13.0).color(if pct >= 90 { SUCCESS } else if pct >= 70 { MUTED } else { WARN }));
+                ui.label(RichText::new(text).size(13.0).color(if pct >= 90 { SUCCESS() } else if pct >= 70 { MUTED() } else { WARN() }));
                 ui.add_space(6.0);
             }
             if days.is_empty() {
                 ui.add_space(8.0);
-                ui.label(RichText::new("Todavía no hay cambios.").size(15.0).color(MUTED));
+                ui.label(RichText::new("Todavía no hay cambios.").size(15.0).color(MUTED()));
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new("Cuando la IA organice una nota, anote un correo, o respondas una de sus preguntas, verás aquí qué hizo y dónde.")
                         .size(13.0)
-                        .color(MUTED),
+                        .color(MUTED()),
                 );
             }
             for (day, entries) in &days {
                 ui.add_space(6.0);
-                ui.label(RichText::new(day_label(day)).font(theme::bold(15.0)).color(if *day == today() { ACCENT } else { TEXT }));
+                ui.label(RichText::new(day_label(day)).font(theme::bold(15.0)).color(if *day == today() { ACCENT() } else { TEXT() }));
                 ui.add_space(4.0);
                 for e in entries {
                     let (glyph, color) = kind_icon(e.kind);
                     ui.horizontal_top(|ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
-                        ui.label(RichText::new(glyph).size(16.0).color(if e.undone { MUTED } else { color }));
-                        ui.label(RichText::new(e.at.get(11..).unwrap_or("")).size(12.5).color(MUTED));
+                        ui.label(RichText::new(glyph).size(16.0).color(if e.undone { MUTED() } else { color }));
+                        ui.label(RichText::new(e.at.get(11..).unwrap_or("")).size(12.5).color(MUTED()));
                         ui.vertical(|ui| {
                             ui.set_width(col_w - 90.0);
                             let mut job = LayoutJob::default();
-                            let mut f = fmt(FontId::proportional(14.0), if e.undone { MUTED } else { TEXT });
+                            let mut f = fmt(FontId::proportional(14.0), if e.undone { MUTED() } else { TEXT() });
                             if e.undone {
-                                f.strikethrough = Stroke::new(1.0, MUTED);
+                                f.strikethrough = Stroke::new(1.0, MUTED());
                             }
                             job.append(&e.text, 0.0, f);
                             job.wrap.max_width = col_w - 90.0;
                             ui.label(job);
                             for d in e.details.iter().take(12) {
-                                ui.label(RichText::new(format!("·  {d}")).size(12.5).color(MUTED));
+                                ui.label(RichText::new(format!("·  {d}")).size(12.5).color(MUTED()));
                             }
                             if e.details.len() > 12 {
-                                ui.label(RichText::new(format!("·  y {} más", e.details.len() - 12)).size(12.5).color(MUTED));
+                                ui.label(RichText::new(format!("·  y {} más", e.details.len() - 12)).size(12.5).color(MUTED()));
                             }
                             ui.horizontal(|ui| {
                                 let path = root.join(format!("{}.md", e.note));
@@ -546,9 +546,9 @@ impl NotesApp {
                                     action = Some(Action::Open(path, None));
                                 }
                                 if e.rechazado {
-                                    ui.label(RichText::new("no lo quisiste").size(12.5).color(MUTED));
+                                    ui.label(RichText::new("no lo quisiste").size(12.5).color(MUTED()));
                                 } else if e.undone {
-                                    ui.label(RichText::new("deshecho").size(12.5).color(MUTED));
+                                    ui.label(RichText::new("deshecho").size(12.5).color(MUTED()));
                                 } else {
                                     if undo_id.as_deref() == Some(e.id.as_str()) {
                                         let b = egui::Button::new(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5));

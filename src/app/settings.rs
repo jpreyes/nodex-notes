@@ -108,6 +108,7 @@ pub(super) enum Change {
     TestConnection,
     UpdateAuto(bool),
     Background(bool),
+    Theme(&'static str),
     Import,
     StartWithWindows(bool),
     Do(Action),
@@ -130,16 +131,16 @@ pub(super) fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
         response.mark_changed();
     }
     let t = ui.ctx().animate_bool_responsive(response.id, *on);
-    let off = Color32::from_rgb(205, 205, 200);
+    let off = theme::c(Color32::from_rgb(205, 205, 200));
     let bg = Color32::from_rgb(
-        egui::lerp(off.r() as f32..=ACCENT.r() as f32, t) as u8,
-        egui::lerp(off.g() as f32..=ACCENT.g() as f32, t) as u8,
-        egui::lerp(off.b() as f32..=ACCENT.b() as f32, t) as u8,
+        egui::lerp(off.r() as f32..=ACCENT().r() as f32, t) as u8,
+        egui::lerp(off.g() as f32..=ACCENT().g() as f32, t) as u8,
+        egui::lerp(off.b() as f32..=ACCENT().b() as f32, t) as u8,
     );
     let r = rect.height() / 2.0;
     ui.painter().rect_filled(rect, r, bg);
     let x = egui::lerp((rect.left() + r)..=(rect.right() - r), t);
-    ui.painter().circle_filled(egui::pos2(x, rect.center().y), r - 3.0, Color32::WHITE);
+    ui.painter().circle_filled(egui::pos2(x, rect.center().y), r - 3.0, theme::c(Color32::WHITE));
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
@@ -151,9 +152,9 @@ pub(super) fn row(ui: &mut Ui, title: &str, hint: &str, control: impl FnOnce(&mu
         control(ui);
         ui.add_space(12.0);
         ui.with_layout(Layout::top_down(Align::Min), |ui| {
-            ui.label(RichText::new(title).size(14.0).color(TEXT));
+            ui.label(RichText::new(title).size(14.0).color(TEXT()));
             if !hint.is_empty() {
-                ui.label(RichText::new(hint).size(12.5).color(MUTED));
+                ui.label(RichText::new(hint).size(12.5).color(MUTED()));
             }
         });
     });
@@ -163,16 +164,16 @@ pub(super) fn row(ui: &mut Ui, title: &str, hint: &str, control: impl FnOnce(&mu
 
 fn heading(ui: &mut Ui, title: &str, subtitle: &str) {
     ui.label(RichText::new(title).font(theme::bold(20.0)));
-    ui.label(RichText::new(subtitle).size(13.0).color(MUTED));
+    ui.label(RichText::new(subtitle).size(13.0).color(MUTED()));
     ui.add_space(6.0);
     ui.separator();
 }
 
 pub(super) fn chip(ui: &mut Ui, text: &str, ok: bool) {
     let (fg, bg) = if ok {
-        (SUCCESS, Color32::from_rgb(230, 244, 231))
+        (SUCCESS(), theme::c(Color32::from_rgb(230, 244, 231)))
     } else {
-        (RED, Color32::from_rgb(252, 235, 235))
+        (RED(), theme::c(Color32::from_rgb(252, 235, 235)))
     };
     // Los mensajes largos (errores con URL) pasan a varias líneas en vez de ensanchar la ventana.
     Frame::new()
@@ -187,7 +188,7 @@ pub(super) fn chip(ui: &mut Ui, text: &str, ok: bool) {
 
 fn secret_field(ui: &mut Ui, value: &mut String, show: &mut bool, hint: &str) -> Response {
     let eye = if *show { icon::EYE_SLASH } else { icon::EYE };
-    if ui.add(egui::Button::new(RichText::new(eye).size(16.0).color(MUTED)).frame(false)).on_hover_text(if *show { "Ocultar" } else { "Mostrar" }).clicked() {
+    if ui.add(egui::Button::new(RichText::new(eye).size(16.0).color(MUTED())).frame(false)).on_hover_text(if *show { "Ocultar" } else { "Mostrar" }).clicked() {
         *show = !*show;
     }
     ui.add(egui::TextEdit::singleline(value).password(!*show).hint_text(hint).desired_width(230.0).margin(Margin::symmetric(8, 4)))
@@ -215,7 +216,7 @@ impl NotesApp {
         let nav_w = 200.0;
 
         let modal = egui::Modal::new(Id::new("settings"))
-            .frame(Frame::new().fill(Color32::WHITE).corner_radius(12).stroke(Stroke::new(1.0, theme::BORDER)))
+            .frame(Frame::new().fill(theme::c(Color32::WHITE)).corner_radius(12).stroke(Stroke::new(1.0, theme::BORDER())))
             .show(ctx, |ui| {
                 // Tamaño fijo: ningún contenido puede agrandar la ventana más allá de la pantalla.
                 ui.set_width(w);
@@ -227,8 +228,8 @@ impl NotesApp {
                     ui.allocate_ui_with_layout(egui::vec2(nav_w, h), Layout::top_down(Align::Min), |ui| {
                         let rect = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(nav_w, h));
                         let radius = egui::CornerRadius { nw: 12, sw: 12, ne: 0, se: 0 };
-                        ui.painter().rect_filled(rect, radius, BG_SIDE);
-                        ui.painter().vline(rect.right(), rect.y_range(), Stroke::new(1.0, theme::BORDER));
+                        ui.painter().rect_filled(rect, radius, BG_SIDE());
+                        ui.painter().vline(rect.right(), rect.y_range(), Stroke::new(1.0, theme::BORDER()));
                         Frame::new().inner_margin(Margin::symmetric(10, 16)).show(ui, |ui| {
                             ui.set_width(nav_w - 20.0);
                             ui.label(RichText::new("   Configuración").font(theme::bold(16.0)));
@@ -246,7 +247,7 @@ impl NotesApp {
                         Frame::new().inner_margin(Margin { left: 26, right: 22, top: 16, bottom: 16 }).show(ui, |ui| {
                             ui.set_width(w - nav_w - 48.0);
                             ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                let x = egui::Button::new(RichText::new(icon::X).size(18.0).color(MUTED)).frame(false);
+                                let x = egui::Button::new(RichText::new(icon::X).size(18.0).color(MUTED())).frame(false);
                                 if ui.add(x).on_hover_text("Cerrar (Esc)").clicked() {
                                     close = true;
                                 }
@@ -376,6 +377,10 @@ impl NotesApp {
                 s.test = Some(ai::test_connection(&self.cfg, self.ctx.clone()));
             }
             Change::Import => self.pick_import(),
+            Change::Theme(t) => {
+                self.cfg.tema = t.to_string();
+                self.save_config();
+            }
             Change::Background(on) => {
                 self.cfg.segundo_plano = on;
                 self.save_config();
@@ -418,7 +423,7 @@ impl NotesApp {
             ui.add_space(12.0);
             if server.is_none() {
                 server_row(ui, s, changes);
-                ui.label(RichText::new("Falta la dirección del servidor de Notas (vendrá puesta en los instaladores).").size(12.5).color(WARN));
+                ui.label(RichText::new("Falta la dirección del servidor de Notas (vendrá puesta en los instaladores).").size(12.5).color(WARN()));
                 ui.add_space(8.0);
             }
             let error = self.acct.error.as_deref();
@@ -427,7 +432,7 @@ impl NotesApp {
             }
             if server.is_some() && crate::account::BUILT_IN_SERVER.is_none() {
                 ui.add_space(14.0);
-                egui::CollapsingHeader::new(RichText::new("Avanzado").size(12.5).color(MUTED)).show(ui, |ui| server_row(ui, s, changes));
+                egui::CollapsingHeader::new(RichText::new("Avanzado").size(12.5).color(MUTED())).show(ui, |ui| server_row(ui, s, changes));
             }
             return;
         }
@@ -452,7 +457,7 @@ impl NotesApp {
         });
         match &self.acct.info {
             Some(Ok(info)) => row(ui, "Plan", "", |ui| {
-                ui.label(RichText::new(info.plan_label()).size(13.5).color(if info.plan == "prueba" && info.dias_prueba <= 3 { WARN } else { TEXT }));
+                ui.label(RichText::new(info.plan_label()).size(13.5).color(if info.plan == "prueba" && info.dias_prueba <= 3 { WARN() } else { TEXT() }));
             }),
             Some(Err(e)) => chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false),
             None => {}
@@ -515,8 +520,16 @@ impl NotesApp {
                  Si usas Dropbox, elige una carpeta dentro de Dropbox para tener tus notas en todos tus equipos.",
             )
             .size(12.5)
-            .color(MUTED),
+            .color(MUTED()),
         );
+        ui.add_space(16.0);
+        row(ui, "Tema", "El oscuro es suave, para trabajar de noche sin cansar la vista", |ui| {
+            for (id, label) in [("claro", "Claro"), ("oscuro", "Oscuro"), ("sistema", "Según el sistema")] {
+                if ui.selectable_label(self.cfg.tema == id, label).clicked() && self.cfg.tema != id {
+                    changes.push(Change::Theme(id));
+                }
+            }
+        });
         ui.add_space(16.0);
         row(ui, "Importar notas", "De Obsidian, Notion (exportado a Markdown) o cualquier carpeta de archivos .md", |ui| {
             if ui.button(format!("{}  Elegir carpeta…", icon::DOWNLOAD_SIMPLE)).clicked() {
@@ -662,7 +675,7 @@ impl NotesApp {
         ui.add_space(8.0);
         match (&s.test, &s.test_result) {
             (Some(_), _) => {
-                ui.label(RichText::new("Probando…").size(12.5).color(MUTED));
+                ui.label(RichText::new("Probando…").size(12.5).color(MUTED()));
             }
             (None, Some(Ok(ms))) => chip(ui, &format!("{} Conectado · respondió en {:.1} s", icon::CHECK_CIRCLE, *ms as f32 / 1000.0), true),
             (None, Some(Err(e))) => chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false),
@@ -675,7 +688,7 @@ impl NotesApp {
         if let Some(url) = current.and_then(|p| p.3) {
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("¿No tienes clave?").size(12.5).color(MUTED));
+                ui.label(RichText::new("¿No tienes clave?").size(12.5).color(MUTED()));
                 if ui.link(RichText::new("Crear una en opencode.ai").size(12.5)).clicked() {
                     changes.push(Change::OpenUrl(url));
                 }
@@ -686,7 +699,7 @@ impl NotesApp {
             ui.label(
                 RichText::new("OpenCode Zen cobra por uso desde tu saldo; OpenCode Go es una suscripción mensual con límite de uso. Ambos usan la misma clave.")
                     .size(12.5)
-                    .color(MUTED),
+                    .color(MUTED()),
             );
         }
     }
@@ -694,7 +707,7 @@ impl NotesApp {
     fn section_mail(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {
         heading(ui, "Correo", "La IA revisa tu bandeja de entrada y tus enviados para no perder compromisos ni fechas.");
         ui.add_space(12.0);
-        Frame::new().stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(10).inner_margin(Margin::same(16)).show(ui, |ui| {
+        Frame::new().stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::same(16)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             if let Some(a) = super::mail_ui::accounts_panel(ui, &self.cfg.correos, &self.mail, &mut s.mail_form) {
                 changes.push(Change::Do(a));
@@ -723,31 +736,31 @@ impl NotesApp {
                 }
             }
         });
-        ui.label(RichText::new("Y siempre que quieras, con «Revisar ahora» en Correos.").size(12.5).color(MUTED));
+        ui.label(RichText::new("Y siempre que quieras, con «Revisar ahora» en Correos.").size(12.5).color(MUTED()));
         ui.add_space(10.0);
         ui.label(
             RichText::new("Cómo funciona: se leen los correos nuevos (la primera vez, los de la última semana) de entrada y enviados, sin marcarlos como leídos. La IA los resume y lleva a Tareas y Agenda los compromisos y fechas (se puede deshacer), y avisa cuando un correo parece cumplir algo pendiente. Los boletines y avisos automáticos se ignoran.")
                 .size(12.5)
-                .color(MUTED),
+                .color(MUTED()),
         );
         ui.add_space(4.0);
         ui.label(
             RichText::new("Privacidad: la contraseña de aplicación queda en config.toml, solo en este equipo; los correos, en correos.json junto a él. Para entenderlos, su texto se envía al modelo de IA configurado.")
                 .size(12.5)
-                .color(MUTED),
+                .color(MUTED()),
         );
     }
 
     fn section_tasks(&self, ui: &mut Ui, changes: &mut Vec<Change>) {
         heading(ui, "Tareas", "Las tareas que la IA encuentra en tus notas, también en otras apps.");
         ui.add_space(12.0);
-        Frame::new().stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(10).inner_margin(Margin::same(16)).show(ui, |ui| {
+        Frame::new().stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::same(16)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(RichText::new(format!("{}  Microsoft To Do", icon::CHECK_SQUARE_OFFSET)).font(theme::bold(15.0)));
             ui.label(
                 RichText::new("Tus tareas quedan en una lista «Notas» de To Do, en los dos sentidos: lo que marcas hecho o cambias de fecha en un lado pasa al otro, y lo que agregas a esa lista desde To Do (por ejemplo, desde el celular) llega a Tareas.")
                     .size(12.5)
-                    .color(MUTED),
+                    .color(MUTED()),
             );
             ui.add_space(8.0);
             let Some(t) = &self.todo else {
@@ -757,13 +770,13 @@ impl NotesApp {
             if t.connecting {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label(RichText::new("Esperando tu permiso en el navegador…").color(ACCENT));
+                    ui.label(RichText::new("Esperando tu permiso en el navegador…").color(ACCENT()));
                 });
             } else if !t.connected {
                 if ui.button(format!("{}  Conectar Microsoft To Do", icon::LINK)).clicked() {
                     changes.push(Change::Do(Action::TodoConnect));
                 }
-                ui.label(RichText::new("Se abre el navegador: entra con tu cuenta Microsoft (personal, o del trabajo si tu organización lo permite) y acepta el permiso.").size(12.5).color(MUTED));
+                ui.label(RichText::new("Se abre el navegador: entra con tu cuenta Microsoft (personal, o del trabajo si tu organización lo permite) y acepta el permiso.").size(12.5).color(MUTED()));
                 if let Some(e) = &t.last_error {
                     chip(ui, e, false);
                 }
@@ -788,14 +801,14 @@ impl NotesApp {
                         changes.push(Change::Do(Action::TodoDisconnect));
                     }
                 });
-                ui.label(RichText::new("Se sincroniza al cambiar algo y cada 2 minutos.").size(12.5).color(MUTED));
+                ui.label(RichText::new("Se sincroniza al cambiar algo y cada 2 minutos.").size(12.5).color(MUTED()));
             }
         });
         ui.add_space(10.0);
         ui.label(
             RichText::new("Privacidad: el permiso queda solo en este equipo (microsoft_token.json, junto a config.toml). La app solo usa tus tareas de To Do; no lee tu correo ni tus archivos. También puedes conectarlo desde Tareas.")
                 .size(12.5)
-                .color(MUTED),
+                .color(MUTED()),
         );
     }
 
@@ -803,7 +816,7 @@ impl NotesApp {
         heading(ui, "Calendar", "Agrega tus calendarios con su enlace y verás sus eventos en la Agenda y en Inicio.");
         ui.add_space(12.0);
         Frame::new()
-            .stroke(Stroke::new(1.0, theme::BORDER))
+            .stroke(Stroke::new(1.0, theme::BORDER()))
             .corner_radius(10)
             .inner_margin(Margin::same(16))
             .show(ui, |ui| {
@@ -812,7 +825,7 @@ impl NotesApp {
                 ui.label(
                     RichText::new("Google Calendar, Outlook, iCloud o cualquier calendario con enlace ICS. Solo se leen; se actualizan cada 15 minutos.")
                         .size(12.5)
-                        .color(MUTED),
+                        .color(MUTED()),
                 );
                 ui.add_space(8.0);
                 if let Some(a) = super::calendars_ui::calendars_panel(ui, &self.cfg.calendarios, &self.cals, &mut s.cal_form) {
@@ -821,7 +834,7 @@ impl NotesApp {
             });
         ui.add_space(12.0);
         Frame::new()
-            .stroke(Stroke::new(1.0, theme::BORDER))
+            .stroke(Stroke::new(1.0, theme::BORDER()))
             .corner_radius(10)
             .inner_margin(Margin::same(16))
             .show(ui, |ui| {
@@ -830,10 +843,10 @@ impl NotesApp {
                     ui.label(RichText::new(format!("{}  Enviar tu agenda a Google Calendar (avanzado)", icon::GOOGLE_LOGO)).font(theme::bold(15.0)));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| match &self.gcal {
                         None => {
-                            ui.label(RichText::new("Falta el ID de cliente").size(12.5).color(MUTED));
+                            ui.label(RichText::new("Falta el ID de cliente").size(12.5).color(MUTED()));
                         }
                         Some(g) if g.connecting => {
-                            ui.label(RichText::new("Esperando tu permiso en el navegador…").size(12.5).color(ACCENT));
+                            ui.label(RichText::new("Esperando tu permiso en el navegador…").size(12.5).color(ACCENT()));
                         }
                         Some(g) if g.connected => {
                             if ui.button("Desconectar").clicked() {
@@ -847,7 +860,7 @@ impl NotesApp {
                                 (None, Some(t)) => format!("sincronizado {}", t.format("%H:%M")),
                                 _ => "conectado".into(),
                             };
-                            ui.label(RichText::new(status).size(12.5).color(if g.last_error.is_some() { RED } else { SUCCESS }));
+                            ui.label(RichText::new(status).size(12.5).color(if g.last_error.is_some() { RED() } else { SUCCESS() }));
                         }
                         Some(_) => {
                             if ui.button(format!("{}  Conectar", icon::LINK)).clicked() {
@@ -859,7 +872,7 @@ impl NotesApp {
                 ui.label(
                     RichText::new("Crea un calendario propio llamado «Notas» y solo toca ese; tus otros calendarios quedan fuera de su alcance.")
                         .size(12.5)
-                        .color(MUTED),
+                        .color(MUTED()),
                 );
                 if let Some(e) = self.gcal.as_ref().and_then(|g| g.last_error.as_ref()) {
                     ui.add_space(6.0);
@@ -911,7 +924,7 @@ impl NotesApp {
             ui.label(
                 RichText::new(format!("Otros calendarios (Outlook, Apple) llegarán más adelante. Mientras, puedes importar {}.", agenda::ICS_FILE))
                     .size(12.5)
-                    .color(MUTED),
+                    .color(MUTED()),
             );
             if ui.link(RichText::new("Abrir carpeta").size(12.5)).clicked() {
                 changes.push(Change::Do(Action::OpenExternal(self.vault.root.clone())));
@@ -946,8 +959,8 @@ fn section_shortcuts(ui: &mut Ui) {
     egui::Grid::new("atajos").num_columns(2).spacing([28.0, 10.0]).show(ui, |ui| {
         for (k, what) in keys {
             Frame::new()
-                .fill(BG_SIDE)
-                .stroke(Stroke::new(1.0, theme::BORDER))
+                .fill(BG_SIDE())
+                .stroke(Stroke::new(1.0, theme::BORDER()))
                 .corner_radius(5)
                 .inner_margin(Margin::symmetric(8, 2))
                 .show(ui, |ui| ui.label(RichText::new(k).size(12.5).monospace()));
@@ -962,7 +975,7 @@ impl NotesApp {
         heading(ui, "Acerca de", "Notas rápidas con espacios de trabajo, reuniones e IA que organiza sola.");
         ui.add_space(12.0);
         ui.label(RichText::new(format!("Notas {}", env!("CARGO_PKG_VERSION"))).font(theme::bold(17.0)));
-        ui.label(RichText::new("Código abierto (MIT) · hecho en Rust con egui").size(12.5).color(MUTED));
+        ui.label(RichText::new("Código abierto (MIT) · hecho en Rust con egui").size(12.5).color(MUTED()));
         ui.add_space(10.0);
         if ui.link(RichText::new(format!("{}  {REPO}", icon::GITHUB_LOGO)).size(13.0)).clicked() {
             changes.push(Change::OpenUrl(REPO));

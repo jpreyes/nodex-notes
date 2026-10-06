@@ -267,7 +267,7 @@ impl NotesApp {
         let avail = ui.available_width() - 36.0;
         let w = (avail / n as f32).clamp(90.0, 200.0);
         let bar = ui.max_rect();
-        ui.painter().hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0, theme::BORDER));
+        ui.painter().hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0, theme::BORDER()));
         egui::ScrollArea::horizontal().id_salt("pestanas").auto_shrink([false, true]).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
@@ -286,14 +286,14 @@ impl NotesApp {
                     let p = ui.painter();
                     let hovered = resp.hovered();
                     if active {
-                        p.rect_filled(rect, egui::CornerRadius { nw: 7, ne: 7, sw: 0, se: 0 }, BG_EDITOR);
-                        p.rect_stroke(rect.expand2(egui::vec2(0.0, 1.0)), egui::CornerRadius { nw: 7, ne: 7, sw: 0, se: 0 }, Stroke::new(1.0, theme::BORDER), egui::StrokeKind::Inside);
-                        p.hline(rect.x_range().shrink(1.0), rect.bottom(), Stroke::new(2.0, BG_EDITOR));
-                        p.hline(rect.x_range().shrink(8.0), rect.top() + 1.0, Stroke::new(2.0, ACCENT));
+                        p.rect_filled(rect, egui::CornerRadius { nw: 7, ne: 7, sw: 0, se: 0 }, BG_EDITOR());
+                        p.rect_stroke(rect.expand2(egui::vec2(0.0, 1.0)), egui::CornerRadius { nw: 7, ne: 7, sw: 0, se: 0 }, Stroke::new(1.0, theme::BORDER()), egui::StrokeKind::Inside);
+                        p.hline(rect.x_range().shrink(1.0), rect.bottom(), Stroke::new(2.0, BG_EDITOR()));
+                        p.hline(rect.x_range().shrink(8.0), rect.top() + 1.0, Stroke::new(2.0, ACCENT()));
                     } else if hovered {
-                        p.rect_filled(rect.shrink2(egui::vec2(0.0, 2.0)), 6, HOVER);
+                        p.rect_filled(rect.shrink2(egui::vec2(0.0, 2.0)), 6, HOVER());
                     }
-                    let color = if active { TEXT } else { MUTED };
+                    let color = if active { TEXT() } else { MUTED() };
                     p.text(egui::pos2(rect.left() + 10.0, rect.center().y), Align2::LEFT_CENTER, glyph, FontId::proportional(14.0), color);
                     let mut job = LayoutJob::simple_singleline(title.clone(), FontId::proportional(13.0), color);
                     job.wrap = egui::text::TextWrapping { max_width: w - 52.0, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
@@ -304,9 +304,9 @@ impl NotesApp {
                     let over_x = ui.input(|inp| inp.pointer.hover_pos()).is_some_and(|pos| x_rect.contains(pos));
                     if active || hovered {
                         if over_x {
-                            p.rect_filled(x_rect, 4, HOVER);
+                            p.rect_filled(x_rect, 4, HOVER());
                         }
-                        p.text(x_rect.center(), Align2::CENTER_CENTER, icon::X, FontId::proportional(12.0), MUTED);
+                        p.text(x_rect.center(), Align2::CENTER_CENTER, icon::X, FontId::proportional(12.0), MUTED());
                     }
                     let resp = resp.on_hover_text(match &tab {
                         Tab::Note(path) => self.rel(path),
@@ -335,7 +335,7 @@ impl NotesApp {
                 if let (Some(i), Some(to)) = (dragging, target) {
                     if to != i && to != i + 1 {
                         let x = rects.get(to).map_or_else(|| rects[n - 1].right() + 1.0, |r| r.left() - 1.0);
-                        ui.painter().vline(x, rects[0].y_range(), Stroke::new(2.0, ACCENT));
+                        ui.painter().vline(x, rects[0].y_range(), Stroke::new(2.0, ACCENT()));
                     }
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
                 }
@@ -343,7 +343,7 @@ impl NotesApp {
                     todo = Some(Do::Move(i, to));
                 }
                 let ws = self.ws.clone();
-                let plus = ui.menu_button(RichText::new(icon::PLUS).size(15.0).color(MUTED), |ui| {
+                let plus = ui.menu_button(RichText::new(icon::PLUS).size(15.0).color(MUTED()), |ui| {
                     if ui.button(format!("{}  Nota nueva en {ws}   Ctrl+N", icon::NOTE_PENCIL)).clicked() {
                         todo = Some(Do::NewNote);
                         ui.close();
@@ -363,14 +363,14 @@ impl NotesApp {
                     ui.separator();
                     let templates = self.templates();
                     if !templates.is_empty() {
-                        ui.label(RichText::new(format!("Desde una plantilla, en {ws}")).size(12.0).color(MUTED));
+                        ui.label(RichText::new(format!("Desde una plantilla, en {ws}")).size(12.0).color(MUTED()));
                         for t in templates {
                             ui.horizontal(|ui| {
                                 if ui.button(format!("{}  {}", icon::FILE_DASHED, vault::stem(&t))).clicked() {
                                     todo = Some(Do::FromTemplate(t.clone()));
                                     ui.close();
                                 }
-                                let edit = egui::Button::new(RichText::new(icon::PENCIL_SIMPLE).size(13.0).color(MUTED)).frame(false);
+                                let edit = egui::Button::new(RichText::new(icon::PENCIL_SIMPLE).size(13.0).color(MUTED())).frame(false);
                                 if ui.add(edit).on_hover_text("Editar la plantilla").clicked() {
                                     todo = Some(Do::EditTemplate(t.clone()));
                                     ui.close();

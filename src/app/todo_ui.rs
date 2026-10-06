@@ -127,9 +127,9 @@ impl NotesApp {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(format!("{} Microsoft To Do", icon::CHECK_SQUARE_OFFSET)).font(theme::bold(13.5)));
             if t.connecting {
-                ui.label(RichText::new("Esperando tu permiso en el navegador…").size(13.0).color(ACCENT));
+                ui.label(RichText::new("Esperando tu permiso en el navegador…").size(13.0).color(ACCENT()));
             } else if !t.connected {
-                ui.label(RichText::new("Tus tareas también en To Do, en una lista «Notas», en los dos sentidos.").size(13.0).color(MUTED));
+                ui.label(RichText::new("Tus tareas también en To Do, en una lista «Notas», en los dos sentidos.").size(13.0).color(MUTED()));
                 if ui.link(RichText::new("Conectar").size(13.0)).clicked() {
                     action = Some(Action::TodoConnect);
                 }
@@ -137,7 +137,7 @@ impl NotesApp {
                     action = Some(Action::OpenSettings(Section::Tasks));
                 }
                 if let Some(e) = &t.last_error {
-                    ui.label(RichText::new(e).size(13.0).color(RED));
+                    ui.label(RichText::new(e).size(13.0).color(RED()));
                 }
             } else {
                 let status = if t.busy {
@@ -149,7 +149,7 @@ impl NotesApp {
                 } else {
                     "conectado".to_string()
                 };
-                let color = if t.last_error.is_some() { RED } else { SUCCESS };
+                let color = if t.last_error.is_some() { RED() } else { SUCCESS() };
                 ui.label(RichText::new(format!("lista «Notas» · {status}")).size(13.0).color(color));
                 if ui.link(RichText::new("Sincronizar ahora").size(13.0)).clicked() {
                     action = Some(Action::TodoSync);

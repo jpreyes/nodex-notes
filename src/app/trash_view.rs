@@ -28,7 +28,7 @@ impl NotesApp {
                 ui.label(RichText::new(format!("{} Papelera", icon::TRASH)).font(theme::bold(24.0)));
                 if !items.is_empty() {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let b = egui::Button::new(RichText::new(format!("{} Vaciar la papelera", icon::TRASH)).color(RED)).stroke(Stroke::new(1.0, RED));
+                        let b = egui::Button::new(RichText::new(format!("{} Vaciar la papelera", icon::TRASH)).color(RED())).stroke(Stroke::new(1.0, RED()));
                         if ui.add(b).on_hover_text("Borra para siempre todo lo que hay aquí").clicked() {
                             self.forever = Some((Forever::All, false));
                         }
@@ -39,15 +39,15 @@ impl NotesApp {
             ui.label(
                 RichText::new("Lo que borras queda aquí (en la carpeta .papelera). «Restaurar» lo devuelve a su lugar; «Borrar para siempre» no se puede deshacer.")
                     .size(13.0)
-                    .color(MUTED),
+                    .color(MUTED()),
             );
             ui.add_space(14.0);
             if items.is_empty() {
-                ui.label(RichText::new("La papelera está vacía.").color(MUTED));
+                ui.label(RichText::new("La papelera está vacía.").color(MUTED()));
                 return;
             }
             for t in &items {
-                Frame::new().stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
+                Frame::new().stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         let glyph = if t.is_dir { icon::FOLDER_SIMPLE } else { icon::FILE_TEXT };
@@ -59,7 +59,7 @@ impl NotesApp {
                         };
                         ui.label(RichText::new(format!("{glyph}  {title}")).font(theme::bold(14.5)));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            let b = egui::Button::new(RichText::new("Borrar para siempre").size(12.5).color(RED));
+                            let b = egui::Button::new(RichText::new("Borrar para siempre").size(12.5).color(RED()));
                             if ui.add(b).clicked() {
                                 self.forever = Some((Forever::One(t.clone()), false));
                             }
@@ -79,14 +79,14 @@ impl NotesApp {
                         (None, false) => "No se sabe de qué espacio era: vuelve al espacio actual".to_string(),
                     };
                     let when = if t.when.is_empty() { String::new() } else { format!(" · borrada el {}", long_date(&t.when[..10.min(t.when.len())])) };
-                    ui.label(RichText::new(format!("{from}{when}")).size(12.5).color(MUTED));
+                    ui.label(RichText::new(format!("{from}{when}")).size(12.5).color(MUTED()));
                     // El comienzo de la nota, para reconocerla.
                     if !t.is_dir && t.path.extension().is_some_and(|e| e.eq_ignore_ascii_case("md")) {
                         let text = vault::read_text(&t.path).unwrap_or_default();
                         let preview: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).take(2).collect();
                         if !preview.is_empty() {
                             let p: String = preview.join(" · ").chars().take(160).collect();
-                            ui.label(RichText::new(p).size(12.5).color(TEXT));
+                            ui.label(RichText::new(p).size(12.5).color(TEXT()));
                         }
                     }
                 });
@@ -124,12 +124,12 @@ impl NotesApp {
             ui.set_width(400.0);
             ui.label(RichText::new(title).font(theme::bold(16.0)));
             ui.add_space(4.0);
-            ui.label(RichText::new(format!("{detail} No se puede deshacer, ni desde la app ni desde la carpeta.").trim()).size(13.0).color(MUTED));
+            ui.label(RichText::new(format!("{detail} No se puede deshacer, ni desde la app ni desde la carpeta.").trim()).size(13.0).color(MUTED()));
             ui.add_space(8.0);
             ui.checkbox(sure, "Entiendo que no se puede recuperar");
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                let b = egui::Button::new(RichText::new(format!("{} Borrar para siempre", icon::TRASH)).color(Color32::WHITE)).fill(RED);
+                let b = egui::Button::new(RichText::new(format!("{} Borrar para siempre", icon::TRASH)).color(theme::c(Color32::WHITE))).fill(RED());
                 if ui.add_enabled(*sure, b).clicked() {
                     go = true;
                 }

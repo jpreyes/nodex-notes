@@ -9,7 +9,7 @@ use crate::gcal::{self, GCal};
 use crate::lines;
 use crate::organize::{self, MEETING_TAG};
 use crate::tags;
-use crate::theme::{self, ACCENT, ACCENT_BG, BG_EDITOR, BG_RAIL, BG_SIDE, HOVER, MUTED, SUCCESS, TEXT};
+use crate::theme::{self, ACCENT, ACCENT_BG, BG_EDITOR, BG_RAIL, BG_SIDE, HOVER, MUTED, RED, SUCCESS, TEXT, WARN};
 use crate::vault::{self, Vault};
 use chrono::{DateTime, Datelike, Local, NaiveDate};
 use eframe::egui::{
@@ -97,9 +97,6 @@ const DIAS: [&str; 7] = ["lunes", "martes", "miércoles", "jueves", "viernes", "
 const DIAS_CORTOS: [&str; 7] = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
 /// Primera nota de una carpeta nueva: cómo se usa la app.
 const WELCOME: &str = "Escribe una idea por línea: cada línea es una nota distinta, y la IA la lleva después a su espacio.\n  Con Tab al comienzo, la línea se une a la nota de arriba, como un detalle\n  - con Tab dos veces se vuelve un ítem de lista\nPon #etiquetas donde quieras: se ven como píldoras de color #ejemplo\nEscribe tareas como las dirías, por ejemplo «enviar el informe el viernes»: la IA les pone casilla y fecha\nCtrl+R empieza una reunión: cada línea lleva su hora y Esc la cierra con un resumen\nCtrl+K abre la IA: pregúntale lo que quieras sobre tus notas\nCuando ya no la necesites, borra esta nota con el tacho que aparece al pasar el mouse en la barra lateral\n";
-const RED: Color32 = Color32::from_rgb(198, 40, 40);
-/// Avisos que no son errores (p. ej. Dropbox cerrado).
-const WARN: Color32 = Color32::from_rgb(176, 104, 0);
 
 struct OpenNote {
     path: PathBuf,
@@ -1405,10 +1402,10 @@ impl NotesApp {
             ui.label(RichText::new(format!("¿Mover el espacio «{ws}» a la papelera?")).font(theme::bold(16.0)));
             ui.add_space(4.0);
             let what = if n == 0 { "Está vacío.".to_string() } else { format!("Se va con sus {}.", plural(n, "nota")) };
-            ui.label(RichText::new(format!("{what} Queda en la carpeta .papelera y se puede deshacer.")).size(13.0).color(MUTED));
+            ui.label(RichText::new(format!("{what} Queda en la carpeta .papelera y se puede deshacer.")).size(13.0).color(MUTED()));
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                let b = egui::Button::new(RichText::new(format!("{} Mover a la papelera", icon::TRASH)).color(Color32::WHITE)).fill(RED);
+                let b = egui::Button::new(RichText::new(format!("{} Mover a la papelera", icon::TRASH)).color(theme::c(Color32::WHITE))).fill(RED());
                 if ui.add(b).clicked() {
                     answer = Some(true);
                 }
@@ -2423,38 +2420,38 @@ impl NotesApp {
         ui.ctx().data_mut(|d| d.insert_temp(Id::new(RAIL_H), h));
         ui.vertical_centered(|ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
-            if rail_item(ui, icon::HOUSE, "Inicio", "Inicio: tu día y un resumen de todo (Ctrl+H)", self.view == View::Home, TEXT).clicked() {
+            if rail_item(ui, icon::HOUSE, "Inicio", "Inicio: tu día y un resumen de todo (Ctrl+H)", self.view == View::Home, TEXT()).clicked() {
                 action = Some(Action::ShowTab(View::Home));
             }
             let (tip, color) = match &self.meeting {
-                Some(m) => (format!("Cerrar reunión «{}» (Esc)", m.title), SUCCESS),
-                None => ("Nueva reunión (Ctrl+R)".to_string(), TEXT),
+                Some(m) => (format!("Cerrar reunión «{}» (Esc)", m.title), SUCCESS()),
+                None => ("Nueva reunión (Ctrl+R)".to_string(), TEXT()),
             };
             if rail_item(ui, icon::USERS, "Reunión", &tip, self.meeting.is_some(), color).clicked() {
                 action = Some(if self.meeting.is_some() { Action::CloseMeeting } else { Action::StartMeeting });
             }
-            if rail_item(ui, icon::FILE_TEXT, "Notas", "Todas tus notas, la más reciente primero", self.view == View::Notes, TEXT).clicked() {
+            if rail_item(ui, icon::FILE_TEXT, "Notas", "Todas tus notas, la más reciente primero", self.view == View::Notes, TEXT()).clicked() {
                 action = Some(Action::ShowTab(View::Notes));
             }
-            if rail_item(ui, icon::CHECK_SQUARE, "Tareas", "Todas las tareas", self.view == View::Tasks, TEXT).clicked() {
+            if rail_item(ui, icon::CHECK_SQUARE, "Tareas", "Todas las tareas", self.view == View::Tasks, TEXT()).clicked() {
                 action = Some(Action::ShowTab(View::Tasks));
             }
-            if rail_item(ui, icon::CALENDAR_BLANK, "Agenda", "Tus calendarios, eventos y tareas con fecha", self.view == View::Agenda, TEXT).clicked() {
+            if rail_item(ui, icon::CALENDAR_BLANK, "Agenda", "Tus calendarios, eventos y tareas con fecha", self.view == View::Agenda, TEXT()).clicked() {
                 action = Some(Action::ShowTab(View::Agenda));
             }
             let checks = self.mail.open_checks().len();
-            let color = if self.mail.busy() { ACCENT } else { TEXT };
+            let color = if self.mail.busy() { ACCENT() } else { TEXT() };
             let r = rail_item(ui, icon::ENVELOPE_SIMPLE, "Correo", "Compromisos y fechas de tu correo", self.view == View::Mail, color);
             if r.clicked() {
                 action = Some(Action::ShowTab(View::Mail));
             }
             if checks > 0 {
-                rail_badge(ui, &r, checks, SUCCESS);
+                rail_badge(ui, &r, checks, SUCCESS());
             }
             // La IA: conversar, sus preguntas y lo que hizo, en una sola ventana.
             let asks = self.pending_asks();
             let working = self.in_flight.is_some() || self.ask.busy();
-            let color = if self.ai.is_err() { MUTED } else if working { ACCENT } else { TEXT };
+            let color = if self.ai.is_err() { MUTED() } else if working { ACCENT() } else { TEXT() };
             let tip = match &self.ai {
                 Ok(_) if asks > 0 => format!("IA: tiene {} para ti · conversar y lo que hizo (Ctrl+K)", plural(asks, "pregunta")),
                 Ok(_) => "IA: conversar con tus notas, sus preguntas y lo que hizo (Ctrl+K)".to_string(),
@@ -2466,22 +2463,22 @@ impl NotesApp {
                 action = Some(Action::ShowAi(tab));
             }
             if asks > 0 {
-                rail_badge(ui, &r, asks, ACCENT);
+                rail_badge(ui, &r, asks, ACCENT());
             }
-            if rail_item(ui, icon::NOTEPAD, "Bloc", "Bloc: pega o escribe lo que sea, tal cual (Ctrl+B)", self.view == View::Bloc, TEXT).clicked() {
+            if rail_item(ui, icon::NOTEPAD, "Bloc", "Bloc: pega o escribe lo que sea, tal cual (Ctrl+B)", self.view == View::Bloc, TEXT()).clicked() {
                 action = Some(Action::OpenBloc);
             }
             ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
-                if rail_item(ui, icon::GEAR, "Ajustes", "Configuración (Ctrl+,)", self.settings.is_some(), TEXT).clicked() {
+                if rail_item(ui, icon::GEAR, "Ajustes", "Configuración (Ctrl+,)", self.settings.is_some(), TEXT()).clicked() {
                     action = Some(Action::OpenSettings(Section::General));
                 }
-                if rail_item(ui, icon::TRASH, "Papelera", "Lo que borraste: restaurar o borrar para siempre", self.view == View::Trash, TEXT).clicked() {
+                if rail_item(ui, icon::TRASH, "Papelera", "Lo que borraste: restaurar o borrar para siempre", self.view == View::Trash, TEXT()).clicked() {
                     action = Some(Action::ShowTab(View::Trash));
                 }
-                if rail_item(ui, icon::ARCHIVE, "Archivo", "Notas archivadas: fuera de la vista, sin borrarlas", self.view == View::Archive, TEXT).clicked() {
+                if rail_item(ui, icon::ARCHIVE, "Archivo", "Notas archivadas: fuera de la vista, sin borrarlas", self.view == View::Archive, TEXT()).clicked() {
                     action = Some(Action::ShowTab(View::Archive));
                 }
-                if rail_item(ui, icon::FOLDER_OPEN, "Carpeta", "Abrir la carpeta de notas", false, TEXT).clicked() {
+                if rail_item(ui, icon::FOLDER_OPEN, "Carpeta", "Abrir la carpeta de notas", false, TEXT()).clicked() {
                     action = Some(Action::OpenExternal(self.vault.root.clone()));
                 }
             });
@@ -2620,7 +2617,7 @@ impl NotesApp {
                 // Soltar aquí una nota arrastrada la mueve a este espacio.
                 let dragged = r.dnd_hover_payload::<PathBuf>().filter(|p| workspace_of(p).as_deref() != Some(ws.as_str()));
                 if dragged.is_some() {
-                    ui.painter().rect_stroke(r.rect, 6, Stroke::new(1.5, ACCENT), egui::StrokeKind::Inside);
+                    ui.painter().rect_stroke(r.rect, 6, Stroke::new(1.5, ACCENT()), egui::StrokeKind::Inside);
                 }
                 if let Some(p) = r.dnd_release_payload::<PathBuf>() {
                     action = Some(Action::MoveNote((*p).clone(), ws.clone()));
@@ -2691,7 +2688,7 @@ impl NotesApp {
             let tags = summary.tags.clone();
             section(ui, "Etiquetas", None);
             if tags.is_empty() {
-                ui.label(RichText::new("Escribe #palabra en una nota.").color(MUTED).size(12.5));
+                ui.label(RichText::new("Escribe #palabra en una nota.").color(MUTED()).size(12.5));
             }
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(5.0, 6.0);
@@ -2736,7 +2733,7 @@ impl NotesApp {
                 let mins = (Local::now() - m.started).num_minutes();
                 let text = RichText::new(format!("{} {} · {mins} min · Esc para cerrar", icon::RECORD, m.title))
                     .size(12.5)
-                    .color(SUCCESS);
+                    .color(SUCCESS());
                 let r = ui.add(egui::Label::new(text).sense(Sense::click())).on_hover_text("Ir a la reunión");
                 if r.clicked() {
                     action = Some(Action::Open(m.path.clone(), Some(usize::MAX)));
@@ -2751,7 +2748,7 @@ impl NotesApp {
             self.sync_status(ui);
             // Dropbox cerrado: se puede seguir trabajando, pero no se sincroniza.
             if self.dropbox.as_ref().is_some_and(|d| d.closed()) {
-                let text = RichText::new(format!("{} Dropbox no está abierto", icon::CLOUD_SLASH)).size(12.5).color(WARN);
+                let text = RichText::new(format!("{} Dropbox no está abierto", icon::CLOUD_SLASH)).size(12.5).color(WARN());
                 ui.label(text).on_hover_text(
                     "Tus notas están en una carpeta de Dropbox, pero la app de Dropbox no está abierta. Puedes seguir trabajando: los cambios quedan en este equipo y se sincronizarán cuando la abras.",
                 );
@@ -2760,20 +2757,20 @@ impl NotesApp {
             // Copias en conflicto de Dropbox que se están por juntar (se juntan solas).
             if !self.conflict_seen.is_empty() {
                 let n = self.conflict_seen.len();
-                let text = RichText::new(format!("{} Juntando {}", icon::ARROWS_MERGE, plural(n, "copia en conflicto"))).size(12.5).color(MUTED);
+                let text = RichText::new(format!("{} Juntando {}", icon::ARROWS_MERGE, plural(n, "copia en conflicto"))).size(12.5).color(MUTED());
                 ui.label(text).on_hover_text("Dropbox dejó dos versiones de un archivo; en unos segundos se juntan solas, sin perder nada");
                 ui.add_space(12.0);
             }
             let (glyph, text, color) = if self.note.dirty {
-                (icon::CIRCLE_NOTCH, "Guardando…", MUTED)
+                (icon::CIRCLE_NOTCH, "Guardando…", MUTED())
             } else if self.note.disk_mtime.is_none() {
-                (icon::FILE_TEXT, "Nota nueva — se guarda al escribir", MUTED)
+                (icon::FILE_TEXT, "Nota nueva — se guarda al escribir", MUTED())
             } else {
-                (icon::CHECK_CIRCLE, "Guardado", SUCCESS)
+                (icon::CHECK_CIRCLE, "Guardado", SUCCESS())
             };
             ui.label(RichText::new(format!("{glyph} {text}")).size(12.5).color(color));
             let words = self.note.text.split_whitespace().count();
-            ui.label(RichText::new(format!("   {words} palabras")).size(12.5).color(MUTED));
+            ui.label(RichText::new(format!("   {words} palabras")).size(12.5).color(MUTED()));
             // IA trabajando.
             if let Some(p) = &self.in_flight {
                 let progress = if self.backlog_total > 0 {
@@ -2784,7 +2781,7 @@ impl NotesApp {
                 ui.label(
                     RichText::new(format!("   {} Analizando «{}»{progress}", icon::SPARKLE, vault::stem(p)))
                         .size(12.5)
-                        .color(ACCENT),
+                        .color(ACCENT()),
                 );
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -2796,7 +2793,7 @@ impl NotesApp {
                 }
                 let msg = self.message.as_ref().filter(|(_, t)| t.elapsed() < Duration::from_secs(10));
                 if let Some((m, _)) = msg {
-                    ui.add(egui::Label::new(RichText::new(m).color(TEXT).size(12.5)).truncate());
+                    ui.add(egui::Label::new(RichText::new(m).color(TEXT()).size(12.5)).truncate());
                 }
             });
         });
@@ -2912,7 +2909,7 @@ impl NotesApp {
         Self::column(ui, "results", |ui, _| {
             view_header(ui, &heading, &subtitle);
             if found.hits.is_empty() {
-                ui.label(RichText::new("Sin resultados.").color(MUTED));
+                ui.label(RichText::new("Sin resultados.").color(MUTED()));
             }
             // Solo las primeras líneas (dibujar miles es lento); el resto con «Mostrar más».
             let mut drawn = 0;
@@ -2921,13 +2918,13 @@ impl NotesApp {
                     break;
                 }
                 let r = ui.add(
-                    egui::Label::new(RichText::new(&h.title).font(theme::bold(15.0)).color(TEXT)).sense(Sense::click()),
+                    egui::Label::new(RichText::new(&h.title).font(theme::bold(15.0)).color(TEXT())).sense(Sense::click()),
                 );
                 if r.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     action = Some(Action::Open(h.path.clone(), None));
                 }
                 if tag.is_none() {
-                    ui.label(RichText::new(&h.ws).size(12.5).color(MUTED));
+                    ui.label(RichText::new(&h.ws).size(12.5).color(MUTED()));
                 }
                 for (offset, line) in &h.lines {
                     if clickable_line(ui, highlight_line(&display_line(line), EDITOR_SIZE - 1.0)).clicked() {
@@ -2997,7 +2994,7 @@ impl NotesApp {
             });
             ui.add_space(8.0);
             if pending.is_empty() {
-                ui.label(RichText::new("No hay tareas pendientes. La IA las encuentra en tus notas, o agrégalas arriba.").color(MUTED));
+                ui.label(RichText::new("No hay tareas pendientes. La IA las encuentra en tus notas, o agrégalas arriba.").color(MUTED()));
             }
             for t in &pending {
                 if let Some(a) = task_row(ui, t, &today, &root, &follows) {
@@ -3006,7 +3003,7 @@ impl NotesApp {
             }
             if !done.is_empty() {
                 ui.add_space(16.0);
-                egui::CollapsingHeader::new(RichText::new(format!("Hechas ({})", done.len())).color(MUTED))
+                egui::CollapsingHeader::new(RichText::new(format!("Hechas ({})", done.len())).color(MUTED()))
                     .default_open(false)
                     .show(ui, |ui| {
                         for t in done.iter().take(50) {
@@ -3030,20 +3027,20 @@ impl NotesApp {
             ui.label(RichText::new(format!("{} Google Calendar", icon::GOOGLE_LOGO)).font(theme::bold(14.0)));
             match &self.gcal {
                 None => {
-                    ui.label(RichText::new("Si quieres, tus tareas y eventos también pueden aparecer en Google Calendar.").size(13.0).color(MUTED));
+                    ui.label(RichText::new("Si quieres, tus tareas y eventos también pueden aparecer en Google Calendar.").size(13.0).color(MUTED()));
                     if ui.link(RichText::new("Cómo activarlo").size(13.0)).clicked() {
                         action = Some(Action::OpenSettings(Section::Calendar));
                     }
                 }
                 Some(g) if g.connecting => {
-                    ui.label(RichText::new("Esperando tu permiso en el navegador…").size(12.5).color(ACCENT));
+                    ui.label(RichText::new("Esperando tu permiso en el navegador…").size(12.5).color(ACCENT()));
                 }
                 Some(g) if !g.connected => {
                     if ui.button(format!("{} Conectar Google Calendar", icon::LINK)).clicked() {
                         action = Some(Action::GoogleConnect);
                     }
                     if let Some(e) = &g.last_error {
-                        ui.label(RichText::new(e).size(12.5).color(RED));
+                        ui.label(RichText::new(e).size(12.5).color(RED()));
                     }
                 }
                 Some(g) => {
@@ -3056,7 +3053,7 @@ impl NotesApp {
                     } else {
                         "conectado".to_string()
                     };
-                    let color = if g.last_error.is_some() { RED } else { SUCCESS };
+                    let color = if g.last_error.is_some() { RED() } else { SUCCESS() };
                     ui.label(RichText::new(format!("calendario «Notas» · {status}")).size(12.5).color(color));
                     if ui.link(RichText::new("Sincronizar ahora").size(12.5)).clicked() {
                         action = Some(Action::GoogleSync);
@@ -3144,7 +3141,7 @@ impl NotesApp {
             }
             ui.add_space(14.0);
             if !overdue.is_empty() {
-                ui.label(RichText::new("Atrasadas").font(theme::bold(15.0)).color(RED));
+                ui.label(RichText::new("Atrasadas").font(theme::bold(15.0)).color(RED()));
                 ui.add_space(4.0);
                 for t in &overdue {
                     if let Some(a) = task_row(ui, t, &today, &root, &follows) {
@@ -3154,7 +3151,7 @@ impl NotesApp {
                 ui.add_space(14.0);
             }
             if items.is_empty() && self.agenda_list {
-                ui.label(RichText::new("Nada agendado. La IA agrega aquí las fechas que menciones en tus notas.").color(MUTED));
+                ui.label(RichText::new("Nada agendado. La IA agrega aquí las fechas que menciones en tus notas.").color(MUTED()));
             }
             let mut current = String::new();
             for (date, time, text, project, note, task, external) in items.iter().filter(|_| self.agenda_list) {
@@ -3168,7 +3165,7 @@ impl NotesApp {
                         long_date(date)
                     };
                     ui.add_space(8.0);
-                    ui.label(RichText::new(label).font(theme::bold(15.0)).color(if *date == today { ACCENT } else { TEXT }));
+                    ui.label(RichText::new(label).font(theme::bold(15.0)).color(if *date == today { ACCENT() } else { TEXT() }));
                     ui.add_space(2.0);
                 }
                 let mut job = LayoutJob::default();
@@ -3177,15 +3174,15 @@ impl NotesApp {
                 }
                 if task.is_none() {
                     let lead = if time.is_empty() { format!("{}  ", icon::CALENDAR_BLANK) } else { format!("{time}  ") };
-                    job.append(&lead, 0.0, fmt(FontId::proportional(14.0), MUTED));
+                    job.append(&lead, 0.0, fmt(FontId::proportional(14.0), MUTED()));
                 }
-                job.append(text, 0.0, fmt(FontId::proportional(14.5), TEXT));
+                job.append(text, 0.0, fmt(FontId::proportional(14.5), TEXT()));
                 if !project.is_empty() {
-                    job.append(&format!("   {project}"), 0.0, fmt(FontId::proportional(12.5), MUTED));
+                    job.append(&format!("   {project}"), 0.0, fmt(FontId::proportional(12.5), MUTED()));
                 }
                 ui.horizontal(|ui| {
                     if let Some(raw) = task {
-                        let b = egui::Button::new(RichText::new(icon::SQUARE).size(18.0).color(MUTED)).frame(false);
+                        let b = egui::Button::new(RichText::new(icon::SQUARE).size(18.0).color(MUTED())).frame(false);
                         if ui.add(b).on_hover_text("Marcar hecha").clicked() {
                             action = Some(Action::ToggleTask(raw.clone()));
                         }
@@ -3240,6 +3237,15 @@ impl NotesApp {
     fn frame(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         count_frame(&ctx);
+        // El tema: el elegido, o el del sistema (cambia sin reiniciar).
+        let dark = match self.cfg.tema.as_str() {
+            "oscuro" => true,
+            "claro" => false,
+            _ => ctx.system_theme() == Some(egui::Theme::Dark),
+        };
+        if dark != theme::is_dark() {
+            theme::apply(&ctx, dark);
+        }
         // El cursor parpadea solo mientras se usa la app (ver CURSOR_REST).
         if ctx.input(|i| !i.events.is_empty()) {
             self.last_input = Instant::now();
@@ -3273,22 +3279,22 @@ impl NotesApp {
 
         egui::Panel::bottom("status")
             .exact_size(26.0)
-            .frame(Frame::new().fill(BG_SIDE).inner_margin(Margin::symmetric(12, 0)))
+            .frame(Frame::new().fill(BG_SIDE()).inner_margin(Margin::symmetric(12, 0)))
             .show(ui, |ui| actions.extend(self.status_bar(ui)));
         egui::Panel::left("rail")
             .exact_size(64.0)
             .resizable(false)
-            .frame(Frame::new().fill(BG_RAIL).inner_margin(Margin::symmetric(0, 12)))
+            .frame(Frame::new().fill(BG_RAIL()).inner_margin(Margin::symmetric(0, 12)))
             .show(ui, |ui| actions.extend(self.rail(ui)));
         egui::Panel::left("sidebar")
             .default_size(250.0)
             .size_range(180.0..=420.0)
             .show_separator_line(false)
-            .frame(Frame::new().fill(BG_SIDE).inner_margin(Margin::same(12)))
+            .frame(Frame::new().fill(BG_SIDE()).inner_margin(Margin::same(12)))
             .show(ui, |ui| {
                 // Línea divisoria propia (la de egui queda oscura en paneles redimensionables).
                 let r = ui.max_rect().expand2(egui::vec2(12.0, 12.0));
-                ui.painter().vline(r.right() - 0.5, r.y_range(), Stroke::new(1.0, theme::BORDER));
+                ui.painter().vline(r.right() - 0.5, r.y_range(), Stroke::new(1.0, theme::BORDER()));
                 actions.extend(self.sidebar(ui))
             });
         // La IA de la derecha, en todas las vistas (salvo en la ventana de la IA).
@@ -3297,24 +3303,24 @@ impl NotesApp {
                 .default_size(side_ai::WIDTH)
                 .size_range(300.0..=640.0)
                 .show_separator_line(false)
-                .frame(Frame::new().fill(BG_SIDE).inner_margin(Margin::symmetric(12, 0)))
+                .frame(Frame::new().fill(BG_SIDE()).inner_margin(Margin::symmetric(12, 0)))
                 .show(ui, |ui| {
                     let r = ui.max_rect().expand2(egui::vec2(12.0, 0.0));
-                    ui.painter().vline(r.left() + 0.5, r.y_range(), Stroke::new(1.0, theme::BORDER));
+                    ui.painter().vline(r.left() + 0.5, r.y_range(), Stroke::new(1.0, theme::BORDER()));
                     actions.extend(self.side_ai_panel(ui))
                 });
         }
         egui::Panel::top("pestanas")
             .exact_size(36.0)
             .show_separator_line(false)
-            .frame(Frame::new().fill(BG_SIDE).inner_margin(Margin { left: 6, right: 6, top: 5, bottom: 0 }))
+            .frame(Frame::new().fill(BG_SIDE()).inner_margin(Margin { left: 6, right: 6, top: 5, bottom: 0 }))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     self.nav_arrows(ui);
                     self.tab_bar(ui);
                 })
             });
-        egui::CentralPanel::default().frame(Frame::new().fill(BG_EDITOR)).show(ui, |ui| {
+        egui::CentralPanel::default().frame(Frame::new().fill(BG_EDITOR())).show(ui, |ui| {
             if !self.search.trim().is_empty() {
                 actions.extend(self.results(ui));
             } else {
@@ -3405,12 +3411,12 @@ fn rail_item(ui: &mut Ui, glyph: &str, label: &str, tip: &str, selected: bool, c
     let (rect, r) = ui.allocate_exact_size(egui::vec2(56.0, h), Sense::click());
     let p = ui.painter();
     if selected {
-        p.rect_filled(rect, 8, ACCENT_BG);
+        p.rect_filled(rect, 8, ACCENT_BG());
     } else if r.hovered() {
-        p.rect_filled(rect, 8, HOVER);
+        p.rect_filled(rect, 8, HOVER());
     }
-    let color = if selected && color == TEXT { ACCENT } else { color };
-    let label_color = if selected { ACCENT } else { MUTED };
+    let color = if selected && color == TEXT() { ACCENT() } else { color };
+    let label_color = if selected { ACCENT() } else { MUTED() };
     if h >= 42.0 {
         p.text(egui::pos2(rect.center().x, rect.top() + h * 0.36), Align2::CENTER_CENTER, glyph, FontId::proportional(20.0), color);
         p.text(egui::pos2(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_CENTER, label, FontId::proportional(11.0), label_color);
@@ -3424,17 +3430,17 @@ fn rail_item(ui: &mut Ui, glyph: &str, label: &str, tip: &str, selected: bool, c
 fn rail_badge(ui: &Ui, r: &Response, n: usize, color: Color32) {
     let c = egui::pos2(r.rect.center().x + 13.0, r.rect.top() + 9.0);
     ui.painter().circle_filled(c, 7.5, color);
-    ui.painter().text(c, Align2::CENTER_CENTER, n.min(9).to_string(), FontId::proportional(10.5), Color32::WHITE);
+    ui.painter().text(c, Align2::CENTER_CENTER, n.min(9).to_string(), FontId::proportional(10.5), theme::c(Color32::WHITE));
 }
 
 /// Encabezado de sección; devuelve true si se presionó su botón "+".
 fn section(ui: &mut Ui, title: &str, add_tip: Option<&str>) -> bool {
     let mut clicked = false;
     ui.horizontal(|ui| {
-        ui.label(RichText::new(title).size(12.5).color(MUTED));
+        ui.label(RichText::new(title).size(12.5).color(MUTED()));
         if let Some(tip) = add_tip {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let b = egui::Button::new(RichText::new(icon::PLUS).size(14.0).color(MUTED)).frame(false);
+                let b = egui::Button::new(RichText::new(icon::PLUS).size(14.0).color(MUTED())).frame(false);
                 clicked = ui.add(b).on_hover_text(tip).clicked();
             });
         }
@@ -3445,7 +3451,7 @@ fn section(ui: &mut Ui, title: &str, add_tip: Option<&str>) -> bool {
 /// Título grande de una vista (se cierra con la ✕ de su pestaña o con Esc).
 fn view_header(ui: &mut Ui, title: &str, subtitle: &str) {
     ui.label(RichText::new(title).font(theme::bold(26.0)));
-    ui.label(RichText::new(subtitle).size(13.0).color(MUTED));
+    ui.label(RichText::new(subtitle).size(13.0).color(MUTED()));
     ui.add_space(14.0);
 }
 
@@ -3453,7 +3459,7 @@ fn view_header(ui: &mut Ui, title: &str, subtitle: &str) {
 fn clickable_line(ui: &mut Ui, job: LayoutJob) -> Response {
     let r = ui.add(egui::Label::new(job).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand);
     if r.hovered() {
-        ui.painter().rect_stroke(r.rect.expand(3.0), 4, Stroke::new(1.0, theme::BORDER), egui::StrokeKind::Outside);
+        ui.painter().rect_stroke(r.rect.expand(3.0), 4, Stroke::new(1.0, theme::BORDER()), egui::StrokeKind::Outside);
     }
     r
 }
@@ -3486,24 +3492,24 @@ fn task_row_inner(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follo
     let mut action = None;
     let follow = follows.get(&tracking::task_key(t));
     ui.horizontal(|ui| {
-        let (glyph, color) = if t.done { (icon::CHECK_SQUARE, ACCENT) } else { (icon::SQUARE, MUTED) };
+        let (glyph, color) = if t.done { (icon::CHECK_SQUARE, ACCENT()) } else { (icon::SQUARE, MUTED()) };
         let check = egui::Button::new(RichText::new(glyph).size(18.0).color(color)).frame(false);
         if ui.add(check).on_hover_text(if t.done { "Marcar pendiente" } else { "Marcar hecha" }).clicked() {
             action = Some(Action::ToggleTask(t.raw.clone()));
         }
         let mut job = LayoutJob::default();
-        let mut body = fmt(FontId::proportional(14.5), if t.done { MUTED } else { TEXT });
+        let mut body = fmt(FontId::proportional(14.5), if t.done { MUTED() } else { TEXT() });
         if t.done {
-            body.strikethrough = Stroke::new(1.0, MUTED);
+            body.strikethrough = Stroke::new(1.0, MUTED());
         }
         job.append(&agenda::display_text(&t.text), 0.0, body);
         if let Some(d) = &t.due {
-            let color = if !t.done && d.as_str() < today { RED } else if d == today { ACCENT } else { MUTED };
+            let color = if !t.done && d.as_str() < today { RED() } else if d == today { ACCENT() } else { MUTED() };
             let label = if d == today { "hoy".to_string() } else { long_date(d) };
             job.append(&format!("   {} {label}", icon::CALENDAR_BLANK), 0.0, fmt(FontId::proportional(12.5), color));
         }
         if !t.project.is_empty() {
-            job.append(&format!("   {}", t.project), 0.0, fmt(FontId::proportional(12.5), MUTED));
+            job.append(&format!("   {}", t.project), 0.0, fmt(FontId::proportional(12.5), MUTED()));
         }
         let r = ui.add(egui::Label::new(job).wrap().sense(Sense::click()));
         if r.double_clicked() {
@@ -3515,26 +3521,26 @@ fn task_row_inner(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follo
             }
         });
         if let Some(n) = t.note.as_deref().filter(|n| !n.is_empty()) {
-            let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(MUTED)).frame(false);
+            let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(MUTED())).frame(false);
             if ui.add(b).on_hover_text(format!("Ir a donde está escrita («{n}»)")).clicked() {
                 action = Some(Action::Item(day_items::ItemDo::OpenTask(t.raw.clone())));
             }
         }
         let _ = root;
         if let Some(m) = &t.mail {
-            let b = egui::Button::new(RichText::new(icon::ENVELOPE_SIMPLE).size(14.0).color(MUTED)).frame(false);
+            let b = egui::Button::new(RichText::new(icon::ENVELOPE_SIMPLE).size(14.0).color(MUTED())).frame(false);
             if ui.add(b).on_hover_text("Salió de un correo: verlo").clicked() {
                 action = Some(Action::OpenMail(m.clone()));
             }
         }
         if t.from.as_deref() == Some("todo") {
-            ui.label(RichText::new(icon::CHECK_SQUARE_OFFSET).size(14.0).color(MUTED)).on_hover_text("Llegó de Microsoft To Do (se agregó allá)");
+            ui.label(RichText::new(icon::CHECK_SQUARE_OFFSET).size(14.0).color(MUTED())).on_hover_text("Llegó de Microsoft To Do (se agregó allá)");
         }
-        let b = egui::Button::new(RichText::new(icon::ARROW_ELBOW_DOWN_RIGHT).size(14.0).color(MUTED)).frame(false);
+        let b = egui::Button::new(RichText::new(icon::ARROW_ELBOW_DOWN_RIGHT).size(14.0).color(MUTED())).frame(false);
         if ui.add(b).on_hover_text("Anotar un seguimiento: qué se hizo (la IA lo tiene en cuenta)").clicked() {
             action = Some(Action::FollowUp(t.raw.clone()));
         }
-        let b = egui::Button::new(RichText::new(icon::DOTS_THREE).size(16.0).color(MUTED)).frame(false);
+        let b = egui::Button::new(RichText::new(icon::DOTS_THREE).size(16.0).color(MUTED())).frame(false);
         let r = ui.add(b).on_hover_text("Más: cambiar fecha, convertir en nota, borrar…");
         egui::Popup::menu(&r).show(|ui| {
             if let Some(a) = day_items::task_menu(ui, t) {
@@ -3547,7 +3553,7 @@ fn task_row_inner(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follo
         let when = if date.is_empty() { String::new() } else { format!("{}  ·  ", tracking::short_day(date)) };
         ui.horizontal_wrapped(|ui| {
             ui.add_space(30.0);
-            ui.label(RichText::new(format!("{}  {when}{text}", icon::ARROW_ELBOW_DOWN_RIGHT)).size(12.5).color(Color32::from_rgb(70, 110, 75)));
+            ui.label(RichText::new(format!("{}  {when}{text}", icon::ARROW_ELBOW_DOWN_RIGHT)).size(12.5).color(theme::c(Color32::from_rgb(70, 110, 75))));
         });
     }
     action
@@ -3581,8 +3587,8 @@ fn row_trash_button(ui: &Ui, r: &Response, tip: &str) -> bool {
     let rect = egui::Rect::from_min_size(egui::pos2(r.rect.right() - 28.0, r.rect.top()), egui::vec2(28.0, r.rect.height()));
     let over = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| rect.contains(p));
     let p = ui.painter();
-    p.rect_filled(rect.shrink(2.0), 5, if over { Color32::from_rgb(250, 225, 225) } else { HOVER });
-    p.text(rect.center(), Align2::CENTER_CENTER, icon::TRASH, FontId::proportional(14.0), if over { RED } else { MUTED });
+    p.rect_filled(rect.shrink(2.0), 5, if over { theme::c(Color32::from_rgb(250, 225, 225)) } else { HOVER() });
+    p.text(rect.center(), Align2::CENTER_CENTER, icon::TRASH, FontId::proportional(14.0), if over { RED() } else { MUTED() });
     if over {
         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("tacho"), egui::PopupAnchor::Pointer).show(|ui| ui.label(tip));
     }
@@ -3593,22 +3599,22 @@ fn row_trash_button(ui: &Ui, r: &Response, tip: &str) -> bool {
 fn list_row(ui: &mut Ui, glyph: &str, text: &str, right: &str, selected: bool) -> Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), Sense::click_and_drag());
     let bg = if selected {
-        ACCENT_BG
+        ACCENT_BG()
     } else if resp.hovered() {
-        HOVER
+        HOVER()
     } else {
         Color32::TRANSPARENT
     };
     let painter = ui.painter();
     painter.rect_filled(rect, 6, bg);
-    let color = if selected { ACCENT } else { TEXT };
+    let color = if selected { ACCENT() } else { TEXT() };
     let x = rect.left() + 30.0;
-    painter.text(egui::pos2(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, glyph, FontId::proportional(15.0), if selected { ACCENT } else { MUTED });
+    painter.text(egui::pos2(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, glyph, FontId::proportional(15.0), if selected { ACCENT() } else { MUTED() });
     let mut right_w = 0.0;
     if !right.is_empty() {
-        let g = painter.layout_no_wrap(right.to_string(), FontId::proportional(12.0), MUTED);
+        let g = painter.layout_no_wrap(right.to_string(), FontId::proportional(12.0), MUTED());
         right_w = g.size().x + 10.0;
-        painter.galley(egui::pos2(rect.right() - 8.0 - g.size().x, rect.center().y - g.size().y / 2.0), g, MUTED);
+        painter.galley(egui::pos2(rect.right() - 8.0 - g.size().x, rect.center().y - g.size().y / 2.0), g, MUTED());
     }
     let mut job = LayoutJob::simple_singleline(text.to_string(), FontId::proportional(14.0), color);
     job.wrap = egui::text::TextWrapping {
@@ -3635,18 +3641,18 @@ fn append_line(job: &mut LayoutJob, line: &str, size: f32) {
     let trimmed = content.trim_start();
     let heading = [("### ", 17.0), ("## ", 19.0), ("# ", 23.0)].into_iter().find(|(p, _)| trimmed.starts_with(p));
     if let Some((_, hsize)) = heading {
-        job.append(line, 0.0, fmt(theme::bold(hsize), TEXT));
+        job.append(line, 0.0, fmt(theme::bold(hsize), TEXT()));
         return;
     }
     let done = trimmed.starts_with("- [x]") || trimmed.starts_with("[x]");
-    let mut body = fmt(FontId::proportional(size), if done { MUTED } else { TEXT });
+    let mut body = fmt(FontId::proportional(size), if done { MUTED() } else { TEXT() });
     if done {
-        body.strikethrough = Stroke::new(1.0, MUTED);
+        body.strikethrough = Stroke::new(1.0, MUTED());
     }
     let mut pos = 0;
     // "- 15:03 " de las reuniones, en gris.
     if content.len() >= 8 && content.starts_with("- ") && agenda::is_time(&content[2..7]) {
-        job.append(&line[..8.min(line.len())], 0.0, fmt(FontId::proportional(size), MUTED));
+        job.append(&line[..8.min(line.len())], 0.0, fmt(FontId::proportional(size), MUTED()));
         pos = 8.min(line.len());
     }
     // Etiquetas: con su color y sin el '#'.

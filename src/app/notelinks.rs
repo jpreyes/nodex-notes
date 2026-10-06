@@ -341,15 +341,15 @@ impl NotesApp {
         let area = egui::Area::new(Id::new("enlace-notas")).order(egui::Order::Foreground).fixed_pos(p.at).show(ctx, |ui| {
             Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(260.0);
-                ui.label(RichText::new("Enlazar a una nota  ·  ↑ ↓ y Enter").size(11.5).color(MUTED));
+                ui.label(RichText::new("Enlazar a una nota  ·  ↑ ↓ y Enter").size(11.5).color(MUTED()));
                 for (i, (_, title, ws)) in p.items.iter().enumerate() {
                     let mut label = egui::text::LayoutJob::default();
                     let font = FontId::proportional(13.5);
                     if ws.is_empty() {
-                        label.append(&format!("{}  Nota nueva «{title}»", icon::FILE_PLUS), 0.0, egui::TextFormat::simple(font, TEXT));
+                        label.append(&format!("{}  Nota nueva «{title}»", icon::FILE_PLUS), 0.0, egui::TextFormat::simple(font, TEXT()));
                     } else {
-                        label.append(&format!("{}  {}", icon::FILE_TEXT, display_title(title)), 0.0, egui::TextFormat::simple(font.clone(), TEXT));
-                        label.append(&format!("   {ws}"), 0.0, egui::TextFormat::simple(FontId::proportional(12.0), MUTED));
+                        label.append(&format!("{}  {}", icon::FILE_TEXT, display_title(title)), 0.0, egui::TextFormat::simple(font.clone(), TEXT()));
+                        label.append(&format!("   {ws}"), 0.0, egui::TextFormat::simple(FontId::proportional(12.0), MUTED()));
                     }
                     if ui.add(egui::Button::selectable(i == p.sel, label)).clicked() {
                         chosen = Some(i);

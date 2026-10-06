@@ -142,16 +142,16 @@ impl NotesApp {
         let Some(h) = &self.sync.handle else { return };
         let Ok(s) = h.status.lock().map(|s| s.clone()) else { return };
         let (glyph, text, color) = if s.busy && s.pending > 0 {
-            (icon::CLOUD_ARROW_UP, format!("Sincronizando ({})", s.pending), MUTED)
+            (icon::CLOUD_ARROW_UP, format!("Sincronizando ({})", s.pending), MUTED())
         } else if s.busy {
-            (icon::CLOUD_ARROW_UP, "Sincronizando…".to_string(), MUTED)
+            (icon::CLOUD_ARROW_UP, "Sincronizando…".to_string(), MUTED())
         } else if let Some(e) = &s.error {
             let short = if e.contains("sin conexión") { "Sin conexión: tus cambios quedan aquí".to_string() } else { e.chars().take(60).collect() };
-            (icon::CLOUD_SLASH, short, WARN)
+            (icon::CLOUD_SLASH, short, WARN())
         } else if s.synced_at.is_some() {
-            (icon::CLOUD_CHECK, "Sincronizado".to_string(), MUTED)
+            (icon::CLOUD_CHECK, "Sincronizado".to_string(), MUTED())
         } else {
-            (icon::CLOUD, "Conectando…".to_string(), MUTED)
+            (icon::CLOUD, "Conectando…".to_string(), MUTED())
         };
         let tip = match (&s.error, s.synced_at) {
             (Some(e), _) => format!("{e}. Se reintenta solo; lo que escribas queda en este equipo y se sube al volver."),
@@ -188,11 +188,11 @@ impl NotesApp {
             ui.label(
                 RichText::new(format!("Para que no se peleen las dos sincronizaciones, tus notas se copian a {} y la app pasa a usar esa carpeta. La de {cloud} queda como está.", dest.display()))
                     .size(12.5)
-                    .color(MUTED),
+                    .color(MUTED()),
             );
             ui.add_space(12.0);
             ui.horizontal(|ui| {
-                if ui.add(egui::Button::new(RichText::new("Sí, sincronizar").color(Color32::WHITE)).fill(ACCENT)).clicked() {
+                if ui.add(egui::Button::new(RichText::new("Sí, sincronizar").color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                     yes = true;
                 }
                 if ui.button(format!("Seguir con {cloud}")).clicked() {
@@ -231,13 +231,13 @@ impl NotesApp {
             ui.horizontal(|ui| {
                 ui.spinner();
                 let n = job.done.load(Ordering::Relaxed);
-                ui.label(RichText::new(format!("Copiando tus notas a {}… {n} de {}", job.dest.display(), job.total)).size(12.5).color(MUTED));
+                ui.label(RichText::new(format!("Copiando tus notas a {}… {n} de {}", job.dest.display(), job.total)).size(12.5).color(MUTED()));
             });
         } else if cloud {
             ui.label(
                 RichText::new("Tu carpeta de notas está en Dropbox u OneDrive, que ya la sincroniza: con las dos a la vez se pelearían. Para usar tu cuenta, tus notas se copian a una carpeta fuera de la nube (la de Dropbox queda como está).")
                     .size(12.5)
-                    .color(MUTED),
+                    .color(MUTED()),
             );
             ui.add_space(4.0);
             let dest = outside_folder();
@@ -248,7 +248,7 @@ impl NotesApp {
             if let Ok(s) = h.status.lock() {
                 if s.limit > 0 {
                     let mb = |b: u64| b as f64 / 1_048_576.0;
-                    ui.label(RichText::new(format!("Espacio usado: {:.1} MB de {:.0} MB", mb(s.used), mb(s.limit))).size(12.5).color(MUTED));
+                    ui.label(RichText::new(format!("Espacio usado: {:.1} MB de {:.0} MB", mb(s.used), mb(s.limit))).size(12.5).color(MUTED()));
                 }
             }
         }

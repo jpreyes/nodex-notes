@@ -76,11 +76,11 @@ pub(super) fn login_form(ui: &mut Ui, f: &mut LoginForm, busy: bool, can: bool, 
             f.mode = LoginMode::Register;
         }
         if f.mode == LoginMode::Forgot {
-            ui.label(RichText::new("·  Recuperar tu clave").size(14.0).color(MUTED));
+            ui.label(RichText::new("·  Recuperar tu clave").size(14.0).color(MUTED()));
         }
     });
     ui.add_space(8.0);
-    let field = |ui: &mut Ui, label: &str| ui.label(RichText::new(label).size(12.5).color(MUTED));
+    let field = |ui: &mut Ui, label: &str| ui.label(RichText::new(label).size(12.5).color(MUTED()));
     field(ui, "Correo");
     let er = ui.add(egui::TextEdit::singleline(&mut f.email).hint_text("tu@correo.cl").desired_width(300.0).margin(Margin::symmetric(8, 5)));
     let email_ok = f.email.contains('@') && f.email.contains('.');
@@ -100,13 +100,13 @@ pub(super) fn login_form(ui: &mut Ui, f: &mut LoginForm, busy: bool, can: bool, 
             let pr = ui.add(egui::TextEdit::singleline(&mut f.password).password(!f.show).desired_width(268.0).margin(Margin::symmetric(8, 5)));
             submit |= pr.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             let eye = if f.show { icon::EYE_SLASH } else { icon::EYE };
-            if ui.add(egui::Button::new(RichText::new(eye).size(15.0).color(MUTED)).frame(false)).on_hover_text(if f.show { "Ocultar" } else { "Mostrar" }).clicked() {
+            if ui.add(egui::Button::new(RichText::new(eye).size(15.0).color(MUTED())).frame(false)).on_hover_text(if f.show { "Ocultar" } else { "Mostrar" }).clicked() {
                 f.show = !f.show;
             }
         });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("IA:").size(13.0).color(MUTED));
+            ui.label(RichText::new("IA:").size(13.0).color(MUTED()));
             ui.radio_value(&mut f.own_ai, false, RichText::new("La de Notas (incluida)").size(13.0));
             ui.radio_value(&mut f.own_ai, true, RichText::new("Mi propia clave").size(13.0));
         });
@@ -121,7 +121,7 @@ pub(super) fn login_form(ui: &mut Ui, f: &mut LoginForm, busy: bool, can: bool, 
     };
     let ready = ready && can && !busy;
     ui.horizontal(|ui| {
-        let b = egui::Button::new(RichText::new(label).color(Color32::WHITE)).fill(ACCENT).min_size(egui::vec2(140.0, 30.0));
+        let b = egui::Button::new(RichText::new(label).color(theme::c(Color32::WHITE))).fill(ACCENT()).min_size(egui::vec2(140.0, 30.0));
         if ui.add_enabled(ready, b).clicked() || (submit && ready) {
             let (email, password, included) = (f.email.trim().to_string(), f.password.clone(), !f.own_ai);
             action = Some(match f.mode {
@@ -152,14 +152,14 @@ pub(super) fn login_form(ui: &mut Ui, f: &mut LoginForm, busy: bool, can: bool, 
     });
     if let Some(n) = notice {
         ui.add_space(6.0);
-        ui.label(RichText::new(format!("{} {n}", icon::HOURGLASS_MEDIUM)).size(13.0).color(ACCENT));
+        ui.label(RichText::new(format!("{} {n}", icon::HOURGLASS_MEDIUM)).size(13.0).color(ACCENT()));
     } else if let Some(e) = error {
         ui.add_space(6.0);
-        ui.label(RichText::new(format!("{} {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED));
+        ui.label(RichText::new(format!("{} {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED()));
     }
     ui.add_space(10.0);
     ui.horizontal(|ui| {
-        ui.label(RichText::new("o").size(12.5).color(MUTED));
+        ui.label(RichText::new("o").size(12.5).color(MUTED()));
         if ui.add_enabled(can && !busy, egui::Button::new(RichText::new(format!("{}  Entrar con Microsoft", icon::WINDOWS_LOGO)).size(12.5))).clicked() {
             action = Some(LoginAction::Microsoft(!f.own_ai));
         }

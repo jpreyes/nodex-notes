@@ -61,12 +61,12 @@ impl NotesApp {
             }
             ui.add_space(10.0);
         };
-        section_ui(ui, &format!("{} Atrasadas", icon::WARNING_CIRCLE), RED, &overdue, &[]);
-        section_ui(ui, "Hoy", ACCENT, &for_today, &ev_today);
-        section_ui(ui, &format!("Mañana · {}", long_date(&tomorrow)), TEXT, &for_tomorrow, &ev_tomorrow);
-        section_ui(ui, "Esta semana", TEXT, &this_week, &ev_week);
+        section_ui(ui, &format!("{} Atrasadas", icon::WARNING_CIRCLE), RED(), &overdue, &[]);
+        section_ui(ui, "Hoy", ACCENT(), &for_today, &ev_today);
+        section_ui(ui, &format!("Mañana · {}", long_date(&tomorrow)), TEXT(), &for_tomorrow, &ev_tomorrow);
+        section_ui(ui, "Esta semana", TEXT(), &this_week, &ev_week);
         if nothing {
-            ui.label(RichText::new("Nada atrasado ni pendiente para esta semana.").color(MUTED));
+            ui.label(RichText::new("Nada atrasado ni pendiente para esta semana.").color(MUTED()));
             ui.add_space(8.0);
         }
         ui.horizontal_wrapped(|ui| {

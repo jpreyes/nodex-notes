@@ -314,7 +314,7 @@ impl NotesApp {
             egui::Panel::left("ia-conversaciones")
                 .resizable(false)
                 .exact_size(210.0)
-                .frame(Frame::new().fill(BG_SIDE).inner_margin(Margin::symmetric(12, 0)))
+                .frame(Frame::new().fill(BG_SIDE()).inner_margin(Margin::symmetric(12, 0)))
                 .show(ui, |ui| {
                     self.chats_panel(ui);
                 });
@@ -362,7 +362,7 @@ impl NotesApp {
                     }
                     if self.ask.turns.is_empty() {
                         let intro = format!("Pregunta lo que quieras: busca en {}, tus tareas, la agenda y tus correos, y cada dato lleva el número de su nota. Por ejemplo:", plural(n_notes, "nota"));
-                        ui.label(RichText::new(intro).color(MUTED));
+                        ui.label(RichText::new(intro).color(MUTED()));
                         ui.add_space(6.0);
                         let examples = [
                             "¿Cuáles son todas las tareas que me faltan?".to_string(),
@@ -385,9 +385,9 @@ impl NotesApp {
                     for (ti, turn) in self.ask.turns.iter().enumerate() {
                         // Pregunta, a la derecha.
                         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                            Frame::new().fill(BG_SIDE).corner_radius(12).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
+                            Frame::new().fill(BG_SIDE()).corner_radius(12).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
                                 ui.set_max_width(col_w * 0.8);
-                                ui.add(egui::Label::new(RichText::new(&turn.question).size(14.5).color(TEXT)).wrap());
+                                ui.add(egui::Label::new(RichText::new(&turn.question).size(14.5).color(TEXT())).wrap());
                             });
                         });
                         ui.add_space(10.0);
@@ -395,11 +395,11 @@ impl NotesApp {
                             None => {
                                 ui.horizontal(|ui| {
                                     ui.spinner();
-                                    ui.label(RichText::new(&turn.progress).color(MUTED));
+                                    ui.label(RichText::new(&turn.progress).color(MUTED()));
                                 });
                             }
                             Some(Err(e)) => {
-                                ui.label(RichText::new(format!("No se pudo responder: {e}")).color(RED));
+                                ui.label(RichText::new(format!("No se pudo responder: {e}")).color(RED()));
                             }
                             Some(Ok(_)) => {
                                 if let Some(a) = self.answer_ui(ui, turn, &tasks_now) {
@@ -408,10 +408,10 @@ impl NotesApp {
                                 // Lo que hizo, con Deshacer mientras se pueda.
                                 if !turn.done.is_empty() {
                                     ui.add_space(6.0);
-                                    Frame::new().fill(Color32::from_rgb(232, 245, 234)).corner_radius(8).inner_margin(Margin::symmetric(10, 6)).show(ui, |ui| {
+                                    Frame::new().fill(theme::c(Color32::from_rgb(232, 245, 234))).corner_radius(8).inner_margin(Margin::symmetric(10, 6)).show(ui, |ui| {
                                         ui.set_width(ui.available_width());
                                         for d in &turn.done {
-                                            ui.label(RichText::new(format!("{} {d}", icon::CHECK)).size(13.0).color(Color32::from_rgb(46, 98, 56)));
+                                            ui.label(RichText::new(format!("{} {d}", icon::CHECK)).size(13.0).color(theme::c(Color32::from_rgb(46, 98, 56))));
                                         }
                                         let can_undo = turn.entry.is_some()
                                             && self.undo_entry == turn.entry
@@ -423,7 +423,7 @@ impl NotesApp {
                                 }
                                 ui.add_space(6.0);
                                 ui.horizontal(|ui| {
-                                    let small = |t: String| egui::Button::new(RichText::new(t).size(12.5).color(MUTED)).frame(false);
+                                    let small = |t: String| egui::Button::new(RichText::new(t).size(12.5).color(MUTED())).frame(false);
                                     if ui.add(small(format!("{} Guardar como nota", icon::FLOPPY_DISK))).clicked() {
                                         save = Some(ti);
                                     }
@@ -445,8 +445,8 @@ impl NotesApp {
                     let hint = if self.ask.turns.is_empty() { "Escribe tu pregunta…" } else { "Otra pregunta, o sigue con esta…" };
                     let mut submit = false;
                     Frame::new()
-                        .fill(Color32::WHITE)
-                        .stroke(Stroke::new(1.0, if focused { ACCENT } else { theme::BORDER }))
+                        .fill(theme::c(Color32::WHITE))
+                        .stroke(Stroke::new(1.0, if focused { ACCENT() } else { theme::BORDER() }))
                         .corner_radius(10)
                         .inner_margin(Margin::symmetric(10, 6))
                         .show(ui, |ui| {
@@ -463,7 +463,7 @@ impl NotesApp {
                                 if std::mem::take(&mut self.ask.focus) {
                                     r.request_focus();
                                 }
-                                let color = if busy || self.ask.input.trim().is_empty() { MUTED } else { ACCENT };
+                                let color = if busy || self.ask.input.trim().is_empty() { MUTED() } else { ACCENT() };
                                 let b = egui::Button::new(RichText::new(icon::PAPER_PLANE_RIGHT).size(18.0).color(color)).frame(false);
                                 if ui.add(b).on_hover_text("Preguntar (Enter)").clicked() {
                                     submit = true;
@@ -477,7 +477,7 @@ impl NotesApp {
                     if !self.ask.turns.is_empty() {
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("La IA lee tus notas para responder.").size(12.5).color(MUTED));
+                            ui.label(RichText::new("La IA lee tus notas para responder.").size(12.5).color(MUTED()));
                             if !busy && ui.link(RichText::new("Nueva conversación").size(12.5)).on_hover_text("Esta queda guardada en la lista de conversaciones").clicked() {
                                 self.new_chat();
                             }
@@ -530,17 +530,17 @@ impl NotesApp {
                     let task = task_key.as_deref().and_then(find_task);
                     match (check, task) {
                         (_, Some(t)) => {
-                            let (glyph, color) = if t.done { (icon::CHECK_SQUARE, ACCENT) } else { (icon::SQUARE, MUTED) };
+                            let (glyph, color) = if t.done { (icon::CHECK_SQUARE, ACCENT()) } else { (icon::SQUARE, MUTED()) };
                             let b = egui::Button::new(RichText::new(glyph).size(17.0).color(color)).frame(false);
                             if ui.add(b).on_hover_text(if t.done { "Marcar pendiente" } else { "Marcar hecha" }).clicked() {
                                 action = Some(Action::ToggleTask(t.raw.clone()));
                             }
                         }
                         (Some(done), None) => {
-                            ui.label(RichText::new(if done { icon::CHECK_SQUARE } else { icon::SQUARE }).size(17.0).color(MUTED));
+                            ui.label(RichText::new(if done { icon::CHECK_SQUARE } else { icon::SQUARE }).size(17.0).color(MUTED()));
                         }
                         (None, None) => {
-                            ui.label(RichText::new("•").size(15.0).color(MUTED));
+                            ui.label(RichText::new("•").size(15.0).color(MUTED()));
                         }
                     }
                     ui.add_space(8.0);
@@ -556,10 +556,10 @@ impl NotesApp {
                     }
                     match p {
                         Inline::Text(t) => {
-                            let mut job = rich(t, 14.5, if done { MUTED } else { TEXT });
+                            let mut job = rich(t, 14.5, if done { MUTED() } else { TEXT() });
                             if done {
                                 for s in &mut job.sections {
-                                    s.format.strikethrough = Stroke::new(1.0, MUTED);
+                                    s.format.strikethrough = Stroke::new(1.0, MUTED());
                                 }
                             }
                             ui.label(job);
@@ -583,8 +583,8 @@ impl NotesApp {
                                 None => src.label.clone(),
                             };
                             ui.add_space(2.0);
-                            let chip = egui::Button::new(RichText::new(n.to_string()).size(10.5).color(ACCENT))
-                                .fill(ACCENT_BG)
+                            let chip = egui::Button::new(RichText::new(n.to_string()).size(10.5).color(ACCENT()))
+                                .fill(ACCENT_BG())
                                 .corner_radius(6)
                                 .min_size(egui::vec2(16.0, 16.0));
                             if ui.add(chip).on_hover_text(tip).clicked() {
@@ -605,7 +605,7 @@ impl NotesApp {
                 for (i, (k, line)) in numbers.iter().enumerate() {
                     let Some(src) = turn.sources.get(k) else { continue };
                     let text = format!("{}  {}", i + 1, src.label);
-                    let b = egui::Button::new(RichText::new(text).size(12.5).color(ACCENT)).corner_radius(6);
+                    let b = egui::Button::new(RichText::new(text).size(12.5).color(ACCENT())).corner_radius(6);
                     if ui.add(b).on_hover_text("Abrir la nota").clicked() {
                         action = Some(self.open_at_line(&src.path, *line));
                     }

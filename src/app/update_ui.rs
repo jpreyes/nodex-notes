@@ -186,8 +186,8 @@ impl NotesApp {
         match &self.updater.step {
             Step::Ready(rel, _) => {
                 let in_meeting = self.meeting.is_some();
-                let b = egui::Button::new(RichText::new(format!("{} Actualizar a la {}", icon::ARROW_CIRCLE_UP, rel.version())).size(12.5).color(Color32::WHITE))
-                    .fill(ACCENT);
+                let b = egui::Button::new(RichText::new(format!("{} Actualizar a la {}", icon::ARROW_CIRCLE_UP, rel.version())).size(12.5).color(theme::c(Color32::WHITE)))
+                    .fill(ACCENT());
                 let hint = if in_meeting {
                     "Al terminar la reunión"
                 } else {
@@ -199,7 +199,7 @@ impl NotesApp {
                 ui.add_space(12.0);
             }
             Step::Manual(rel) if self.updater.install != Some(Install::Store) => {
-                let text = RichText::new(format!("{} Versión nueva: {}", icon::ARROW_CIRCLE_UP, rel.version())).size(12.5).color(ACCENT);
+                let text = RichText::new(format!("{} Versión nueva: {}", icon::ARROW_CIRCLE_UP, rel.version())).size(12.5).color(ACCENT());
                 if ui.add(egui::Label::new(text).sense(Sense::click())).on_hover_text("Descargarla desde GitHub").clicked() {
                     gcal::open_browser(update::RELEASES_PAGE);
                 }
@@ -207,7 +207,7 @@ impl NotesApp {
             }
             Step::Applying(_) => {
                 ui.add(egui::Spinner::new().size(12.0));
-                ui.label(RichText::new("Actualizando…").size(12.5).color(MUTED));
+                ui.label(RichText::new("Actualizando…").size(12.5).color(MUTED()));
                 ui.add_space(12.0);
             }
             _ => {}
@@ -222,7 +222,7 @@ impl NotesApp {
             let busy = matches!(self.updater.step, Step::Checking(_) | Step::Downloading(..) | Step::Applying(_));
             match &self.updater.step {
                 Step::Ready(rel, _) => {
-                    let b = egui::Button::new(RichText::new(format!("{}  Actualizar a la {}", icon::ARROW_CIRCLE_UP, rel.version())).color(Color32::WHITE)).fill(ACCENT);
+                    let b = egui::Button::new(RichText::new(format!("{}  Actualizar a la {}", icon::ARROW_CIRCLE_UP, rel.version())).color(theme::c(Color32::WHITE))).fill(ACCENT());
                     if ui.add_enabled(self.meeting.is_none(), b).on_hover_text("Notas se cierra y se abre con la versión nueva, en unos segundos").clicked() {
                         changes.push(Change::Do(Action::ApplyUpdate));
                     }
@@ -244,14 +244,14 @@ impl NotesApp {
                     let size = self.updater.install.as_ref().and_then(|i| i.asset_name()).and_then(|n| rel.asset(n)).map_or(total, |a| a.size);
                     let pct = if size > 0 { p.load(Ordering::Relaxed) * 100 / size } else { 0 };
                     ui.add(egui::Spinner::new().size(14.0));
-                    ui.label(RichText::new(format!("Bajando la {}… {pct} %", rel.version())).size(13.0).color(MUTED));
+                    ui.label(RichText::new(format!("Bajando la {}… {pct} %", rel.version())).size(13.0).color(MUTED()));
                 }
                 Step::Ready(..) => {
-                    ui.label(RichText::new("Lista para instalar").size(13.0).color(MUTED));
+                    ui.label(RichText::new("Lista para instalar").size(13.0).color(MUTED()));
                 }
                 Step::UpToDate if self.updater.asked => settings::chip(ui, &format!("{} Tienes la última versión", icon::CHECK_CIRCLE), true),
                 Step::Manual(rel) => {
-                    ui.label(RichText::new(format!("Hay una versión nueva: {}", rel.version())).size(13.0).color(ACCENT));
+                    ui.label(RichText::new(format!("Hay una versión nueva: {}", rel.version())).size(13.0).color(ACCENT()));
                     if self.updater.install != Some(Install::Store) && ui.link("Descargar").clicked() {
                         changes.push(Change::OpenUrl(update::RELEASES_PAGE));
                     }
@@ -262,7 +262,7 @@ impl NotesApp {
         });
         if let Some(hint) = self.updater.install.as_ref().and_then(|i| i.describe()) {
             ui.add_space(4.0);
-            ui.label(RichText::new(hint).size(12.5).color(MUTED));
+            ui.label(RichText::new(hint).size(12.5).color(MUTED()));
         }
     }
 
@@ -276,9 +276,9 @@ impl NotesApp {
             ui.label(RichText::new(format!("{} Notas se actualizó a la {}", icon::SPARKLE, update::current())).font(theme::bold(17.0)));
             ui.add_space(6.0);
             if lines.is_empty() {
-                ui.label(RichText::new("Todo sigue donde estaba.").size(13.5).color(MUTED));
+                ui.label(RichText::new("Todo sigue donde estaba.").size(13.5).color(MUTED()));
             } else {
-                ui.label(RichText::new("Qué hay de nuevo:").size(13.0).color(MUTED));
+                ui.label(RichText::new("Qué hay de nuevo:").size(13.0).color(MUTED()));
                 ui.add_space(4.0);
                 egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                     for l in lines.iter().take(30) {
@@ -290,7 +290,7 @@ impl NotesApp {
                         ui.horizontal_wrapped(|ui| {
                             ui.add_space(indent as f32 * 6.0);
                             if bullet {
-                                ui.label(RichText::new("•").size(13.5).color(ACCENT));
+                                ui.label(RichText::new("•").size(13.5).color(ACCENT()));
                                 ui.label(RichText::new(text.replace("**", "")).size(13.5));
                             } else {
                                 ui.label(RichText::new(text.replace("**", "")).font(theme::bold(13.5)));

@@ -253,25 +253,25 @@ impl NotesApp {
         let (mut save, mut close) = (false, false);
         let area = egui::Area::new(Id::new("seguimiento-tarea")).anchor(Align2::CENTER_BOTTOM, egui::vec2(0.0, -44.0)).order(egui::Order::Foreground).show(ctx, |ui| {
             Frame::new()
-                .fill(Color32::WHITE)
-                .stroke(Stroke::new(1.0, theme::BORDER))
+                .fill(theme::c(Color32::WHITE))
+                .stroke(Stroke::new(1.0, theme::BORDER()))
                 .corner_radius(12)
                 .shadow(egui::epaint::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(28) })
                 .inner_margin(Margin::symmetric(16, 12))
                 .show(ui, |ui| {
                     ui.set_width(480.0);
                     ui.horizontal(|ui| {
-                        let (glyph, color, head) = if a.done { (icon::CHECK_CIRCLE, SUCCESS, "Hecha") } else { (icon::ARROW_ELBOW_DOWN_RIGHT, ACCENT, "Seguimiento") };
+                        let (glyph, color, head) = if a.done { (icon::CHECK_CIRCLE, SUCCESS(), "Hecha") } else { (icon::ARROW_ELBOW_DOWN_RIGHT, ACCENT(), "Seguimiento") };
                         ui.label(RichText::new(glyph).size(16.0).color(color));
                         let title: String = a.title.chars().take(60).collect();
                         ui.add(egui::Label::new(RichText::new(format!("{head}: «{title}»")).font(theme::bold(14.0))).truncate());
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui.add(egui::Button::new(RichText::new(icon::X).size(13.0).color(MUTED)).frame(false)).on_hover_text("Omitir (Esc)").clicked() {
+                            if ui.add(egui::Button::new(RichText::new(icon::X).size(13.0).color(MUTED())).frame(false)).on_hover_text("Omitir (Esc)").clicked() {
                                 close = true;
                             }
                         });
                     });
-                    ui.label(RichText::new("¿Qué se hizo? Queda anotado debajo, con la fecha, y la IA lo tiene en cuenta.").size(12.5).color(MUTED));
+                    ui.label(RichText::new("¿Qué se hizo? Queda anotado debajo, con la fecha, y la IA lo tiene en cuenta.").size(12.5).color(MUTED()));
                     ui.add_space(4.0);
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut a.text)
@@ -287,7 +287,7 @@ impl NotesApp {
                     }
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        let b = egui::Button::new(RichText::new("Anotar").color(Color32::WHITE)).fill(ACCENT);
+                        let b = egui::Button::new(RichText::new("Anotar").color(theme::c(Color32::WHITE))).fill(ACCENT());
                         if ui.add_enabled(!a.text.trim().is_empty(), b).clicked() {
                             save = true;
                         }
@@ -484,23 +484,23 @@ impl NotesApp {
         let (mut yes, mut no) = (false, false);
         let area = egui::Area::new(Id::new("sugerir-hecha")).anchor(Align2::CENTER_BOTTOM, egui::vec2(0.0, -44.0)).order(egui::Order::Foreground).show(ctx, |ui| {
             Frame::new()
-                .fill(Color32::WHITE)
-                .stroke(Stroke::new(1.0, theme::BORDER))
+                .fill(theme::c(Color32::WHITE))
+                .stroke(Stroke::new(1.0, theme::BORDER()))
                 .corner_radius(12)
                 .shadow(egui::epaint::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(28) })
                 .inner_margin(Margin::symmetric(16, 12))
                 .show(ui, |ui| {
                     ui.set_width(480.0);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(icon::SPARKLE).size(16.0).color(ACCENT));
+                        ui.label(RichText::new(icon::SPARKLE).size(16.0).color(ACCENT()));
                         let title: String = s.title.chars().take(60).collect();
                         ui.add(egui::Label::new(RichText::new(format!("¿Marco «{title}» como hecha?")).font(theme::bold(14.0))).truncate());
                     });
                     let quote: String = s.quote.chars().take(160).collect();
-                    ui.label(RichText::new(format!("El seguimiento dice: «{quote}»")).size(13.0).color(MUTED));
+                    ui.label(RichText::new(format!("El seguimiento dice: «{quote}»")).size(13.0).color(MUTED()));
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        let b = egui::Button::new(RichText::new(format!("{}  Marcar hecha", icon::CHECK)).color(Color32::WHITE)).fill(ACCENT);
+                        let b = egui::Button::new(RichText::new(format!("{}  Marcar hecha", icon::CHECK)).color(theme::c(Color32::WHITE))).fill(ACCENT());
                         if ui.add(b).clicked() {
                             yes = true;
                         }

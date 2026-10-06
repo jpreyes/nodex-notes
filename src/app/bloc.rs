@@ -467,10 +467,10 @@ impl NotesApp {
             ui.label(
                 RichText::new("Pega o escribe lo que sea: código, ideas, claves. Se guarda solo y queda tal cual; la IA no lo toca salvo que aprietes «Ordenar». Separa las cosas con una línea en blanco.")
                     .size(12.5)
-                    .color(MUTED),
+                    .color(MUTED()),
             );
             if let Some(e) = &self.bloc.error {
-                ui.label(RichText::new(format!("{} {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED));
+                ui.label(RichText::new(format!("{} {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED()));
             }
             ui.add_space(8.0);
             // Las páginas: un clic abre; doble clic o clic derecho, cambiar el nombre o borrar.
@@ -545,11 +545,11 @@ impl NotesApp {
                 let just = self.bloc.copied.is_some_and(|(b, t)| b == k && t.elapsed() < Duration::from_millis(1500));
                 let label = if just { format!("{} Copiado", icon::CHECK) } else { format!("{} Copiar", icon::COPY) };
                 let rect = egui::Rect::from_min_size(egui::pos2(out.response.rect.right() - 88.0, top), egui::vec2(84.0, 22.0));
-                let b = egui::Button::new(RichText::new(label).size(12.5)).fill(Color32::WHITE).stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(6);
+                let b = egui::Button::new(RichText::new(label).size(12.5)).fill(theme::c(Color32::WHITE)).stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(6);
                 if ui.put(rect, b).on_hover_text("Copiar este bloque").clicked() {
                     copy = Some((k, text));
                 }
-                ui.painter().vline(out.response.rect.left() - 10.0, top..=bottom, Stroke::new(2.0, ACCENT_BG));
+                ui.painter().vline(out.response.rect.left() - 10.0, top..=bottom, Stroke::new(2.0, ACCENT_BG()));
                 break;
             }
         });

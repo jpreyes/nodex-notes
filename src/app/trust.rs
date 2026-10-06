@@ -305,7 +305,7 @@ impl NotesApp {
             } else {
                 "La IA deshace esto (si todavía se puede) y lo recuerda para no repetirlo."
             };
-            ui.label(RichText::new(explain).size(13.0).color(MUTED));
+            ui.label(RichText::new(explain).size(13.0).color(MUTED()));
             ui.add_space(8.0);
             ui.label(RichText::new("¿Qué debería hacer la próxima vez? (opcional)").size(13.0));
             let r = ui.add(egui::TextEdit::multiline(why).hint_text("Por ejemplo: «los correos del banco no son importantes» o «lo de LaVet va en Docencia»").desired_rows(2).desired_width(f32::INFINITY));
@@ -315,7 +315,7 @@ impl NotesApp {
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 let label = if is_suggestion { "Descartar" } else { "Deshacer y enseñar" };
-                if ui.add(egui::Button::new(RichText::new(label).color(Color32::WHITE)).fill(ACCENT)).clicked() {
+                if ui.add(egui::Button::new(RichText::new(label).color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                     go = true;
                 }
                 if ui.button("Cancelar").clicked() {
@@ -343,11 +343,11 @@ impl NotesApp {
         }
         let mut action = None;
         let mut accept = None;
-        ui.label(RichText::new(format!("{} Lo que propone la IA", icon::SPARKLE)).font(theme::bold(15.0)).color(ACCENT));
-        ui.label(RichText::new("Estás en «sugerir antes de aplicar»: nada cambia hasta que lo apruebes.").size(12.5).color(MUTED));
+        ui.label(RichText::new(format!("{} Lo que propone la IA", icon::SPARKLE)).font(theme::bold(15.0)).color(ACCENT()));
+        ui.label(RichText::new("Estás en «sugerir antes de aplicar»: nada cambia hasta que lo apruebes.").size(12.5).color(MUTED()));
         ui.add_space(6.0);
         for (id, s) in &all {
-            Frame::new().stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
+            Frame::new().stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 let path = self.vault.root.join(format!("{}.md", s.note));
                 let r = ui.link(RichText::new(format!("{} {}", icon::FILE_TEXT, display_title(&vault::stem(&path)))).font(theme::bold(14.0)));
@@ -359,7 +359,7 @@ impl NotesApp {
                 }
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    if ui.add(egui::Button::new(RichText::new(format!("{} Aplicar", icon::CHECK)).color(Color32::WHITE)).fill(ACCENT)).clicked() {
+                    if ui.add(egui::Button::new(RichText::new(format!("{} Aplicar", icon::CHECK)).color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                         accept = Some(id.clone());
                     }
                     if ui.button("No, gracias").clicked() {

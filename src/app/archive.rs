@@ -210,11 +210,11 @@ impl NotesApp {
             ui.label(
                 RichText::new("Notas que ya no necesitas a la vista: no salen en las listas, la búsqueda, Tu día ni la IA, pero siguen aquí (en la carpeta Archivo). «Sacar del archivo» la devuelve a su espacio.")
                     .size(13.0)
-                    .color(MUTED),
+                    .color(MUTED()),
             );
             ui.add_space(10.0);
             if items.is_empty() {
-                ui.label(RichText::new("No hay notas archivadas. Para archivar una, clic derecho sobre ella en la lista de notas → Archivar.").color(MUTED));
+                ui.label(RichText::new("No hay notas archivadas. Para archivar una, clic derecho sobre ella en la lista de notas → Archivar.").color(MUTED()));
                 return;
             }
             ui.add(
@@ -241,7 +241,7 @@ impl NotesApp {
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{} {group}", icon::FOLDER_SIMPLE)).font(theme::bold(15.0)));
-                        ui.label(RichText::new(plural(n, "nota")).size(12.5).color(MUTED));
+                        ui.label(RichText::new(plural(n, "nota")).size(12.5).color(MUTED()));
                         if n > 1 && ui.link(RichText::new(format!("{} Sacar todo el espacio", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5)).clicked() {
                             action = Some(Action::UnarchiveSpace(group.clone()));
                         }
@@ -249,7 +249,7 @@ impl NotesApp {
                     ui.add_space(4.0);
                 }
                 let open = self.archive_open.as_ref() == Some(&a.path);
-                Frame::new().stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
+                Frame::new().stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{}  {title}", icon::FILE_TEXT)).font(theme::bold(14.5)));
@@ -267,22 +267,22 @@ impl NotesApp {
                         .modified
                         .map(|m| format!(" · editada el {}", long_date(&chrono::DateTime::<Local>::from(m).format("%Y-%m-%d").to_string())))
                         .unwrap_or_default();
-                    ui.label(RichText::new(format!("De {}{when}", a.from)).size(12.5).color(MUTED));
+                    ui.label(RichText::new(format!("De {}{when}", a.from)).size(12.5).color(MUTED()));
                     if open {
                         ui.add_space(6.0);
-                        ui.label(RichText::new(&text).size(13.5).color(TEXT));
+                        ui.label(RichText::new(&text).size(13.5).color(TEXT()));
                     } else {
                         let preview: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).take(2).collect();
                         if !preview.is_empty() {
                             let p: String = preview.join(" · ").chars().take(160).collect();
-                            ui.label(RichText::new(p).size(12.5).color(TEXT));
+                            ui.label(RichText::new(p).size(12.5).color(TEXT()));
                         }
                     }
                 });
                 ui.add_space(8.0);
             }
             if shown == 0 {
-                ui.label(RichText::new("Ninguna archivada tiene eso.").color(MUTED));
+                ui.label(RichText::new("Ninguna archivada tiene eso.").color(MUTED()));
             }
         });
         action

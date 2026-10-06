@@ -112,14 +112,14 @@ impl NotesApp {
         let w = (screen.width() - 80.0).clamp(560.0, 920.0);
         let hgt = (screen.height() - 80.0).clamp(380.0, 600.0);
         let modal = egui::Modal::new(Id::new("historial"))
-            .frame(Frame::new().fill(Color32::WHITE).corner_radius(12).stroke(Stroke::new(1.0, theme::BORDER)).inner_margin(Margin::same(18)))
+            .frame(Frame::new().fill(theme::c(Color32::WHITE)).corner_radius(12).stroke(Stroke::new(1.0, theme::BORDER())).inner_margin(Margin::same(18)))
             .show(ctx, |ui| {
                 ui.set_width(w);
                 ui.set_height(hgt);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format!("{} Historial de «{}»", icon::CLOCK_COUNTER_CLOCKWISE, display_title(&self.note.title))).font(theme::bold(18.0)));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.add(egui::Button::new(RichText::new(icon::X).size(18.0).color(MUTED)).frame(false)).on_hover_text("Cerrar (Esc)").clicked() {
+                        if ui.add(egui::Button::new(RichText::new(icon::X).size(18.0).color(MUTED())).frame(false)).on_hover_text("Cerrar (Esc)").clicked() {
                             todo = Some(Do::Close);
                         }
                     });
@@ -127,13 +127,13 @@ impl NotesApp {
                 ui.label(
                     RichText::new("Se guarda una versión cada vez que la nota cambia (como mucho cada 10 minutos, y siempre antes de un cambio grande), también la que llega de otro equipo.")
                         .size(12.5)
-                        .color(MUTED),
+                        .color(MUTED()),
                 );
                 ui.add_space(8.0);
                 if h.versions.is_empty() {
                     ui.add_space(30.0);
                     ui.label(RichText::new("Todavía no hay versiones anteriores de esta nota.").size(14.0));
-                    ui.label(RichText::new("Aparecen solas a medida que la nota cambia.").size(13.0).color(MUTED));
+                    ui.label(RichText::new("Aparecen solas a medida que la nota cambia.").size(13.0).color(MUTED()));
                     return;
                 }
                 ui.separator();
@@ -149,7 +149,7 @@ impl NotesApp {
                                 let d = day_label(v.when);
                                 if d != day {
                                     ui.add_space(6.0);
-                                    ui.label(RichText::new(&d).size(12.0).color(MUTED));
+                                    ui.label(RichText::new(&d).size(12.0).color(MUTED()));
                                     day = d;
                                 }
                                 let label = RichText::new(format!("{}  {}", icon::CLOCK, v.when.format("%H:%M"))).size(13.5);
@@ -186,7 +186,7 @@ impl NotesApp {
                 });
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    let b = egui::Button::new(RichText::new(format!("{}  Restaurar esta versión", icon::ARROW_COUNTER_CLOCKWISE)).color(Color32::WHITE)).fill(ACCENT);
+                    let b = egui::Button::new(RichText::new(format!("{}  Restaurar esta versión", icon::ARROW_COUNTER_CLOCKWISE)).color(theme::c(Color32::WHITE))).fill(ACCENT());
                     if ui.add(b).on_hover_text("La nota vuelve a como estaba; la de ahora queda en el historial").clicked() {
                         todo = Some(Do::Restore);
                     }
@@ -233,14 +233,14 @@ impl NotesApp {
 /// «… 3 líneas iguales»
 fn same_lines(ui: &mut Ui, n: usize) {
     let text = if n == 1 { "1 línea igual".to_string() } else { format!("{n} líneas iguales") };
-    ui.label(RichText::new(format!("   … {text}")).size(12.0).color(MUTED));
+    ui.label(RichText::new(format!("   … {text}")).size(12.0).color(MUTED()));
 }
 
 /// Los cambios: lo que se fue (con «Recuperar»), lo nuevo y, alrededor, un poco de lo igual.
 fn diff_ui(ui: &mut Ui, diff: &[Diff], todo: &mut Option<Do>) {
     const AROUND: usize = 2;
     if diff.iter().all(|d| matches!(d, Diff::Same(_))) {
-        ui.label(RichText::new("Es igual a la nota de ahora.").size(13.5).color(MUTED));
+        ui.label(RichText::new("Es igual a la nota de ahora.").size(13.5).color(MUTED()));
         return;
     }
     let near: Vec<bool> = (0..diff.len())
@@ -262,13 +262,13 @@ fn diff_ui(ui: &mut Ui, diff: &[Diff], todo: &mut Option<Do>) {
         }
         match d {
             Diff::Same(l) => {
-                ui.label(RichText::new(format!("   {l}")).size(13.5).color(MUTED));
+                ui.label(RichText::new(format!("   {l}")).size(13.5).color(MUTED()));
             }
             Diff::Gone { line, after } => {
-                Frame::new().fill(Color32::from_rgb(252, 235, 235)).corner_radius(4).inner_margin(Margin::symmetric(6, 2)).show(ui, |ui| {
+                Frame::new().fill(theme::c(Color32::from_rgb(252, 235, 235))).corner_radius(4).inner_margin(Margin::symmetric(6, 2)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("−").size(13.5).color(RED));
+                        ui.label(RichText::new("−").size(13.5).color(RED()));
                         ui.add(egui::Label::new(RichText::new(line).size(13.5)).wrap());
                         if !line.trim().is_empty() {
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -281,10 +281,10 @@ fn diff_ui(ui: &mut Ui, diff: &[Diff], todo: &mut Option<Do>) {
                 });
             }
             Diff::Added(l) => {
-                Frame::new().fill(Color32::from_rgb(230, 244, 231)).corner_radius(4).inner_margin(Margin::symmetric(6, 2)).show(ui, |ui| {
+                Frame::new().fill(theme::c(Color32::from_rgb(230, 244, 231))).corner_radius(4).inner_margin(Margin::symmetric(6, 2)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("+").size(13.5).color(SUCCESS));
+                        ui.label(RichText::new("+").size(13.5).color(SUCCESS()));
                         ui.add(egui::Label::new(RichText::new(l).size(13.5)).wrap());
                     });
                 });
@@ -295,7 +295,7 @@ fn diff_ui(ui: &mut Ui, diff: &[Diff], todo: &mut Option<Do>) {
         same_lines(ui, skipped);
     }
     ui.add_space(6.0);
-    ui.label(RichText::new("En rojo, lo que había en esta versión y ya no está; en verde, lo que se agregó después.").size(12.0).color(MUTED));
+    ui.label(RichText::new("En rojo, lo que había en esta versión y ya no está; en verde, lo que se agregó después.").size(12.0).color(MUTED()));
 }
 
 #[cfg(test)]

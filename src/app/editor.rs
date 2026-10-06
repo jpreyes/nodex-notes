@@ -186,7 +186,7 @@ fn text_center(boxes: &[CharBox], i: usize) -> f32 {
 /// "hoy", "mañana", "vie 26", "3 oct", "venció 24 sep", con sus colores.
 fn due_label(date: &str, done: bool) -> (String, Color32, Color32) {
     const DIAS_CORTOS: [&str; 7] = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
-    let gray = (Color32::from_rgb(95, 94, 90), Color32::from_rgb(241, 239, 232));
+    let gray = (theme::c(Color32::from_rgb(95, 94, 90)), theme::c(Color32::from_rgb(241, 239, 232)));
     let Ok(d) = NaiveDate::parse_from_str(date, "%Y-%m-%d") else {
         return (date.to_string(), gray.0, gray.1);
     };
@@ -195,12 +195,12 @@ fn due_label(date: &str, done: bool) -> (String, Color32, Color32) {
     let short = format!("{} {}", d.day(), MESES[d.month0() as usize]);
     let (text, (fg, bg)) = match days {
         _ if done => (short, gray),
-        n if n < 0 => (format!("venció {short}"), (Color32::from_rgb(163, 45, 45), Color32::from_rgb(252, 235, 235))),
-        0 => ("hoy".to_string(), (Color32::from_rgb(133, 79, 11), Color32::from_rgb(250, 238, 218))),
-        1 => ("mañana".to_string(), (Color32::from_rgb(133, 79, 11), Color32::from_rgb(250, 238, 218))),
+        n if n < 0 => (format!("venció {short}"), (theme::c(Color32::from_rgb(163, 45, 45)), theme::c(Color32::from_rgb(252, 235, 235)))),
+        0 => ("hoy".to_string(), (theme::c(Color32::from_rgb(133, 79, 11)), theme::c(Color32::from_rgb(250, 238, 218)))),
+        1 => ("mañana".to_string(), (theme::c(Color32::from_rgb(133, 79, 11)), theme::c(Color32::from_rgb(250, 238, 218)))),
         n if n < 7 => (
             format!("{} {}", DIAS_CORTOS[d.weekday().num_days_from_monday() as usize], d.day()),
-            (Color32::from_rgb(12, 68, 124), Color32::from_rgb(230, 241, 251)),
+            (theme::c(Color32::from_rgb(12, 68, 124)), theme::c(Color32::from_rgb(230, 241, 251))),
         ),
         _ => (short, gray),
     };
@@ -307,7 +307,7 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
                 continue;
             }
             fh.line_height = lh;
-            let mut ft = fmt(if row.header { theme::bold(size) } else { FontId::proportional(size) }, TEXT);
+            let mut ft = fmt(if row.header { theme::bold(size) } else { FontId::proportional(size) }, TEXT());
             ft.line_height = lh;
             let col_x = |c: usize| row.widths.iter().take(c).map(|w| w + 2.0 * CELL_PAD).sum::<f32>();
             let (pipes, cells) = lines::table_cells(line);
@@ -339,14 +339,14 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
             let mut f = hidden.clone();
             f.line_height = Some(h + 12.0);
             job.append(line, 0.0, f);
-            job.append(ending, 0.0, fmt(FontId::proportional(size), TEXT));
+            job.append(ending, 0.0, fmt(FontId::proportional(size), TEXT()));
             ci += full.chars().count();
             continue;
         }
 
         if lines::is_heading(line) || lines::is_block_start(line) || lines::is_block_end(line) {
             let hsize = if line.trim_start().starts_with("# ") { 23.0 } else if line.trim_start().starts_with("## ") { 19.0 } else { 17.0 };
-            let bold = fmt(theme::bold(hsize), TEXT);
+            let bold = fmt(theme::bold(hsize), TEXT());
             if is_active {
                 job.append(full, 0.0, bold);
             } else if let Some(label) = meeting_label(line, li == 0) {
@@ -355,9 +355,9 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
                 let mut f = hidden.clone();
                 f.line_height = Some(28.0);
                 job.append(line, w, f);
-                let (fg, bg) = (Color32::from_rgb(85, 84, 80), Color32::from_rgb(241, 239, 232));
+                let (fg, bg) = (theme::c(Color32::from_rgb(85, 84, 80)), theme::c(Color32::from_rgb(241, 239, 232)));
                 decos.push(Deco { kind: Kind::Date { label, fg, bg }, chars: ci..ci + n_chars(0, line.len()), line: li, lead: w });
-                job.append(ending, 0.0, fmt(FontId::proportional(size), TEXT));
+                job.append(ending, 0.0, fmt(FontId::proportional(size), TEXT()));
             } else {
                 // Los "#" del título no se ven (salvo en la línea que se edita).
                 let t = line.trim_start();
@@ -374,9 +374,9 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
         }
 
         let done = info.check == Some(true);
-        let mut body = fmt(FontId::proportional(size), if done { MUTED } else { TEXT });
+        let mut body = fmt(FontId::proportional(size), if done { MUTED() } else { TEXT() });
         if done {
-            body.strikethrough = Stroke::new(1.0, MUTED);
+            body.strikethrough = Stroke::new(1.0, MUTED());
         }
         let mut pos = 0;
         let mut lead = 0.0;
@@ -395,12 +395,12 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
         } else if line.len() >= 8 && line.starts_with("- ") && agenda::is_time(&line[2..7]) && line[7..].starts_with(' ') {
             // "- 15:03 " de las reuniones: una etiqueta con la hora (tal cual en la línea que se edita).
             if is_active {
-                job.append(&line[..8], 0.0, fmt(FontId::proportional(size), MUTED));
+                job.append(&line[..8], 0.0, fmt(FontId::proportional(size), MUTED()));
             } else {
                 let label = line[2..7].to_string();
                 let w = measure(&label, &FontId::proportional(LABEL_SIZE)) + 16.0;
                 job.append(&line[..8], w, hidden.clone());
-                let (fg, bg) = (Color32::from_rgb(95, 94, 90), Color32::from_rgb(241, 239, 232));
+                let (fg, bg) = (theme::c(Color32::from_rgb(95, 94, 90)), theme::c(Color32::from_rgb(241, 239, 232)));
                 decos.push(Deco { kind: Kind::Date { label, fg, bg }, chars: ci..ci + 8, line: li, lead: w });
             }
             pos = 8;
@@ -412,7 +412,7 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
                 let label = format!("{} {day}", icon::ARROW_ELBOW_DOWN_RIGHT);
                 let w = measure(&label, &FontId::proportional(LABEL_SIZE)) + 16.0;
                 job.append(&line[pos..pos + at], w, hidden.clone());
-                let (fg, bg) = (Color32::from_rgb(46, 98, 56), Color32::from_rgb(228, 243, 230));
+                let (fg, bg) = (theme::c(Color32::from_rgb(46, 98, 56)), theme::c(Color32::from_rgb(228, 243, 230)));
                 decos.push(Deco { kind: Kind::Date { label, fg, bg }, chars: ci + n_chars(0, pos)..ci + n_chars(0, pos + at), line: li, lead: w });
                 pos += at;
             }
@@ -455,13 +455,13 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
             match span {
                 Span::Written((s0, s1), kind) => {
                     if is_active {
-                        job.append(&line[a..b], lead, fmt(FontId::proportional(size), ACCENT));
+                        job.append(&line[a..b], lead, fmt(FontId::proportional(size), ACCENT()));
                     } else {
                         // Solo se ve el nombre (con el ícono, si es un archivo); lo demás, oculto.
                         let icon_w = if matches!(kind, Kind::FileLink(..)) { FILE_ICON_W } else { 0.0 };
                         let color = match &kind {
-                            Kind::NoteLink(_, false) | Kind::FileLink(_, _, false) => MUTED,
-                            _ => ACCENT,
+                            Kind::NoteLink(_, false) | Kind::FileLink(_, _, false) => MUTED(),
+                            _ => ACCENT(),
                         };
                         let mut f = fmt(FontId::proportional(size), color);
                         f.underline = Stroke::new(1.0, color.gamma_multiply(0.45));
@@ -472,7 +472,7 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
                     }
                 }
                 Span::Found(t) => {
-                    job.append(&line[a..b], lead, fmt(FontId::proportional(size), ACCENT));
+                    job.append(&line[a..b], lead, fmt(FontId::proportional(size), ACCENT()));
                     if !is_active {
                         decos.push(Deco { kind: Kind::Link(t), chars, line: li, lead: 0.0 });
                     }
@@ -492,7 +492,7 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
                 }
                 Span::Tok(Token::Due(d)) => {
                     if is_active {
-                        job.append(&line[a..b], lead, fmt(FontId::proportional(size - 2.0), MUTED));
+                        job.append(&line[a..b], lead, fmt(FontId::proportional(size - 2.0), MUTED()));
                     } else {
                         let (label, fg, bg) = due_label(&d, done);
                         let w = measure(&label, &FontId::proportional(LABEL_SIZE)) + 16.0;
@@ -501,7 +501,7 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
                     }
                 }
                 Span::Tok(Token::Id) => {
-                    let f = if is_active { fmt(FontId::proportional(size - 2.5), MUTED) } else { hidden.clone() };
+                    let f = if is_active { fmt(FontId::proportional(size - 2.5), MUTED()) } else { hidden.clone() };
                     job.append(&line[a..b], lead, f);
                 }
             }
@@ -515,7 +515,7 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
         ci += full.chars().count();
     }
     if text.is_empty() || text.ends_with('\n') {
-        job.append("", 0.0, fmt(FontId::proportional(size), TEXT));
+        job.append("", 0.0, fmt(FontId::proportional(size), TEXT()));
     }
     (job, decos)
 }
@@ -687,19 +687,19 @@ impl NotesApp {
                 let gap = ui.spacing().item_spacing.x;
                 ui.spacing_mut().item_spacing.x = 0.0;
                 if vault::in_diary(&self.note.path) {
-                    ui.label(RichText::new(format!("{} Diario · la IA lleva cada cosa a su espacio", icon::SUN)).size(12.5).color(MUTED));
+                    ui.label(RichText::new(format!("{} Diario · la IA lleva cada cosa a su espacio", icon::SUN)).size(12.5).color(MUTED()));
                 } else if vault::in_templates(&self.note.path) {
-                    ui.label(RichText::new(format!("{} Plantilla · se usa desde el + de las pestañas", icon::FILE_DASHED)).size(12.5).color(MUTED))
+                    ui.label(RichText::new(format!("{} Plantilla · se usa desde el + de las pestañas", icon::FILE_DASHED)).size(12.5).color(MUTED()))
                         .on_hover_text("Al crear una nota con ella, {{fecha}}, {{hoy}}, {{hora}} y {{titulo}} se cambian por la fecha, el día, la hora y el nombre de la nota");
                 } else {
                     // El espacio de la nota: un clic permite moverla a otro.
                     let here = workspace_of(&self.note.path).unwrap_or_else(|| self.ws.clone());
                     let r = ui
-                        .add(egui::Label::new(RichText::new(format!("{} {here} {}", icon::FOLDER_SIMPLE, icon::CARET_DOWN)).size(12.5).color(MUTED)).sense(Sense::click()))
+                        .add(egui::Label::new(RichText::new(format!("{} {here} {}", icon::FOLDER_SIMPLE, icon::CARET_DOWN)).size(12.5).color(MUTED())).sense(Sense::click()))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("Mover la nota a otro espacio");
                     egui::Popup::menu(&r).show(|ui| {
-                        ui.label(RichText::new("Mover a").size(12.0).color(MUTED));
+                        ui.label(RichText::new("Mover a").size(12.0).color(MUTED()));
                         for w in self.vault.workspaces.iter().filter(|w| **w != here) {
                             if ui.button(format!("{}  {w}", icon::FOLDER_SIMPLE)).clicked() {
                                 move_to = Some(w.clone());
@@ -708,20 +708,20 @@ impl NotesApp {
                         }
                     });
                 }
-                ui.label(RichText::new(format!("{notes}   ·   {when}")).size(12.5).color(MUTED));
+                ui.label(RichText::new(format!("{notes}   ·   {when}")).size(12.5).color(MUTED()));
                 // Versiones anteriores de la nota.
                 if self.note.disk_mtime.is_some() && !vault::in_templates(&self.note.path) {
-                    ui.label(RichText::new("   ·   ").size(12.5).color(MUTED));
+                    ui.label(RichText::new("   ·   ").size(12.5).color(MUTED()));
                     let r = ui
-                        .add(egui::Label::new(RichText::new(format!("{} Historial", icon::CLOCK_COUNTER_CLOCKWISE)).size(12.5).color(MUTED)).sense(Sense::click()))
+                        .add(egui::Label::new(RichText::new(format!("{} Historial", icon::CLOCK_COUNTER_CLOCKWISE)).size(12.5).color(MUTED())).sense(Sense::click()))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("Ver y recuperar cómo estaba la nota antes");
                     if r.clicked() {
                         show_history = true;
                     }
-                    ui.label(RichText::new("   ·   ").size(12.5).color(MUTED));
+                    ui.label(RichText::new("   ·   ").size(12.5).color(MUTED()));
                     let r = ui
-                        .add(egui::Label::new(RichText::new(format!("{} Archivar", icon::ARCHIVE)).size(12.5).color(MUTED)).sense(Sense::click()))
+                        .add(egui::Label::new(RichText::new(format!("{} Archivar", icon::ARCHIVE)).size(12.5).color(MUTED())).sense(Sense::click()))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("Sacarla de la vista sin borrarla (queda en Archivadas, abajo a la izquierda)");
                     if r.clicked() {
@@ -730,9 +730,9 @@ impl NotesApp {
                 }
                 // Las notas que enlazan a esta.
                 if !backlinks.is_empty() {
-                    ui.label(RichText::new("   ·   ").size(12.5).color(MUTED));
+                    ui.label(RichText::new("   ·   ").size(12.5).color(MUTED()));
                     let r = ui
-                        .add(egui::Label::new(RichText::new(format!("{} Enlazada desde {}", icon::LINK_SIMPLE, plural(backlinks.len(), "nota"))).size(12.5).color(ACCENT)).sense(Sense::click()))
+                        .add(egui::Label::new(RichText::new(format!("{} Enlazada desde {}", icon::LINK_SIMPLE, plural(backlinks.len(), "nota"))).size(12.5).color(ACCENT())).sense(Sense::click()))
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
                     egui::Popup::menu(&r).show(|ui| {
                         for p in &backlinks {
@@ -746,7 +746,7 @@ impl NotesApp {
                 }
                 ui.spacing_mut().item_spacing.x = gap;
                 if in_meeting {
-                    ui.label(RichText::new(format!("  {} Reunión en curso", icon::RECORD)).size(12.5).color(SUCCESS));
+                    ui.label(RichText::new(format!("  {} Reunión en curso", icon::RECORD)).size(12.5).color(SUCCESS()));
                 } else if is_meeting(&self.note.text) && self.ai.is_ok() {
                     ui.add_space(8.0);
                     let r = ui.link(RichText::new(format!("{} Correo de seguimiento", icon::ENVELOPE_SIMPLE)).size(12.5));
@@ -818,7 +818,7 @@ impl NotesApp {
             let decos: RefCell<Vec<Deco>> = RefCell::new(Vec::new());
             let links = &mut self.links;
             let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
-                let measure = |s: &str, font: &FontId| ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), font.clone(), TEXT).size().x);
+                let measure = |s: &str, font: &FontId| ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), font.clone(), TEXT()).size().x);
                 let env = Env { measure: &measure, image: &|rel| image_sizes.get(rel).copied(), link: &link_of, width: wrap };
                 let (mut job, d) = build_in(buf.as_str(), active, links, &env);
                 *decos.borrow_mut() = d;
@@ -870,7 +870,7 @@ impl NotesApp {
                 let Some(l) = self.menu_line else { return };
                 let line = nth_line(&self.note.text, l);
                 if line.trim().is_empty() || lines::is_heading(line) {
-                    ui.label(RichText::new("Haz clic derecho en una línea con texto").size(12.5).color(MUTED));
+                    ui.label(RichText::new("Haz clic derecho en una línea con texto").size(12.5).color(MUTED()));
                     return;
                 }
                 let label = match lines::parse(line).check {
@@ -996,7 +996,7 @@ impl NotesApp {
                 Align2::RIGHT_CENTER,
                 (n + 1).to_string(),
                 FontId::proportional(12.0),
-                if here { ACCENT } else { Color32::from_rgb(170, 170, 164) },
+                if here { ACCENT() } else { theme::c(Color32::from_rgb(170, 170, 164)) },
             );
             if u.last > u.first {
                 let end_char = starts.get(u.last + 1).map_or(boxes.len() - 1, |s| s - 1).min(boxes.len() - 1);
@@ -1006,7 +1006,7 @@ impl NotesApp {
                 if bottom > top {
                     painter.line_segment(
                         [egui::pos2(o.x - 6.0, top + 2.0), egui::pos2(o.x - 6.0, bottom)],
-                        Stroke::new(2.0, theme::BORDER),
+                        Stroke::new(2.0, theme::BORDER()),
                     );
                 }
             }
@@ -1039,25 +1039,25 @@ impl NotesApp {
                     if *level >= 2 {
                         let center = egui::pos2(base - 11.0, cy);
                         if *level % 2 == 0 {
-                            painter.circle_filled(center, 2.6, MUTED);
+                            painter.circle_filled(center, 2.6, MUTED());
                         } else {
-                            painter.circle_stroke(center, 2.6, Stroke::new(1.2, MUTED));
+                            painter.circle_stroke(center, 2.6, Stroke::new(1.2, MUTED()));
                         }
                     }
                     if let Some(done) = check {
                         let r = egui::Rect::from_center_size(egui::pos2(base + 8.5, cy), egui::vec2(15.0, 15.0));
                         let hovered = hover.is_some_and(|p| r.expand(3.0).contains(p));
                         if *done {
-                            bg.push(egui::Shape::rect_filled(r, 4.0, ACCENT));
+                            bg.push(egui::Shape::rect_filled(r, 4.0, ACCENT()));
                             let pts = [
                                 egui::pos2(r.left() + 3.5, r.center().y + 0.5),
                                 egui::pos2(r.left() + 6.5, r.bottom() - 4.0),
                                 egui::pos2(r.right() - 3.5, r.top() + 4.0),
                             ];
-                            painter.line(pts.to_vec(), Stroke::new(1.8, Color32::WHITE));
+                            painter.line(pts.to_vec(), Stroke::new(1.8, theme::c(Color32::WHITE)));
                         } else {
-                            let stroke = if hovered { ACCENT } else { Color32::from_rgb(150, 150, 144) };
-                            bg.push(egui::Shape::rect_filled(r, 4.0, Color32::WHITE));
+                            let stroke = if hovered { ACCENT() } else { theme::c(Color32::from_rgb(150, 150, 144)) };
+                            bg.push(egui::Shape::rect_filled(r, 4.0, theme::c(Color32::WHITE)));
                             bg.push(egui::Shape::rect_stroke(r, 4.0, Stroke::new(1.5, stroke), egui::StrokeKind::Inside));
                         }
                         if hovered {
@@ -1085,8 +1085,8 @@ impl NotesApp {
                     let file = super::images::resolve(&self.note.path, rel);
                     let Some(tex) = self.images.texture(&file) else { continue };
                     let rect = egui::Rect::from_min_size(egui::pos2(o.x + first.x, o.y + first.row_top + 6.0), egui::vec2(*w, *h));
-                    painter.image(tex, rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
-                    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, theme::BORDER), egui::StrokeKind::Outside);
+                    painter.image(tex, rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), theme::c(Color32::WHITE));
+                    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, theme::BORDER()), egui::StrokeKind::Outside);
                     if hover.is_some_and(|p| rect.contains(p)) {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("imagen-tip"), egui::PopupAnchor::Pointer)
@@ -1128,16 +1128,16 @@ impl NotesApp {
                         }
                     }
                     let (Some(&l), Some(&r)) = (xs.first(), xs.last()) else { continue };
-                    let line = Stroke::new(1.0, theme::BORDER);
+                    let line = Stroke::new(1.0, theme::BORDER());
                     if *header {
-                        bg.push(egui::Shape::rect_filled(egui::Rect::from_min_max(egui::pos2(l, top), egui::pos2(r, bottom)), 0.0, BG_SIDE));
+                        bg.push(egui::Shape::rect_filled(egui::Rect::from_min_max(egui::pos2(l, top), egui::pos2(r, bottom)), 0.0, BG_SIDE()));
                     }
                     // Arriba solo en la primera fila; las demás tapan la fila «|---|» oculta.
                     let from = if *is_first { top } else { top - 4.0 };
                     if *is_first {
                         painter.hline(l..=r, top, line);
                     }
-                    painter.hline(l..=r, bottom, if *header { Stroke::new(1.5, Color32::from_rgb(200, 198, 190)) } else { line });
+                    painter.hline(l..=r, bottom, if *header { Stroke::new(1.5, theme::c(Color32::from_rgb(200, 198, 190))) } else { line });
                     for x in xs {
                         painter.vline(x, from..=bottom, line);
                     }
@@ -1157,7 +1157,7 @@ impl NotesApp {
                 }
                 Kind::FileLink(target, glyph, exists) => {
                     let cy = o.y + text_center(&boxes, d.chars.start);
-                    let color = if *exists { ACCENT } else { MUTED };
+                    let color = if *exists { ACCENT() } else { MUTED() };
                     let icon_rect = egui::Rect::from_center_size(egui::pos2(o.x + first.x - d.lead + 8.0, cy), egui::vec2(16.0, 18.0));
                     painter.text(icon_rect.center(), Align2::CENTER_CENTER, *glyph, FontId::proportional(15.0), color);
                     let mut rects = char_rects(&boxes, o, d.chars.clone());

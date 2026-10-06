@@ -33,10 +33,10 @@ fn range_label(from: &str, to: &str) -> String {
 }
 
 fn metric(ui: &mut Ui, value: usize, label: &str, color: Color32) {
-    Frame::new().fill(BG_SIDE).corner_radius(8).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
+    Frame::new().fill(BG_SIDE()).corner_radius(8).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
         ui.vertical(|ui| {
             ui.label(RichText::new(value.to_string()).font(theme::bold(20.0)).color(color));
-            ui.label(RichText::new(label).size(12.5).color(MUTED));
+            ui.label(RichText::new(label).size(12.5).color(MUTED()));
         });
     });
 }
@@ -106,20 +106,20 @@ impl NotesApp {
             view_header(ui, "Revisión semanal", &format!("Últimos 7 días ({}) y los próximos 7", range_label(&from, &to)));
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-                metric(ui, notes.len(), "notas escritas", TEXT);
-                metric(ui, done.len(), "tareas hechas", SUCCESS);
-                metric(ui, meetings, "reuniones", TEXT);
-                metric(ui, overdue.len(), "atrasadas", if overdue.is_empty() { TEXT } else { RED });
-                metric(ui, undated.len(), "sin fecha", TEXT);
+                metric(ui, notes.len(), "notas escritas", TEXT());
+                metric(ui, done.len(), "tareas hechas", SUCCESS());
+                metric(ui, meetings, "reuniones", TEXT());
+                metric(ui, overdue.len(), "atrasadas", if overdue.is_empty() { TEXT() } else { RED() });
+                metric(ui, undated.len(), "sin fecha", TEXT());
             });
             ui.add_space(16.0);
 
             // Resumen de la IA (a pedido).
-            ui.label(RichText::new(format!("{} Resumen de la semana", icon::SPARKLE)).font(theme::bold(15.0)).color(ACCENT));
+            ui.label(RichText::new(format!("{} Resumen de la semana", icon::SPARKLE)).font(theme::bold(15.0)).color(ACCENT()));
             ui.add_space(4.0);
             match &self.week.turn {
                 None => {
-                    ui.label(RichText::new("La IA lee las notas de la semana y arma un resumen por proyecto, con lo pendiente y 3 prioridades para la próxima.").size(13.0).color(MUTED));
+                    ui.label(RichText::new("La IA lee las notas de la semana y arma un resumen por proyecto, con lo pendiente y 3 prioridades para la próxima.").size(13.0).color(MUTED()));
                     ui.add_space(4.0);
                     if ui.add_enabled(self.ai.is_ok(), egui::Button::new(format!("{} Hacer el resumen", icon::SPARKLE))).clicked() {
                         ask_ai = true;
@@ -129,11 +129,11 @@ impl NotesApp {
                     None => {
                         ui.horizontal(|ui| {
                             ui.spinner();
-                            ui.label(RichText::new(&turn.progress).color(MUTED));
+                            ui.label(RichText::new(&turn.progress).color(MUTED()));
                         });
                     }
                     Some(Err(e)) => {
-                        ui.label(RichText::new(format!("No se pudo hacer el resumen: {e}")).color(RED));
+                        ui.label(RichText::new(format!("No se pudo hacer el resumen: {e}")).color(RED()));
                         if ui.button("Intentar de nuevo").clicked() {
                             ask_ai = true;
                         }
@@ -144,7 +144,7 @@ impl NotesApp {
                         }
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
-                            let small = |t: String| egui::Button::new(RichText::new(t).size(12.5).color(MUTED)).frame(false);
+                            let small = |t: String| egui::Button::new(RichText::new(t).size(12.5).color(MUTED())).frame(false);
                             if ui.add(small(format!("{} Guardar como nota", icon::FLOPPY_DISK))).clicked() {
                                 save = true;
                             }
@@ -178,10 +178,10 @@ impl NotesApp {
                 ui.add_space(14.0);
                 action
             };
-            if let Some(a) = section(ui, &format!("{} Atrasadas", icon::WARNING_CIRCLE), RED, &overdue, 20) {
+            if let Some(a) = section(ui, &format!("{} Atrasadas", icon::WARNING_CIRCLE), RED(), &overdue, 20) {
                 action = Some(a);
             }
-            if let Some(a) = section(ui, "Próximos 7 días", ACCENT, &coming, 20) {
+            if let Some(a) = section(ui, "Próximos 7 días", ACCENT(), &coming, 20) {
                 action = Some(a);
             }
             if !events.is_empty() {
@@ -199,10 +199,10 @@ impl NotesApp {
                 }
                 ui.add_space(14.0);
             }
-            if let Some(a) = section(ui, "Sin fecha (¿les pones una?)", TEXT, &undated, 10) {
+            if let Some(a) = section(ui, "Sin fecha (¿les pones una?)", TEXT(), &undated, 10) {
                 action = Some(a);
             }
-            if let Some(a) = section(ui, &format!("{} Hechas esta semana", icon::CHECK_CIRCLE), SUCCESS, &done, 30) {
+            if let Some(a) = section(ui, &format!("{} Hechas esta semana", icon::CHECK_CIRCLE), SUCCESS(), &done, 30) {
                 action = Some(a);
             }
             if !notes.is_empty() {
@@ -211,9 +211,9 @@ impl NotesApp {
                 for (path, title, ws, meeting) in notes.iter().take(30) {
                     let glyph = if *meeting { icon::USERS } else { icon::FILE_TEXT };
                     let mut job = LayoutJob::default();
-                    job.append(&format!("{glyph}  "), 0.0, fmt(FontId::proportional(13.5), MUTED));
-                    job.append(title, 0.0, fmt(FontId::proportional(14.5), TEXT));
-                    job.append(&format!("   {ws}"), 0.0, fmt(FontId::proportional(12.5), MUTED));
+                    job.append(&format!("{glyph}  "), 0.0, fmt(FontId::proportional(13.5), MUTED()));
+                    job.append(title, 0.0, fmt(FontId::proportional(14.5), TEXT()));
+                    job.append(&format!("   {ws}"), 0.0, fmt(FontId::proportional(12.5), MUTED()));
                     if clickable_line(ui, job).clicked() {
                         action = Some(Action::Open(path.clone(), None));
                     }

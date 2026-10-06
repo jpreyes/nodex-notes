@@ -63,7 +63,7 @@ impl NotesApp {
         let mut open = false;
         egui::Area::new(Id::new("ia-boton")).anchor(Align2::RIGHT_BOTTOM, egui::vec2(-22.0, -40.0)).order(egui::Order::Foreground).show(ctx, |ui| {
             let glyph = if busy { icon::HOURGLASS_MEDIUM } else { icon::SPARKLE };
-            let b = egui::Button::new(RichText::new(glyph).size(20.0).color(Color32::WHITE)).fill(ACCENT).corner_radius(22).min_size(egui::vec2(44.0, 44.0));
+            let b = egui::Button::new(RichText::new(glyph).size(20.0).color(theme::c(Color32::WHITE))).fill(ACCENT()).corner_radius(22).min_size(egui::vec2(44.0, 44.0));
             if ui.add(b).on_hover_text("Pregúntale o pídele algo a la IA sobre lo que estás viendo (Ctrl+J)").clicked() {
                 open = true;
             }
@@ -83,9 +83,9 @@ impl NotesApp {
 
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{} IA", icon::SPARKLE)).font(theme::bold(16.0)).color(ACCENT));
+            ui.label(RichText::new(format!("{} IA", icon::SPARKLE)).font(theme::bold(16.0)).color(ACCENT()));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let small = |g: &str| egui::Button::new(RichText::new(g).size(15.0).color(MUTED)).frame(false);
+                let small = |g: &str| egui::Button::new(RichText::new(g).size(15.0).color(MUTED())).frame(false);
                 if ui.add(small(icon::X)).on_hover_text("Cerrar (Ctrl+J)").clicked() {
                     close = true;
                 }
@@ -97,10 +97,10 @@ impl NotesApp {
                 }
             });
         });
-        ui.label(RichText::new(format!("{} Viendo {label}", icon::EYE)).size(12.0).color(MUTED));
+        ui.label(RichText::new(format!("{} Viendo {label}", icon::EYE)).size(12.0).color(MUTED()));
         ui.add_space(6.0);
         let r = ui.max_rect();
-        ui.painter().hline(r.x_range(), ui.cursor().top(), Stroke::new(1.0, theme::BORDER));
+        ui.painter().hline(r.x_range(), ui.cursor().top(), Stroke::new(1.0, theme::BORDER()));
         ui.add_space(4.0);
 
         // La conversación (la misma de la ventana de la IA).
@@ -118,15 +118,15 @@ impl NotesApp {
                     ui.label(
                         RichText::new("Pregúntale o pídele algo sobre lo que estás viendo: resumir, sacar tareas, agendar, anotar un seguimiento… Lo que haga se puede deshacer.")
                             .size(13.0)
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                 }
                 for turn in &self.ask.turns {
                     ui.add_space(8.0);
                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                        Frame::new().fill(Color32::WHITE).corner_radius(12).inner_margin(Margin::symmetric(10, 6)).show(ui, |ui| {
+                        Frame::new().fill(theme::c(Color32::WHITE)).corner_radius(12).inner_margin(Margin::symmetric(10, 6)).show(ui, |ui| {
                             ui.set_max_width(w * 0.85);
-                            ui.add(egui::Label::new(RichText::new(&turn.question).size(13.5).color(TEXT)).wrap());
+                            ui.add(egui::Label::new(RichText::new(&turn.question).size(13.5).color(TEXT())).wrap());
                         });
                     });
                     ui.add_space(6.0);
@@ -134,11 +134,11 @@ impl NotesApp {
                         None => {
                             ui.horizontal(|ui| {
                                 ui.spinner();
-                                ui.label(RichText::new(&turn.progress).size(13.0).color(MUTED));
+                                ui.label(RichText::new(&turn.progress).size(13.0).color(MUTED()));
                             });
                         }
                         Some(Err(e)) => {
-                            ui.label(RichText::new(format!("No se pudo responder: {e}")).size(13.0).color(RED));
+                            ui.label(RichText::new(format!("No se pudo responder: {e}")).size(13.0).color(RED()));
                         }
                         Some(Ok(_)) => {
                             if let Some(a) = self.answer_ui(ui, turn, &tasks_now) {
@@ -146,10 +146,10 @@ impl NotesApp {
                             }
                             if !turn.done.is_empty() {
                                 ui.add_space(4.0);
-                                Frame::new().fill(Color32::from_rgb(232, 245, 234)).corner_radius(8).inner_margin(Margin::symmetric(8, 5)).show(ui, |ui| {
+                                Frame::new().fill(theme::c(Color32::from_rgb(232, 245, 234))).corner_radius(8).inner_margin(Margin::symmetric(8, 5)).show(ui, |ui| {
                                     ui.set_width(ui.available_width());
                                     for d in &turn.done {
-                                        ui.add(egui::Label::new(RichText::new(format!("{} {d}", icon::CHECK)).size(12.5).color(Color32::from_rgb(46, 98, 56))).wrap());
+                                        ui.add(egui::Label::new(RichText::new(format!("{} {d}", icon::CHECK)).size(12.5).color(theme::c(Color32::from_rgb(46, 98, 56)))).wrap());
                                     }
                                     let can_undo = turn.entry.is_some() && self.undo_entry == turn.entry && self.undo.as_ref().is_some_and(|u| u.at.elapsed() < UNDO_WINDOW);
                                     if can_undo && ui.button(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5)).clicked() {
@@ -186,8 +186,8 @@ impl NotesApp {
         let enter = focused && !ui.input(|i| i.modifiers.shift) && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
         let mut submit = false;
         Frame::new()
-            .fill(Color32::WHITE)
-            .stroke(Stroke::new(1.0, if focused { ACCENT } else { theme::BORDER }))
+            .fill(theme::c(Color32::WHITE))
+            .stroke(Stroke::new(1.0, if focused { ACCENT() } else { theme::BORDER() }))
             .corner_radius(10)
             .inner_margin(Margin::symmetric(8, 5))
             .show(ui, |ui| {
@@ -204,7 +204,7 @@ impl NotesApp {
                     if std::mem::take(&mut self.side_focus) {
                         r.request_focus();
                     }
-                    let color = if busy || self.side_input.trim().is_empty() { MUTED } else { ACCENT };
+                    let color = if busy || self.side_input.trim().is_empty() { MUTED() } else { ACCENT() };
                     if ui.add(egui::Button::new(RichText::new(icon::PAPER_PLANE_RIGHT).size(17.0).color(color)).frame(false)).on_hover_text("Enviar (Enter)").clicked() {
                         submit = true;
                     }
