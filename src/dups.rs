@@ -126,18 +126,18 @@ pub fn find(notes: &[(String, String)], all: &[(String, String)], store: &Store,
             let base = Choice { unir_nota: b.note.clone(), unir: b.core.clone(), ..Choice::default() };
             let choices = vec![
                 Choice {
-                    label: if same { "Unir con la de arriba".into() } else { format!("Unir en «{}»", title_of(&b.note)) },
+                    label: if same { t!("Unir con la de arriba").into() } else { tf!("Unir en «{note}»", note = title_of(&b.note)) },
                     ..base.clone()
                 },
-                Choice { label: if same { "Unir aquí abajo".into() } else { "Unir aquí".into() }, al_reves: true, ..base.clone() },
-                Choice { label: "Son distintas".into(), distintas: true, ..base },
+                Choice { label: if same { t!("Unir aquí abajo").into() } else { t!("Unir aquí").into() }, al_reves: true, ..base.clone() },
+                Choice { label: t!("Son distintas").into(), distintas: true, ..base },
             ];
-            let place = if same { "más arriba en esta nota".to_string() } else { format!("en {}", title_of(&b.note)) };
+            let place = if same { t!("más arriba en esta nota").to_string() } else { tf!("en {note}", note = title_of(&b.note)) };
             out.push(Doubt {
                 id: new_id(),
                 note: a.note.clone(),
                 unit: a.core.clone(),
-                question: format!("¿Es lo mismo que «{}» ({place})?", b.core),
+                question: tf!("¿Es lo mismo que «{line}» ({place})?", line = b.core, place = place),
                 choices,
                 created: today.to_string(),
             });

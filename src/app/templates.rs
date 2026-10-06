@@ -8,7 +8,7 @@ use super::*;
 
 /// El texto de una plantilla para una nota nueva llamada `title`, escrita en `now`.
 pub(super) fn fill(text: &str, title: &str, now: DateTime<Local>) -> String {
-    let hoy = format!("{} {} {}", DIAS[now.weekday().num_days_from_monday() as usize], now.day(), MESES[now.month0() as usize]);
+    let hoy = format!("{} {} {}", crate::i18n::dias()[now.weekday().num_days_from_monday() as usize], now.day(), crate::i18n::meses()[now.month0() as usize]);
     text.replace("{{fecha}}", &now.format("%Y-%m-%d").to_string())
         .replace("{{hoy}}", &hoy)
         .replace("{{hora}}", &now.format("%H:%M").to_string())
@@ -54,7 +54,7 @@ impl NotesApp {
     /// Una nota nueva con el texto de la plantilla, en el espacio actual.
     pub(super) fn new_from_template(&mut self, tpl: &Path) {
         let Ok(text) = vault::read_text(tpl) else {
-            self.msg(format!("No se pudo leer la plantilla «{}»", vault::stem(tpl)));
+            self.msg(tf!("No se pudo leer la plantilla «{name}»", name = vault::stem(tpl)));
             return;
         };
         let ws = if self.vault.workspaces.contains(&self.ws) { self.ws.clone() } else { self.home_ws() };
@@ -62,13 +62,13 @@ impl NotesApp {
         let path = self.vault.unique_path(&ws, &format!("{} {}", vault::stem(tpl), now.format("%Y-%m-%d")));
         let body = fill(&text, &vault::stem(&path), now);
         if let Err(e) = fs::create_dir_all(self.vault.root.join(&ws)).and_then(|_| fs::write(&path, &body)) {
-            self.msg(format!("No se pudo crear la nota: {e}"));
+            self.msg(tf!("No se pudo crear la nota: {e}", e = e));
             return;
         }
         self.vault.upsert(path.clone(), body, vault::modified(&path).unwrap_or_else(SystemTime::now));
         self.open_in_tab(path, None);
         self.focus_title = true;
-        self.msg(format!("Nota nueva desde «{}»: cámbiale el nombre si quieres", vault::stem(tpl)));
+        self.msg(tf!("Nota nueva desde «{name}»: cámbiale el nombre si quieres", name = vault::stem(tpl)));
     }
 
     /// Una plantilla nueva, vacía, para escribirla.
@@ -85,8 +85,8 @@ impl NotesApp {
         let path = self.vault.unique_path(vault::TEMPLATES, &name);
         let r = fs::create_dir_all(self.templates_dir()).and_then(|_| fs::write(&path, clean(&self.note.text)));
         match r {
-            Ok(()) => self.msg(format!("Guardada como plantilla «{}»: úsala desde el + de las pestañas", vault::stem(&path))),
-            Err(e) => self.msg(format!("No se pudo guardar la plantilla: {e}")),
+            Ok(()) => self.msg(tf!("Guardada como plantilla «{name}»: úsala desde el + de las pestañas", name = vault::stem(&path))),
+            Err(e) => self.msg(tf!("No se pudo guardar la plantilla: {e}", e = e)),
         }
     }
 }

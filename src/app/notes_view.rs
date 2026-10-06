@@ -26,17 +26,17 @@ impl NotesApp {
             .collect();
         let total = self.vault.all_notes().len();
         Self::column(ui, "todas-las-notas", |ui, _| {
-            view_header(ui, "Notas", &format!("{} en {}, la más reciente primero", plural(total, "nota"), plural(spaces.len(), "espacio")));
+            view_header(ui, t!("Notas"), &tf!("{notes} en {spaces}, la más reciente primero", notes = plural(total, "nota"), spaces = plural(spaces.len(), "espacio")));
             ui.add(
                 egui::TextEdit::singleline(&mut self.notes_filter)
-                    .hint_text(format!("{}  Buscar en las notas", icon::MAGNIFYING_GLASS))
+                    .hint_text(format!("{}  {}", icon::MAGNIFYING_GLASS, t!("Buscar en las notas")))
                     .desired_width(f32::INFINITY)
                     .margin(Margin::symmetric(8, 5)),
             );
             ui.add_space(8.0);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-                if ui.selectable_label(self.notes_space.is_none(), RichText::new("Todas").size(12.5)).clicked() {
+                if ui.selectable_label(self.notes_space.is_none(), RichText::new(t!("Todas")).size(12.5)).clicked() {
                     self.notes_space = None;
                 }
                 for w in spaces.iter().map(String::as_str).chain([vault::DIARY]) {
@@ -48,7 +48,7 @@ impl NotesApp {
             });
             ui.add_space(12.0);
             if notes.is_empty() {
-                ui.label(RichText::new("Ninguna nota tiene eso.").color(MUTED()));
+                ui.label(RichText::new(t!("Ninguna nota tiene eso.")).color(MUTED()));
             }
             for (path, title, ws, modified, preview) in notes.iter().take(SHOW) {
                 let when = modified.map(|m| long_date(&chrono::DateTime::<Local>::from(m).format("%Y-%m-%d").to_string())).unwrap_or_default();
@@ -74,15 +74,15 @@ impl NotesApp {
                     action = Some(Action::Open(path.clone(), None));
                 }
                 r.context_menu(|ui| {
-                    if ui.button(format!("{}  Abrir en otra pestaña", icon::PLUS)).clicked() {
+                    if ui.button(format!("{}  {}", icon::PLUS, t!("Abrir en otra pestaña"))).clicked() {
                         action = Some(Action::OpenNewTab(path.clone()));
                         ui.close();
                     }
-                    if ui.button(format!("{}  Archivar", icon::ARCHIVE)).clicked() {
+                    if ui.button(format!("{}  {}", icon::ARCHIVE, t!("Archivar"))).clicked() {
                         action = Some(Action::Archive(path.clone()));
                         ui.close();
                     }
-                    if ui.button(format!("{}  Mover a la papelera", icon::TRASH)).clicked() {
+                    if ui.button(format!("{}  {}", icon::TRASH, t!("Mover a la papelera"))).clicked() {
                         action = Some(Action::Trash(path.clone()));
                         ui.close();
                     }
@@ -90,7 +90,7 @@ impl NotesApp {
                 ui.add_space(6.0);
             }
             if notes.len() > SHOW {
-                ui.label(RichText::new(format!("y {} más: busca para encontrarlas", notes.len() - SHOW)).size(12.5).color(MUTED()));
+                ui.label(RichText::new(tf!("y {n} más: busca para encontrarlas", n = notes.len() - SHOW)).size(12.5).color(MUTED()));
             }
         });
         action

@@ -1,0 +1,628 @@
+# Traducciones al inglés (ver src/i18n.rs).
+
+Tu día
+= Your day
+
+Reuniones recientes
+= Recent meetings
+
+Notas recientes
+= Recent notes
+
+La IA
+= AI
+
+Correo
+= Mail
+
+Espacios
+= Spaces
+
+Esta semana
+= This week
+
+Abrir
+= Open
+
+Minimizar
+= Minimize
+
+No se pudo anotar: {e}
+= Couldn't jot that down: {e}
+
+Anotado en la nota de hoy; la IA lo lleva a su espacio
+= Added to Today; the AI will move it to its space
+
+Buenos días
+= Good morning
+
+Buenas tardes
+= Good afternoon
+
+Buenas noches
+= Good evening
+
+{n} para hoy y mañana
+= {n} for today and tomorrow
+
+{n} atrasada
+= {n} overdue
+
+{n} atrasadas
+= {n} overdue
+
+la IA tiene {n}
+= the AI has {n}
+
+Anota algo rápido… (va a la nota de hoy; la IA lo lleva a su espacio)
+= Jot something down… (goes to Today; the AI moves it to its space)
+
+Pregúntale a tus notas…
+= Ask your notes…
+
+¿Hacemos la revisión de la semana?
+= Ready for your weekly review?
+
+Lo hecho, lo atrasado, lo que viene y un resumen de la IA.
+= What's done, what's overdue, what's coming, and an AI summary.
+
+Abrir revisión
+= Open review
+
+Todavía no hay reuniones.
+= No meetings yet.
+
+1 acuerdo abierto · {date}
+= 1 open action item · {date}
+
+{n} acuerdos abiertos · {date}
+= {n} open action items · {date}
+
+Nueva reunión (Ctrl+R)
+= New meeting (Ctrl+R)
+
+Ctrl+clic: abrir en otra pestaña
+= Ctrl+click: open in a new tab
+
+Nada pendiente: todo organizado.
+= Nothing pending: everything's organized.
+
+{n} esperando tu respuesta
+= {n} waiting for your answer
+
+{n} de espacio nuevo
+= {n} for a new space
+
+Responder
+= Answer
+
+Organizando «{name}»…
+= Organizing “{name}”…
+
+Lo que hizo la IA
+= Activity
+
+Nada importante en los últimos dos días.
+= Nothing important in the last two days.
+
+{n} importantes en los últimos dos días
+= {n} important in the last two days
+
+{n} para verificar
+= {n} to check
+
+Ver correos
+= View mail
+
+1 tarea hecha
+= 1 task done
+
+{n} tareas hechas
+= {n} tasks done
+
+1 nota escrita
+= 1 note written
+
+{n} notas escritas
+= {n} notes written
+
+Revisión semanal
+= Weekly review
+
+plural:tarea
+= task|tasks
+
+plural:pregunta
+= question|questions
+
+plural:sugerencia
+= suggestion|suggestions
+
+plural:correo
+= email|emails
+
+plural:compromiso
+= commitment|commitments
+
+plural:nota
+= note|notes
+
+Atrasadas
+= Overdue
+
+Hoy
+= Today
+
+Mañana · {date}
+= Tomorrow · {date}
+
+Nada atrasado ni pendiente para esta semana.
+= Nothing overdue or due this week.
+
+Escribir en la nota de hoy
+= Write in Today
+
+{n} sin fecha
+= {n} without a date
+
+no hay notas ni tareas de esta semana para resumir
+= there are no notes or tasks from this week to summarize
+
+Leyendo {n} de la semana…
+= Reading {n} from this week…
+
+Últimos 7 días ({range}) y los próximos 7
+= Last 7 days ({range}) and the next 7
+
+notas escritas
+= notes written
+
+tareas hechas
+= tasks done
+
+reuniones
+= meetings
+
+atrasadas
+= overdue
+
+sin fecha
+= no date
+
+Resumen de la semana
+= Weekly summary
+
+La IA lee las notas de la semana y arma un resumen por proyecto, con lo pendiente y 3 prioridades para la próxima.
+= The AI reads this week's notes and puts together a summary by project, with what's pending and 3 priorities for next week.
+
+Hacer el resumen
+= Summarize
+
+No se pudo hacer el resumen: {e}
+= Couldn't create the summary: {e}
+
+Intentar de nuevo
+= Try again
+
+Guardar como nota
+= Save as note
+
+Copiar
+= Copy
+
+Rehacer
+= Redo
+
+y {n} más en Tareas
+= and {n} more in Tasks
+
+Próximos 7 días
+= Next 7 days
+
+Agenda de los próximos 7 días
+= Calendar for the next 7 days
+
+Sin fecha (¿les pones una?)
+= No date (want to add one?)
+
+Hechas esta semana
+= Done this week
+
+Notas de la semana
+= This week's notes
+
+La IA tiene {n}
+= The AI has {n}
+
+plural:pregunta o sugerencia
+= question or suggestion|questions or suggestions
+
+Mes siguiente
+= Next month
+
+Mes anterior
+= Previous month
+
++{n} más
+= +{n} more
+
+Nada este día
+= Nothing on this day
+
+Hoy · {date}
+= Today · {date}
+
+Nada este día.
+= Nothing on this day.
+
+Notas
+= Notes
+
+{notes} en {spaces}, la más reciente primero
+= {notes} in {spaces}, most recent first
+
+plural:espacio
+= space|spaces
+
+Buscar en las notas
+= Search notes
+
+Todas
+= All
+
+Ninguna nota tiene eso.
+= No notes match that.
+
+Abrir en otra pestaña
+= Open in a new tab
+
+Archivar
+= Archive
+
+Mover a la papelera
+= Move to Trash
+
+y {n} más: busca para encontrarlas
+= and {n} more: search to find them
+
+No se pudo archivar: {e}
+= Couldn't archive: {e}
+
+«{name}» archivada: la encuentras en Archivadas (abajo a la izquierda)
+= “{name}” archived: you'll find it in Archived (bottom left)
+
+No se pudo archivar el espacio: {e}
+= Couldn't archive the space: {e}
+
+«{ws}» archivado ({n}): lo encuentras en Archivo, abajo a la izquierda
+= “{ws}” archived ({n}): you'll find it in Archive, bottom left
+
+«{ws}» volvió ({n})
+= “{ws}” is back ({n})
+
+No se pudo sacar del archivo: {e}
+= Couldn't restore from the archive: {e}
+
+«{name}» volvió a {ws}
+= “{name}” is back in {ws}
+
+Archivadas
+= Archived
+
+Notas que ya no necesitas a la vista: no salen en las listas, la búsqueda, Tu día ni la IA, pero siguen aquí (en la carpeta Archivo). «Sacar del archivo» la devuelve a su espacio.
+= Notes you don't need in sight: they don't show up in lists, search, Your day, or the AI, but they're still here (in the Archivo folder). “Unarchive” returns a note to its space.
+
+No hay notas archivadas. Para archivar una, clic derecho sobre ella en la lista de notas → Archivar.
+= No archived notes. To archive one, right-click it in the notes list → Archive.
+
+Buscar en las archivadas
+= Search archived notes
+
+Sacar todo el espacio
+= Unarchive the whole space
+
+Sacar del archivo
+= Unarchive
+
+Ocultar
+= Hide
+
+Ver
+= View
+
+ · editada el {date}
+=  · edited on {date}
+
+De {from}{when}
+= From {from}{when}
+
+Ninguna archivada tiene eso.
+= No archived notes match that.
+
+Papelera
+= Trash
+
+Vaciar la papelera
+= Empty Trash
+
+Borra para siempre todo lo que hay aquí
+= Permanently deletes everything in here
+
+Lo que borras queda aquí (en la carpeta .papelera). «Restaurar» lo devuelve a su lugar; «Borrar para siempre» no se puede deshacer.
+= What you delete stays here (in the .papelera folder). “Restore” puts it back where it was; “Delete forever” can't be undone.
+
+La papelera está vacía.
+= Trash is empty.
+
+Nota del día · {date}
+= Daily note · {date}
+
+Borrar para siempre
+= Delete forever
+
+Restaurar
+= Restore
+
+Un espacio con sus notas
+= A space with its notes
+
+Era una nota del Diario
+= It was a daily note
+
+Estaba en {dir}
+= It was in {dir}
+
+Estaba en la carpeta de notas
+= It was in the notes folder
+
+Vuelve al Diario
+= Goes back to the daily notes
+
+No se sabe de qué espacio era: vuelve al espacio actual
+= Its original space is unknown: it goes back to the current space
+
+ · borrada el {date}
+=  · deleted on {date}
+
+como espacio
+= as a space
+
+en {dir}
+= in {dir}
+
+«{name}» restaurada {place}
+= “{name}” restored {place}
+
+No se pudo restaurar: {e}
+= Couldn't restore: {e}
+
+¿Borrar para siempre «{name}»?
+= Delete “{name}” forever?
+
+Se borra el espacio con todas sus notas.
+= The space is deleted along with all its notes.
+
+¿Vaciar la papelera?
+= Empty Trash?
+
+Se borra para siempre todo lo que hay en ella ({n}).
+= Everything in it will be permanently deleted ({n}).
+
+plural:elemento
+= item|items
+
+{detail} No se puede deshacer, ni desde la app ni desde la carpeta.
+= {detail} This can't be undone, from the app or from the folder.
+
+Entiendo que no se puede recuperar
+= I understand it can't be recovered
+
+Cancelar
+= Cancel
+
+No se pudo borrar «{name}»: {e}
+= Couldn't delete “{name}”: {e}
+
+{n} borrado para siempre
+= {n} permanently deleted
+
+Anterior (Alt+←)
+= Back (Alt+←)
+
+Siguiente (Alt+→)
+= Forward (Alt+→)
+
+Inicio
+= Home
+
+Correos
+= Mail
+
+IA
+= AI
+
+Semana
+= Week
+
+Tareas
+= Tasks
+
+Agenda
+= Calendar
+
+Bloc
+= Scratchpad
+
+Cerrar pestaña
+= Close tab
+
+Cerrar las demás
+= Close other tabs
+
+Nota nueva en {ws}   Ctrl+N
+= New note in {ws}   Ctrl+N
+
+Reunión nueva   Ctrl+R
+= New meeting   Ctrl+R
+
+Reunión o nota que se repite…
+= Recurring meeting or note…
+
+Inicio   Ctrl+T
+= Home   Ctrl+T
+
+Desde una plantilla, en {ws}
+= From a template, in {ws}
+
+Editar la plantilla
+= Edit template
+
+Plantilla nueva…
+= New template…
+
+Una nota que sirve de punto de partida para otras (visita a obra, acta…)
+= A note that serves as a starting point for others (site visit, minutes…)
+
+Nueva pestaña
+= New tab
+
+Ir a donde está escrita
+= Go to where it's written
+
+Cambiar fecha
+= Change date
+
+Mañana
+= Tomorrow
+
+El lunes
+= Monday
+
+En una semana
+= In a week
+
+Sin fecha
+= No date
+
+Seguimiento
+= Follow-up
+
+Convertir en nota
+= Turn into a note
+
+Borrar la tarea
+= Delete task
+
+Marcar pendiente
+= Mark as not done
+
+Marcar hecho
+= Mark as done
+
+Ir a donde está escrito
+= Go to where it's written
+
+Tomar notas
+= Take notes
+
+Convertir en tarea
+= Turn into a task
+
+Anotar un seguimiento: qué se hizo
+= Add a follow-up: what was done
+
+Más: tomar notas, convertir en tarea…
+= More: take notes, turn into a task…
+
+Esta tarea no está escrita en ninguna nota
+= This task isn't written in any note
+
+La nota «{note}» ya no está (¿se movió o se archivó?)
+= The note “{note}” is gone (was it moved or archived?)
+
+No se pudo escribir tareas.txt: {e}
+= Couldn't write tareas.txt: {e}
+
+«{what}» para el {date}
+= “{what}” due {date}
+
+«{what}» quedó sin fecha
+= “{what}” no longer has a date
+
+No se pudo crear la nota: {e}
+= Couldn't create the note: {e}
+
+«{name}» ahora es una nota en {ws} (Deshacer, abajo)
+= “{name}” is now a note in {ws} (Undo, below)
+
+Tarea «{name}» borrada (Deshacer, abajo)
+= Task “{name}” deleted (Undo, below)
+
+«{name}» ahora es una tarea para el {date} (Deshacer, abajo)
+= “{name}” is now a task for {date} (Undo, below)
+
+Ya hay una página «{new}»
+= There's already a page “{new}”
+
+No se pudo cambiar el nombre: {e}
+= Couldn't rename: {e}
+
+El Bloc necesita al menos una página
+= The Scratchpad needs at least one page
+
+No se pudo borrar la página: {e}
+= Couldn't delete the page: {e}
+
+Página «{name}» a la papelera
+= Page “{name}” moved to Trash
+
+No se pudo guardar el Bloc: {e}
+= Couldn't save the Scratchpad: {e}
+
+Hay poco que ordenar todavía
+= There's not much to organize yet
+
+la IA no respondió con los grupos
+= the AI didn't reply with the groups
+
+la respuesta de la IA no calzaba con el Bloc; no se cambió nada
+= the AI's reply didn't match the Scratchpad; nothing was changed
+
+Bloc ordenado (no cambió ninguna letra)
+= Scratchpad organized (not a single letter changed)
+
+El Bloc ya estaba ordenado
+= The Scratchpad was already organized
+
+Ordenar
+= Organize
+
+La IA agrupa los bloques por tipo, con títulos, sin cambiar una letra (las claves no las ve)
+= The AI groups the blocks by type, with headings, without changing a letter (it never sees your keys)
+
+Configura la IA para ordenar el Bloc
+= Set up the AI to organize the Scratchpad
+
+Deshacer el orden
+= Undo organizing
+
+Pega o escribe lo que sea: código, ideas, claves. Se guarda solo y queda tal cual; la IA no lo toca salvo que aprietes «Ordenar». Separa las cosas con una línea en blanco.
+= Paste or type anything: code, ideas, keys. It saves automatically and stays exactly as is; the AI won't touch it unless you press “Organize”. Separate things with a blank line.
+
+Cambiar nombre
+= Rename
+
+Borrar página
+= Delete page
+
+Página nueva
+= New page
+
+Pega aquí…
+= Paste here…
+
+Copiado
+= Copied
+
+Copiar este bloque
+= Copy this block

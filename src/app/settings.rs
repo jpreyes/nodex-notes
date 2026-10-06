@@ -109,6 +109,7 @@ pub(super) enum Change {
     UpdateAuto(bool),
     Background(bool),
     Theme(&'static str),
+    Language(&'static str),
     Import,
     StartWithWindows(bool),
     Do(Action),
@@ -188,7 +189,7 @@ pub(super) fn chip(ui: &mut Ui, text: &str, ok: bool) {
 
 fn secret_field(ui: &mut Ui, value: &mut String, show: &mut bool, hint: &str) -> Response {
     let eye = if *show { icon::EYE_SLASH } else { icon::EYE };
-    if ui.add(egui::Button::new(RichText::new(eye).size(16.0).color(MUTED())).frame(false)).on_hover_text(if *show { "Ocultar" } else { "Mostrar" }).clicked() {
+    if ui.add(egui::Button::new(RichText::new(eye).size(16.0).color(MUTED())).frame(false)).on_hover_text(if *show { t!("Ocultar") } else { t!("Mostrar") }).clicked() {
         *show = !*show;
     }
     ui.add(egui::TextEdit::singleline(value).password(!*show).hint_text(hint).desired_width(230.0).margin(Margin::symmetric(8, 4)))
@@ -232,10 +233,10 @@ impl NotesApp {
                         ui.painter().vline(rect.right(), rect.y_range(), Stroke::new(1.0, theme::BORDER()));
                         Frame::new().inner_margin(Margin::symmetric(10, 16)).show(ui, |ui| {
                             ui.set_width(nav_w - 20.0);
-                            ui.label(RichText::new("   Configuración").font(theme::bold(16.0)));
+                            ui.label(RichText::new(format!("   {}", t!("Configuración"))).font(theme::bold(16.0)));
                             ui.add_space(12.0);
                             for (sec, glyph, label) in SECTIONS {
-                                if list_row(ui, glyph, label, "", s.section == sec).clicked() {
+                                if list_row(ui, glyph, crate::i18n::tr(label), "", s.section == sec).clicked() {
                                     s.section = sec;
                                 }
                             }
@@ -248,7 +249,7 @@ impl NotesApp {
                             ui.set_width(w - nav_w - 48.0);
                             ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                                 let x = egui::Button::new(RichText::new(icon::X).size(18.0).color(MUTED())).frame(false);
-                                if ui.add(x).on_hover_text("Cerrar (Esc)").clicked() {
+                                if ui.add(x).on_hover_text(t!("Cerrar (Esc)")).clicked() {
                                     close = true;
                                 }
                             });
@@ -321,7 +322,7 @@ impl NotesApp {
             Change::AccountKey(k) => match crate::account::set_key_text(&self.vault.root, &k) {
                 Ok(()) => {
                     s.acct_key.clear();
-                    self.msg("Clave guardada; juntando tu configuración…");
+                    self.msg(t!("Clave guardada; juntando tu configuración…"));
                     self.account_sync_now();
                 }
                 Err(e) => self.msg(e),
@@ -381,6 +382,15 @@ impl NotesApp {
                 self.cfg.tema = t.to_string();
                 self.save_config();
             }
+            Change::Language(l) => {
+                self.cfg.idioma = l.to_string();
+                crate::i18n::set_english(match l {
+                    "en" => true,
+                    "es" => false,
+                    _ => crate::i18n::system_is_english(),
+                });
+                self.save_config();
+            }
             Change::Background(on) => {
                 self.cfg.segundo_plano = on;
                 self.save_config();
@@ -390,7 +400,7 @@ impl NotesApp {
                     self.cfg.iniciar_con_windows = on;
                     self.save_config();
                 }
-                Err(e) => self.msg(format!("No se pudo cambiar: {e}")),
+                Err(e) => self.msg(tf!("No se pudo cambiar: {e}", e = e)),
             },
             Change::UpdateAuto(on) => {
                 self.cfg.actualizar_sola = on;
@@ -405,11 +415,11 @@ impl NotesApp {
     }
 
     fn section_account(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {
-        heading(ui, "Tu cuenta", "La IA incluida y tu configuración en todos tus equipos.");
+        heading(ui, t!("Tu cuenta"), t!("La IA incluida y tu configuración en todos tus equipos."));
         let server = crate::account::server(&self.cfg);
         // La dirección del servicio: viene puesta en los instaladores; si no, en «Avanzado».
         let server_row = |ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>| {
-            row(ui, "Servidor", "La dirección del servicio de Notas", |ui| {
+            row(ui, t!("Servidor"), t!("La dirección del servicio de Notas"), |ui| {
                 let r = ui.add(egui::TextEdit::singleline(&mut s.server).hint_text("https://…").desired_width(250.0).margin(Margin::symmetric(8, 4)));
                 if (r.lost_focus() || ui.input(|i| i.key_pressed(Key::Enter))) && s.server.trim() != self.cfg.servidor_ia {
                     changes.push(Change::IncludedServer(s.server.clone()));
@@ -419,11 +429,11 @@ impl NotesApp {
         let busy = self.acct.busy;
         if !self.signed_in() {
             ui.add_space(8.0);
-            ui.label(RichText::new("Entra y listo: la IA queda activa y tus calendarios, correos, Google Calendar y Microsoft To Do te siguen a cualquier equipo. Las cuentas nuevas se aprueban antes de usarse; al aprobarla empiezan tus 14 días gratis.").size(13.0));
+            ui.label(RichText::new(t!("Entra y listo: la IA queda activa y tus calendarios, correos, Google Calendar y Microsoft To Do te siguen a cualquier equipo. Las cuentas nuevas se aprueban antes de usarse; al aprobarla empiezan tus 14 días gratis.")).size(13.0));
             ui.add_space(12.0);
             if server.is_none() {
                 server_row(ui, s, changes);
-                ui.label(RichText::new("Falta la dirección del servidor de Notas (vendrá puesta en los instaladores).").size(12.5).color(WARN()));
+                ui.label(RichText::new(t!("Falta la dirección del servidor de Notas (vendrá puesta en los instaladores).")).size(12.5).color(WARN()));
                 ui.add_space(8.0);
             }
             let error = self.acct.error.as_deref();
@@ -432,12 +442,12 @@ impl NotesApp {
             }
             if server.is_some() && crate::account::BUILT_IN_SERVER.is_none() {
                 ui.add_space(14.0);
-                egui::CollapsingHeader::new(RichText::new("Avanzado").size(12.5).color(MUTED())).show(ui, |ui| server_row(ui, s, changes));
+                egui::CollapsingHeader::new(RichText::new(t!("Avanzado")).size(12.5).color(MUTED())).show(ui, |ui| server_row(ui, s, changes));
             }
             return;
         }
-        row(ui, "Entraste como", "", |ui| {
-            if ui.button("Salir").on_hover_text("Cierra la sesión en este equipo").clicked() {
+        row(ui, t!("Entraste como"), "", |ui| {
+            if ui.button(t!("Salir")).on_hover_text(t!("Cierra la sesión en este equipo")).clicked() {
                 changes.push(Change::AccountSignOut);
             }
             ui.label(RichText::new(&self.cfg.cuenta).size(14.0));
@@ -446,24 +456,24 @@ impl NotesApp {
         self.sync_settings(ui, changes);
         // Qué IA se usa: la de Notas o la propia.
         let included = self.cfg.proveedor == "notas";
-        row(ui, "La IA", if included { "La de Notas, incluida con tu cuenta" } else { "Tu propia clave (en Inteligencia artificial)" }, |ui| {
+        row(ui, t!("La IA"), if included { t!("La de Notas, incluida con tu cuenta") } else { t!("Tu propia clave (en Inteligencia artificial)") }, |ui| {
             if included {
-                if ui.button("Usar mi propia clave").clicked() {
+                if ui.button(t!("Usar mi propia clave")).clicked() {
                     changes.push(Change::Do(Action::OpenSettings(Section::Ai)));
                 }
-            } else if ui.button("Usar la de Notas").clicked() {
+            } else if ui.button(t!("Usar la de Notas")).clicked() {
                 changes.push(Change::Provider("notas".into()));
             }
         });
         match &self.acct.info {
-            Some(Ok(info)) => row(ui, "Plan", "", |ui| {
+            Some(Ok(info)) => row(ui, t!("Plan"), "", |ui| {
                 ui.label(RichText::new(info.plan_label()).size(13.5).color(if info.plan == "prueba" && info.dias_prueba <= 3 { WARN() } else { TEXT() }));
             }),
             Some(Err(e)) => chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false),
             None => {}
         }
         if let Some((text, color)) = self.usage_label() {
-            row(ui, "IA incluida este mes", "", |ui| {
+            row(ui, t!("IA incluida este mes"), "", |ui| {
                 if let Some(Ok(u)) = self.ai_usage.as_ref().filter(|u| u.as_ref().is_ok_and(|u| u.percent() > 0)) {
                     ui.add(egui::ProgressBar::new(u.percent() as f32 / 100.0).desired_width(120.0));
                 }
@@ -471,25 +481,25 @@ impl NotesApp {
             });
         }
         let synced = match &self.acct.synced {
-            Some(Ok(t)) => format!("Al día (a las {t}). Viajan tus calendarios, cuentas de correo, Google Calendar, Microsoft To Do y «organizar sola»."),
+            Some(Ok(t)) => tf!("Al día (a las {t}). Viajan tus calendarios, cuentas de correo, Google Calendar, Microsoft To Do y «organizar sola».", t = t),
             Some(Err(e)) => e.clone(),
-            None => "Juntando…".into(),
+            None => t!("Juntando…").into(),
         };
-        row(ui, "Tu configuración", &synced, |ui| {
-            if ui.button(format!("{}  Juntar ahora", icon::ARROWS_CLOCKWISE)).clicked() {
+        row(ui, t!("Tu configuración"), &synced, |ui| {
+            if ui.button(format!("{}  {}", icon::ARROWS_CLOCKWISE, t!("Juntar ahora"))).clicked() {
                 changes.push(Change::AccountSync);
             }
         });
         if matches!(self.acct.synced, Some(Err(_))) {
-            row(ui, "Clave de otro equipo", "Si tus equipos no comparten la carpeta de notas, pega aquí la clave del otro", |ui| {
-                if ui.add_enabled(!s.acct_key.trim().is_empty(), egui::Button::new("Usar")).clicked() {
+            row(ui, t!("Clave de otro equipo"), t!("Si tus equipos no comparten la carpeta de notas, pega aquí la clave del otro"), |ui| {
+                if ui.add_enabled(!s.acct_key.trim().is_empty(), egui::Button::new(t!("Usar"))).clicked() {
                     changes.push(Change::AccountKey(s.acct_key.clone()));
                 }
-                ui.add(egui::TextEdit::singleline(&mut s.acct_key).hint_text("clave").password(true).desired_width(180.0));
+                ui.add(egui::TextEdit::singleline(&mut s.acct_key).hint_text(t!("clave")).password(true).desired_width(180.0));
             });
         } else if let Some(k) = crate::account::key_text(&self.vault.root) {
-            row(ui, "Clave de tu configuración", "Va cifrada con esta clave, que está en tu carpeta de notas. Solo hace falta si otro equipo no comparte la carpeta", |ui| {
-                if ui.button(format!("{}  Copiar", icon::COPY)).clicked() {
+            row(ui, t!("Clave de tu configuración"), t!("Va cifrada con esta clave, que está en tu carpeta de notas. Solo hace falta si otro equipo no comparte la carpeta"), |ui| {
+                if ui.button(format!("{}  {}", icon::COPY, t!("Copiar"))).clicked() {
                     ui.ctx().copy_text(k.clone());
                 }
             });
@@ -497,62 +507,67 @@ impl NotesApp {
     }
 
     fn section_general(&self, ui: &mut Ui, changes: &mut Vec<Change>) {
-        heading(ui, "General", "Dónde se guardan tus notas.");
+        heading(ui, t!("General"), t!("Dónde se guardan tus notas."));
         let folder = self.vault.root.display().to_string();
-        row(ui, "Carpeta de notas", &folder, |ui| {
-            if ui.button(format!("{}  Elegir carpeta…", icon::FOLDER_OPEN)).clicked() {
+        row(ui, t!("Carpeta de notas"), &folder, |ui| {
+            if ui.button(format!("{}  {}", icon::FOLDER_OPEN, t!("Elegir carpeta…"))).clicked() {
                 let picked = rfd::FileDialog::new()
-                    .set_title("Carpeta de notas")
+                    .set_title(t!("Carpeta de notas"))
                     .set_directory(&self.vault.root)
                     .pick_folder();
                 if let Some(p) = picked {
                     changes.push(Change::Folder(p));
                 }
             }
-            if ui.link("Abrir").clicked() {
+            if ui.link(t!("Abrir")).clicked() {
                 changes.push(Change::Do(Action::OpenExternal(self.vault.root.clone())));
             }
         });
         ui.add_space(8.0);
         ui.label(
-            RichText::new(
-                "Cada nota es un archivo Markdown (.md) que puedes abrir con cualquier editor; cada subcarpeta es un espacio de trabajo. \
-                 Si usas Dropbox, elige una carpeta dentro de Dropbox para tener tus notas en todos tus equipos.",
-            )
+            RichText::new(t!("Cada nota es un archivo Markdown (.md) que puedes abrir con cualquier editor; cada subcarpeta es un espacio de trabajo. Si usas Dropbox, elige una carpeta dentro de Dropbox para tener tus notas en todos tus equipos."))
             .size(12.5)
             .color(MUTED()),
         );
         ui.add_space(16.0);
-        row(ui, "Tema", "El oscuro es suave, para trabajar de noche sin cansar la vista", |ui| {
-            for (id, label) in [("claro", "Claro"), ("oscuro", "Oscuro"), ("sistema", "Según el sistema")] {
+        row(ui, "Idioma · Language", "", |ui| {
+            for (id, label) in [("es", "Español"), ("en", "English"), ("", t!("Según el sistema"))] {
+                if ui.selectable_label(self.cfg.idioma == id, label).clicked() && self.cfg.idioma != id {
+                    changes.push(Change::Language(id));
+                }
+            }
+        });
+        ui.add_space(16.0);
+        row(ui, t!("Tema"), t!("El oscuro es suave, para trabajar de noche sin cansar la vista"), |ui| {
+            for (id, label) in [("claro", t!("Claro")), ("oscuro", t!("Oscuro")), ("sistema", t!("Según el sistema"))] {
                 if ui.selectable_label(self.cfg.tema == id, label).clicked() && self.cfg.tema != id {
                     changes.push(Change::Theme(id));
                 }
             }
         });
         ui.add_space(16.0);
-        row(ui, "Importar notas", "De Obsidian, Notion (exportado a Markdown) o cualquier carpeta de archivos .md", |ui| {
-            if ui.button(format!("{}  Elegir carpeta…", icon::DOWNLOAD_SIMPLE)).clicked() {
+        row(ui, t!("Importar notas"), t!("De Obsidian, Notion (exportado a Markdown) o cualquier carpeta de archivos .md"), |ui| {
+            if ui.button(format!("{}  {}", icon::DOWNLOAD_SIMPLE, t!("Elegir carpeta…"))).clicked() {
                 changes.push(Change::Import);
             }
         });
         ui.add_space(16.0);
         let cfg_path = config::config_path().display().to_string();
-        row(ui, "Archivo de configuración", &cfg_path, |ui| {
-            if ui.link("Abrir config.toml").clicked() {
+        row(ui, t!("Archivo de configuración"), &cfg_path, |ui| {
+            if ui.link(t!("Abrir config.toml")).clicked() {
                 changes.push(Change::Do(Action::OpenExternal(config::config_path())));
             }
         });
         if cfg!(windows) {
             ui.add_space(16.0);
-            row(ui, "Seguir en segundo plano", "Al cerrar la ventana, Notas queda junto al reloj y sigue sincronizando; un clic en su ícono la vuelve a abrir (clic derecho → Salir, para cerrarla)", |ui| {
+            row(ui, t!("Seguir en segundo plano"), t!("Al cerrar la ventana, Notas queda junto al reloj y sigue sincronizando; un clic en su ícono la vuelve a abrir (clic derecho → Salir, para cerrarla)"), |ui| {
                 let mut on = self.cfg.segundo_plano;
                 if toggle(ui, &mut on).changed() {
                     changes.push(Change::Background(on));
                 }
             });
             ui.add_space(6.0);
-            row(ui, "Abrir al iniciar Windows", "Notas se abre sola al prender el computador, ya en segundo plano", |ui| {
+            row(ui, t!("Abrir al iniciar Windows"), t!("Notas se abre sola al prender el computador, ya en segundo plano"), |ui| {
                 let mut on = self.cfg.iniciar_con_windows;
                 if toggle(ui, &mut on).changed() {
                     changes.push(Change::StartWithWindows(on));
@@ -562,28 +577,28 @@ impl NotesApp {
     }
 
     fn section_ai(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {
-        heading(ui, "Inteligencia artificial", "Organiza tus notas sola: espacio, etiquetas, resumen, tareas y agenda.");
+        heading(ui, t!("Inteligencia artificial"), t!("Organiza tus notas sola: espacio, etiquetas, resumen, tareas y agenda."));
 
         let mut auto = self.cfg.ia_automatica;
-        row(ui, "Organizar automáticamente", "Al dejar una nota o tras 45 s sin escribir", |ui| {
+        row(ui, t!("Organizar automáticamente"), t!("Al dejar una nota o tras 45 s sin escribir"), |ui| {
             if toggle(ui, &mut auto).changed() {
                 changes.push(Change::AiAuto(auto));
             }
         });
 
         let mut suggest = self.cfg.ia_sugerir;
-        row(ui, "Sugerir antes de aplicar", "La IA propone (en la ventana de la IA → Preguntas) y nada cambia hasta que lo apruebas", |ui| {
+        row(ui, t!("Sugerir antes de aplicar"), t!("La IA propone (en la ventana de la IA → Preguntas) y nada cambia hasta que lo apruebas"), |ui| {
             if toggle(ui, &mut suggest).changed() {
                 changes.push(Change::AiSuggest(suggest));
             }
         });
 
         let current = ai::PROVIDERS.iter().find(|p| p.0 == self.cfg.proveedor);
-        row(ui, "Proveedor", "", |ui| {
-            let label = current.map_or_else(|| format!("Desconocido: {}", short(&self.cfg.proveedor, 22)), |p| p.1.to_string());
+        row(ui, t!("Proveedor"), "", |ui| {
+            let label = current.map_or_else(|| tf!("Desconocido: {p}", p = short(&self.cfg.proveedor, 22)), |p| crate::i18n::tr(p.1).to_string());
             egui::ComboBox::from_id_salt("proveedor").selected_text(label).width(250.0).show_ui(ui, |ui| {
                 for (id, name, _, _) in ai::PROVIDERS {
-                    if ui.selectable_label(self.cfg.proveedor == *id, *name).clicked() && self.cfg.proveedor != *id {
+                    if ui.selectable_label(self.cfg.proveedor == *id, crate::i18n::tr(*name)).clicked() && self.cfg.proveedor != *id {
                         changes.push(Change::Provider(id.to_string()));
                     }
                 }
@@ -592,20 +607,20 @@ impl NotesApp {
 
         let included = ai::is_included(&self.cfg);
         if included {
-            row(ui, "Tu código", "El que te dimos al suscribirte (nx-…). Se guarda solo en este equipo", |ui| {
+            row(ui, t!("Tu código"), t!("El que te dimos al suscribirte (nx-…). Se guarda solo en este equipo"), |ui| {
                 let r = secret_field(ui, &mut s.code, &mut s.show_key, "nx-…");
                 if (r.lost_focus() || ui.input(|i| i.key_pressed(Key::Enter))) && s.code.trim() != self.cfg.codigo_ia {
                     changes.push(Change::IncludedCode(s.code.clone()));
                 }
             });
-            row(ui, "Servidor", "La dirección del servicio de Notas", |ui| {
+            row(ui, t!("Servidor"), t!("La dirección del servicio de Notas"), |ui| {
                 let r = ui.add(egui::TextEdit::singleline(&mut s.server).hint_text("https://…").desired_width(250.0).margin(Margin::symmetric(8, 4)));
                 if (r.lost_focus() || ui.input(|i| i.key_pressed(Key::Enter))) && s.server.trim() != self.cfg.servidor_ia {
                     changes.push(Change::IncludedServer(s.server.clone()));
                 }
             });
             if let Some((text, color)) = self.usage_label() {
-                row(ui, "Uso de este mes", "", |ui| {
+                row(ui, t!("Uso de este mes"), "", |ui| {
                     if let Some(Ok(u)) = &self.ai_usage {
                         ui.add(egui::ProgressBar::new(u.percent() as f32 / 100.0).desired_width(120.0));
                     }
@@ -615,11 +630,11 @@ impl NotesApp {
         }
         let models = models_for(&self.cfg.proveedor);
         if !included {
-        row(ui, "Modelo", if models.is_empty() { "Escribe el nombre exacto del modelo" } else { "" }, |ui| {
+        row(ui, t!("Modelo"), if models.is_empty() { t!("Escribe el nombre exacto del modelo") } else { "" }, |ui| {
             if s.custom_model || models.is_empty() {
                 let r = ui.add(
                     egui::TextEdit::singleline(&mut s.model)
-                        .hint_text("nombre del modelo")
+                        .hint_text(t!("nombre del modelo"))
                         .desired_width(if models.is_empty() { 250.0 } else { 150.0 })
                         .margin(Margin::symmetric(8, 4)),
                 );
@@ -628,7 +643,7 @@ impl NotesApp {
                 }
             }
             if !models.is_empty() {
-                let text = if s.custom_model { "Otro…" } else { self.cfg.modelo.as_str() };
+                let text = if s.custom_model { t!("Otro…") } else { self.cfg.modelo.as_str() };
                 let width = if s.custom_model { 95.0 } else { 250.0 };
                 egui::ComboBox::from_id_salt("modelo").selected_text(short(text, 28)).width(width).show_ui(ui, |ui| {
                     for m in models {
@@ -641,7 +656,7 @@ impl NotesApp {
                         }
                     }
                     ui.separator();
-                    if ui.selectable_label(s.custom_model, "Otro…").clicked() {
+                    if ui.selectable_label(s.custom_model, t!("Otro…")).clicked() {
                         s.custom_model = true;
                     }
                 });
@@ -651,10 +666,10 @@ impl NotesApp {
         let ollama = self.cfg.proveedor == "ollama";
         row(
             ui,
-            "Clave API",
-            if ollama { "No hace falta con Ollama" } else { "Se guarda solo en este equipo, nunca en Dropbox" },
+            t!("Clave API"),
+            if ollama { t!("No hace falta con Ollama") } else { t!("Se guarda solo en este equipo, nunca en Dropbox") },
             |ui| {
-                let r = secret_field(ui, &mut s.key, &mut s.show_key, "pega aquí tu clave");
+                let r = secret_field(ui, &mut s.key, &mut s.show_key, t!("pega aquí tu clave"));
                 if (r.lost_focus() || ui.input(|i| i.key_pressed(Key::Enter))) && s.key.trim() != self.cfg.clave_api {
                     changes.push(Change::Key(s.key.clone()));
                 }
@@ -662,8 +677,8 @@ impl NotesApp {
         );
         }
 
-        row(ui, "Conexión", "Envía un mensaje corto para comprobar la clave y el modelo", |ui| {
-            let b = egui::Button::new(format!("{}  Probar conexión", icon::PLUGS_CONNECTED));
+        row(ui, t!("Conexión"), t!("Envía un mensaje corto para comprobar la clave y el modelo"), |ui| {
+            let b = egui::Button::new(format!("{}  {}", icon::PLUGS_CONNECTED, t!("Probar conexión")));
             if ui.add_enabled(s.test.is_none(), b).clicked() {
                 changes.push(Change::TestConnection);
             }
@@ -675,9 +690,9 @@ impl NotesApp {
         ui.add_space(8.0);
         match (&s.test, &s.test_result) {
             (Some(_), _) => {
-                ui.label(RichText::new("Probando…").size(12.5).color(MUTED()));
+                ui.label(RichText::new(t!("Probando…")).size(12.5).color(MUTED()));
             }
-            (None, Some(Ok(ms))) => chip(ui, &format!("{} Conectado · respondió en {:.1} s", icon::CHECK_CIRCLE, *ms as f32 / 1000.0), true),
+            (None, Some(Ok(ms))) => chip(ui, &format!("{} {}", icon::CHECK_CIRCLE, tf!("Conectado · respondió en {s} s", s = format!("{:.1}", *ms as f32 / 1000.0))), true),
             (None, Some(Err(e))) => chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false),
             (None, None) => {
                 if let Err(e) = &self.ai {
@@ -688,8 +703,8 @@ impl NotesApp {
         if let Some(url) = current.and_then(|p| p.3) {
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("¿No tienes clave?").size(12.5).color(MUTED()));
-                if ui.link(RichText::new("Crear una en opencode.ai").size(12.5)).clicked() {
+                ui.label(RichText::new(t!("¿No tienes clave?")).size(12.5).color(MUTED()));
+                if ui.link(RichText::new(t!("Crear una en opencode.ai")).size(12.5)).clicked() {
                     changes.push(Change::OpenUrl(url));
                 }
             });
@@ -697,7 +712,7 @@ impl NotesApp {
         if self.cfg.proveedor.starts_with("opencode") {
             ui.add_space(6.0);
             ui.label(
-                RichText::new("OpenCode Zen cobra por uso desde tu saldo; OpenCode Go es una suscripción mensual con límite de uso. Ambos usan la misma clave.")
+                RichText::new(t!("OpenCode Zen cobra por uso desde tu saldo; OpenCode Go es una suscripción mensual con límite de uso. Ambos usan la misma clave."))
                     .size(12.5)
                     .color(MUTED()),
             );
@@ -705,7 +720,7 @@ impl NotesApp {
     }
 
     fn section_mail(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {
-        heading(ui, "Correo", "La IA revisa tu bandeja de entrada y tus enviados para no perder compromisos ni fechas.");
+        heading(ui, t!("Correo"), t!("La IA revisa tu bandeja de entrada y tus enviados para no perder compromisos ni fechas."));
         ui.add_space(12.0);
         Frame::new().stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::same(16)).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -714,14 +729,14 @@ impl NotesApp {
             }
         });
         ui.add_space(10.0);
-        ui.label(RichText::new("Cuándo revisar").font(theme::bold(14.0)));
+        ui.label(RichText::new(t!("Cuándo revisar")).font(theme::bold(14.0)));
         let mut arrive = self.cfg.correo_al_llegar;
-        if ui.checkbox(&mut arrive, "Al llegar un correo nuevo (al instante)").changed() {
+        if ui.checkbox(&mut arrive, t!("Al llegar un correo nuevo (al instante)")).changed() {
             changes.push(Change::MailArrive(arrive));
         }
         ui.horizontal(|ui| {
             let mut daily = !self.cfg.correo_diario.trim().is_empty();
-            if ui.checkbox(&mut daily, "Una vez al día a las").changed() {
+            if ui.checkbox(&mut daily, t!("Una vez al día a las")).changed() {
                 changes.push(Change::MailDaily(if daily { "07:00".into() } else { String::new() }));
             }
             if daily {
@@ -736,57 +751,57 @@ impl NotesApp {
                 }
             }
         });
-        ui.label(RichText::new("Y siempre que quieras, con «Revisar ahora» en Correos.").size(12.5).color(MUTED()));
+        ui.label(RichText::new(t!("Y siempre que quieras, con «Revisar ahora» en Correos.")).size(12.5).color(MUTED()));
         ui.add_space(10.0);
         ui.label(
-            RichText::new("Cómo funciona: se leen los correos nuevos (la primera vez, los de la última semana) de entrada y enviados, sin marcarlos como leídos. La IA los resume y lleva a Tareas y Agenda los compromisos y fechas (se puede deshacer), y avisa cuando un correo parece cumplir algo pendiente. Los boletines y avisos automáticos se ignoran.")
+            RichText::new(t!("Cómo funciona: se leen los correos nuevos (la primera vez, los de la última semana) de entrada y enviados, sin marcarlos como leídos. La IA los resume y lleva a Tareas y Agenda los compromisos y fechas (se puede deshacer), y avisa cuando un correo parece cumplir algo pendiente. Los boletines y avisos automáticos se ignoran."))
                 .size(12.5)
                 .color(MUTED()),
         );
         ui.add_space(4.0);
         ui.label(
-            RichText::new("Privacidad: la contraseña de aplicación queda en config.toml, solo en este equipo; los correos, en correos.json junto a él. Para entenderlos, su texto se envía al modelo de IA configurado.")
+            RichText::new(t!("Privacidad: la contraseña de aplicación queda en config.toml, solo en este equipo; los correos, en correos.json junto a él. Para entenderlos, su texto se envía al modelo de IA configurado."))
                 .size(12.5)
                 .color(MUTED()),
         );
     }
 
     fn section_tasks(&self, ui: &mut Ui, changes: &mut Vec<Change>) {
-        heading(ui, "Tareas", "Las tareas que la IA encuentra en tus notas, también en otras apps.");
+        heading(ui, t!("Tareas"), t!("Las tareas que la IA encuentra en tus notas, también en otras apps."));
         ui.add_space(12.0);
         Frame::new().stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::same(16)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(RichText::new(format!("{}  Microsoft To Do", icon::CHECK_SQUARE_OFFSET)).font(theme::bold(15.0)));
             ui.label(
-                RichText::new("Tus tareas quedan en una lista «Notas» de To Do, en los dos sentidos: lo que marcas hecho o cambias de fecha en un lado pasa al otro, y lo que agregas a esa lista desde To Do (por ejemplo, desde el celular) llega a Tareas.")
+                RichText::new(t!("Tus tareas quedan en una lista «Notas» de To Do, en los dos sentidos: lo que marcas hecho o cambias de fecha en un lado pasa al otro, y lo que agregas a esa lista desde To Do (por ejemplo, desde el celular) llega a Tareas."))
                     .size(12.5)
                     .color(MUTED()),
             );
             ui.add_space(8.0);
             let Some(t) = &self.todo else {
-                chip(ui, "No se pudo iniciar la conexión con To Do", false);
+                chip(ui, t!("No se pudo iniciar la conexión con To Do"), false);
                 return;
             };
             if t.connecting {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label(RichText::new("Esperando tu permiso en el navegador…").color(ACCENT()));
+                    ui.label(RichText::new(t!("Esperando tu permiso en el navegador…")).color(ACCENT()));
                 });
             } else if !t.connected {
-                if ui.button(format!("{}  Conectar Microsoft To Do", icon::LINK)).clicked() {
+                if ui.button(format!("{}  {}", icon::LINK, t!("Conectar Microsoft To Do"))).clicked() {
                     changes.push(Change::Do(Action::TodoConnect));
                 }
-                ui.label(RichText::new("Se abre el navegador: entra con tu cuenta Microsoft (personal, o del trabajo si tu organización lo permite) y acepta el permiso.").size(12.5).color(MUTED()));
+                ui.label(RichText::new(t!("Se abre el navegador: entra con tu cuenta Microsoft (personal, o del trabajo si tu organización lo permite) y acepta el permiso.")).size(12.5).color(MUTED()));
                 if let Some(e) = &t.last_error {
                     chip(ui, e, false);
                 }
             } else {
                 let status = if t.busy {
-                    "Conectado · sincronizando…".to_string()
+                    t!("Conectado · sincronizando…").to_string()
                 } else if let Some(s) = t.last_sync {
-                    format!("Conectado · sincronizado a las {}", s.format("%H:%M"))
+                    tf!("Conectado · sincronizado a las {h}", h = s.format("%H:%M"))
                 } else {
-                    "Conectado".to_string()
+                    t!("Conectado").to_string()
                 };
                 match &t.last_error {
                     Some(e) => chip(ui, e, false),
@@ -794,26 +809,26 @@ impl NotesApp {
                 }
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    if ui.button(format!("{}  Sincronizar ahora", icon::ARROWS_CLOCKWISE)).clicked() {
+                    if ui.button(format!("{}  {}", icon::ARROWS_CLOCKWISE, t!("Sincronizar ahora"))).clicked() {
                         changes.push(Change::Do(Action::TodoSync));
                     }
-                    if ui.button("Desconectar").clicked() {
+                    if ui.button(t!("Desconectar")).clicked() {
                         changes.push(Change::Do(Action::TodoDisconnect));
                     }
                 });
-                ui.label(RichText::new("Se sincroniza al cambiar algo y cada 2 minutos.").size(12.5).color(MUTED()));
+                ui.label(RichText::new(t!("Se sincroniza al cambiar algo y cada 2 minutos.")).size(12.5).color(MUTED()));
             }
         });
         ui.add_space(10.0);
         ui.label(
-            RichText::new("Privacidad: el permiso queda solo en este equipo (microsoft_token.json, junto a config.toml). La app solo usa tus tareas de To Do; no lee tu correo ni tus archivos. También puedes conectarlo desde Tareas.")
+            RichText::new(t!("Privacidad: el permiso queda solo en este equipo (microsoft_token.json, junto a config.toml). La app solo usa tus tareas de To Do; no lee tu correo ni tus archivos. También puedes conectarlo desde Tareas."))
                 .size(12.5)
                 .color(MUTED()),
         );
     }
 
     fn section_calendar(&self, ui: &mut Ui, s: &mut Settings, changes: &mut Vec<Change>) {
-        heading(ui, "Calendar", "Agrega tus calendarios con su enlace y verás sus eventos en la Agenda y en Inicio.");
+        heading(ui, t!("Calendar"), t!("Agrega tus calendarios con su enlace y verás sus eventos en la Agenda y en Inicio."));
         ui.add_space(12.0);
         Frame::new()
             .stroke(Stroke::new(1.0, theme::BORDER()))
@@ -821,9 +836,9 @@ impl NotesApp {
             .inner_margin(Margin::same(16))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.label(RichText::new(format!("{}  Tus calendarios", icon::CALENDAR_BLANK)).font(theme::bold(15.0)));
+                ui.label(RichText::new(format!("{}  {}", icon::CALENDAR_BLANK, t!("Tus calendarios"))).font(theme::bold(15.0)));
                 ui.label(
-                    RichText::new("Google Calendar, Outlook, iCloud o cualquier calendario con enlace ICS. Solo se leen; se actualizan cada 15 minutos.")
+                    RichText::new(t!("Google Calendar, Outlook, iCloud o cualquier calendario con enlace ICS. Solo se leen; se actualizan cada 15 minutos."))
                         .size(12.5)
                         .color(MUTED()),
                 );
@@ -840,37 +855,37 @@ impl NotesApp {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("{}  Enviar tu agenda a Google Calendar (avanzado)", icon::GOOGLE_LOGO)).font(theme::bold(15.0)));
+                    ui.label(RichText::new(format!("{}  {}", icon::GOOGLE_LOGO, t!("Enviar tu agenda a Google Calendar (avanzado)"))).font(theme::bold(15.0)));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| match &self.gcal {
                         None => {
-                            ui.label(RichText::new("Falta el ID de cliente").size(12.5).color(MUTED()));
+                            ui.label(RichText::new(t!("Falta el ID de cliente")).size(12.5).color(MUTED()));
                         }
                         Some(g) if g.connecting => {
-                            ui.label(RichText::new("Esperando tu permiso en el navegador…").size(12.5).color(ACCENT()));
+                            ui.label(RichText::new(t!("Esperando tu permiso en el navegador…")).size(12.5).color(ACCENT()));
                         }
                         Some(g) if g.connected => {
-                            if ui.button("Desconectar").clicked() {
+                            if ui.button(t!("Desconectar")).clicked() {
                                 changes.push(Change::Do(Action::GoogleDisconnect));
                             }
-                            if ui.button("Sincronizar ahora").clicked() {
+                            if ui.button(t!("Sincronizar ahora")).clicked() {
                                 changes.push(Change::Do(Action::GoogleSync));
                             }
                             let status = match (&g.last_error, g.last_sync) {
-                                (Some(_), _) => "error (ver abajo)".to_string(),
-                                (None, Some(t)) => format!("sincronizado {}", t.format("%H:%M")),
-                                _ => "conectado".into(),
+                                (Some(_), _) => t!("error (ver abajo)").to_string(),
+                                (None, Some(t)) => tf!("sincronizado {h}", h = t.format("%H:%M")),
+                                _ => t!("conectado").into(),
                             };
                             ui.label(RichText::new(status).size(12.5).color(if g.last_error.is_some() { RED() } else { SUCCESS() }));
                         }
                         Some(_) => {
-                            if ui.button(format!("{}  Conectar", icon::LINK)).clicked() {
+                            if ui.button(format!("{}  {}", icon::LINK, t!("Conectar"))).clicked() {
                                 changes.push(Change::Do(Action::GoogleConnect));
                             }
                         }
                     });
                 });
                 ui.label(
-                    RichText::new("Crea un calendario propio llamado «Notas» y solo toca ese; tus otros calendarios quedan fuera de su alcance.")
+                    RichText::new(t!("Crea un calendario propio llamado «Notas» y solo toca ese; tus otros calendarios quedan fuera de su alcance."))
                         .size(12.5)
                         .color(MUTED()),
                 );
@@ -879,7 +894,7 @@ impl NotesApp {
                     chip(ui, &format!("{} {e}", icon::WARNING_CIRCLE), false);
                 }
                 ui.add_space(6.0);
-                row(ui, "ID de cliente", "", |ui| {
+                row(ui, t!("ID de cliente"), "", |ui| {
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut s.client_id)
                             .hint_text("123456-abc.apps.googleusercontent.com")
@@ -890,22 +905,22 @@ impl NotesApp {
                         changes.push(Change::GoogleCreds(s.client_id.clone(), s.client_secret.clone()));
                     }
                 });
-                row(ui, "Secreto de cliente", "", |ui| {
+                row(ui, t!("Secreto de cliente"), "", |ui| {
                     let r = secret_field(ui, &mut s.client_secret, &mut s.show_secret, "GOCSPX-…");
                     if r.lost_focus() && s.client_secret.trim() != self.cfg.google_client_secret {
                         changes.push(Change::GoogleCreds(s.client_id.clone(), s.client_secret.clone()));
                     }
                 });
                 ui.add_space(6.0);
-                egui::CollapsingHeader::new(RichText::new("¿Cómo obtengo estas credenciales? (una vez, ~5 minutos)").size(13.0))
+                egui::CollapsingHeader::new(RichText::new(t!("¿Cómo obtengo estas credenciales? (una vez, ~5 minutos)")).size(13.0))
                     .default_open(self.cfg.google_client_id.is_empty())
                     .show(ui, |ui| {
                         let steps: [(&str, Option<(&str, &'static str)>); 5] = [
-                            ("Crea un proyecto en Google Cloud (por ejemplo «Notas»).", Some(("Abrir Google Cloud", "https://console.cloud.google.com/projectcreate"))),
-                            ("Habilita la Google Calendar API en ese proyecto.", Some(("Abrir Calendar API", "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com"))),
-                            ("En Google Auth Platform → Branding pon el nombre «Notas» y tu correo; en Público elige Externo.", Some(("Abrir Google Auth Platform", "https://console.cloud.google.com/auth/overview"))),
-                            ("En Público presiona «Publicar app» (si queda en Prueba, el permiso vence cada 7 días).", None),
-                            ("En Clientes → Crear cliente elige «App de escritorio» y pega aquí el ID y el secreto.", Some(("Abrir Clientes", "https://console.cloud.google.com/auth/clients"))),
+                            (t!("Crea un proyecto en Google Cloud (por ejemplo «Notas»)."), Some((t!("Abrir Google Cloud"), "https://console.cloud.google.com/projectcreate"))),
+                            (t!("Habilita la Google Calendar API en ese proyecto."), Some((t!("Abrir Calendar API"), "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com"))),
+                            (t!("En Google Auth Platform → Branding pon el nombre «Notas» y tu correo; en Público elige Externo."), Some((t!("Abrir Google Auth Platform"), "https://console.cloud.google.com/auth/overview"))),
+                            (t!("En Público presiona «Publicar app» (si queda en Prueba, el permiso vence cada 7 días)."), None),
+                            (t!("En Clientes → Crear cliente elige «App de escritorio» y pega aquí el ID y el secreto."), Some((t!("Abrir Clientes"), "https://console.cloud.google.com/auth/clients"))),
                         ];
                         for (i, (text, link)) in steps.iter().enumerate() {
                             ui.horizontal_wrapped(|ui| {
@@ -922,11 +937,11 @@ impl NotesApp {
         ui.add_space(14.0);
         ui.horizontal_wrapped(|ui| {
             ui.label(
-                RichText::new(format!("Otros calendarios (Outlook, Apple) llegarán más adelante. Mientras, puedes importar {}.", agenda::ICS_FILE))
+                RichText::new(tf!("Otros calendarios (Outlook, Apple) llegarán más adelante. Mientras, puedes importar {file}.", file = agenda::ICS_FILE))
                     .size(12.5)
                     .color(MUTED()),
             );
-            if ui.link(RichText::new("Abrir carpeta").size(12.5)).clicked() {
+            if ui.link(RichText::new(t!("Abrir carpeta")).size(12.5)).clicked() {
                 changes.push(Change::Do(Action::OpenExternal(self.vault.root.clone())));
             }
         });
@@ -934,27 +949,27 @@ impl NotesApp {
 }
 
 fn section_shortcuts(ui: &mut Ui) {
-    heading(ui, "Atajos", "Atajos de teclado (en Mac, Cmd en lugar de Ctrl).");
+    heading(ui, t!("Atajos"), t!("Atajos de teclado (en Mac, Cmd en lugar de Ctrl)."));
     ui.add_space(8.0);
     let keys = [
-        ("Ctrl + N", "Nueva nota"),
-        ("Ctrl + D", "Nota de hoy"),
-        ("Ctrl + H", "Inicio: tu día y un resumen de todo"),
-        ("Ctrl + K", "La IA: conversar con tus notas"),
-        ("Ctrl + T / Ctrl + W", "Nueva pestaña / cerrar pestaña"),
-        ("Ctrl + Tab", "Pestaña siguiente (con Shift, la anterior); Ctrl + 1…9 salta a una"),
-        ("Ctrl + clic", "Abrir la nota en otra pestaña"),
-        ("Ctrl + R", "Nueva reunión"),
-        ("Esc", "Cerrar la reunión, la búsqueda o la vista"),
-        ("Ctrl + F", "Buscar en todas las notas"),
-        ("Ctrl + S", "Guardar ahora (se guarda solo igual)"),
-        ("Ctrl + ,", "Configuración"),
-        ("Tab", "Una vez: parte de la nota de arriba · dos: ítem de lista"),
-        ("Shift + Tab", "Quitar un nivel de sangría"),
-        ("Enter", "En una lista, sigue la lista (en un ítem vacío, sale)"),
-        ("#palabra", "Etiqueta (se ve como píldora, sin el #)"),
-        ("- [ ] / - [x]", "Tarea pendiente / hecha (clic en la casilla)"),
-        ("due:2026-09-26", "Fecha de una tarea"),
+        ("Ctrl + N", t!("Nueva nota")),
+        ("Ctrl + D", t!("Nota de hoy")),
+        ("Ctrl + H", t!("Inicio: tu día y un resumen de todo")),
+        ("Ctrl + K", t!("La IA: conversar con tus notas")),
+        ("Ctrl + T / Ctrl + W", t!("Nueva pestaña / cerrar pestaña")),
+        ("Ctrl + Tab", t!("Pestaña siguiente (con Shift, la anterior); Ctrl + 1…9 salta a una")),
+        (t!("Ctrl + clic"), t!("Abrir la nota en otra pestaña")),
+        ("Ctrl + R", t!("Nueva reunión")),
+        ("Esc", t!("Cerrar la reunión, la búsqueda o la vista")),
+        ("Ctrl + F", t!("Buscar en todas las notas")),
+        ("Ctrl + S", t!("Guardar ahora (se guarda solo igual)")),
+        ("Ctrl + ,", t!("Configuración")),
+        ("Tab", t!("Una vez: parte de la nota de arriba · dos: ítem de lista")),
+        ("Shift + Tab", t!("Quitar un nivel de sangría")),
+        ("Enter", t!("En una lista, sigue la lista (en un ítem vacío, sale)")),
+        (t!("#palabra"), t!("Etiqueta (se ve como píldora, sin el #)")),
+        ("- [ ] / - [x]", t!("Tarea pendiente / hecha (clic en la casilla)")),
+        ("due:2026-09-26", t!("Fecha de una tarea")),
     ];
     egui::Grid::new("atajos").num_columns(2).spacing([28.0, 10.0]).show(ui, |ui| {
         for (k, what) in keys {
@@ -972,10 +987,10 @@ fn section_shortcuts(ui: &mut Ui) {
 
 impl NotesApp {
     fn section_about(&self, ui: &mut Ui, changes: &mut Vec<Change>) {
-        heading(ui, "Acerca de", "Notas rápidas con espacios de trabajo, reuniones e IA que organiza sola.");
+        heading(ui, t!("Acerca de"), t!("Notas rápidas con espacios de trabajo, reuniones e IA que organiza sola."));
         ui.add_space(12.0);
         ui.label(RichText::new(format!("Notas {}", env!("CARGO_PKG_VERSION"))).font(theme::bold(17.0)));
-        ui.label(RichText::new("Código abierto (MIT) · hecho en Rust con egui").size(12.5).color(MUTED()));
+        ui.label(RichText::new(t!("Código abierto (MIT) · hecho en Rust con egui")).size(12.5).color(MUTED()));
         ui.add_space(10.0);
         if ui.link(RichText::new(format!("{}  {REPO}", icon::GITHUB_LOGO)).size(13.0)).clicked() {
             changes.push(Change::OpenUrl(REPO));
@@ -983,7 +998,7 @@ impl NotesApp {
         ui.add_space(14.0);
         ui.separator();
         ui.add_space(4.0);
-        row(ui, "Actualizar sola", "Busca y baja las versiones nuevas; se instalan cuando haces clic en «Actualizar», abajo", |ui| {
+        row(ui, t!("Actualizar sola"), t!("Busca y baja las versiones nuevas; se instalan cuando haces clic en «Actualizar», abajo"), |ui| {
             let mut on = self.cfg.actualizar_sola;
             if toggle(ui, &mut on).changed() {
                 changes.push(Change::UpdateAuto(on));

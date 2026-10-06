@@ -31,6 +31,28 @@ impl NotesApp {
         }
     }
 
+    /// Lo mismo que `side_context`, pero para mostrarlo en el panel (en el idioma de la app).
+    fn side_view_label(&self) -> String {
+        match &self.view {
+            View::Editor if self.note.text.trim().is_empty() => t!("una nota nueva, vacía").into(),
+            View::Editor => tf!("la nota «{title}»", title = display_title(&self.note.title)),
+            View::Home => t!("Inicio (Tu día)").into(),
+            View::Tasks => t!("Tareas").into(),
+            View::Agenda => match &self.agenda_day {
+                Some(d) => tf!("la Agenda, el día {day}", day = long_date(d)),
+                None => t!("la Agenda").into(),
+            },
+            View::Week => t!("la revisión semanal").into(),
+            View::Mail => t!("los correos").into(),
+            View::Bloc => t!("el Bloc").into(),
+            View::Notes => t!("la lista de notas").into(),
+            View::Archive => t!("las notas archivadas").into(),
+            View::Trash => t!("la papelera").into(),
+            View::Tag(t) => tf!("la etiqueta #{tag}", tag = t),
+            View::Ai => t!("la IA").into(),
+        }
+    }
+
     /// Pedidos rápidos según lo que se mira.
     fn side_suggestions(&self) -> &'static [&'static str] {
         match &self.view {
@@ -64,7 +86,7 @@ impl NotesApp {
         egui::Area::new(Id::new("ia-boton")).anchor(Align2::RIGHT_BOTTOM, egui::vec2(-22.0, -40.0)).order(egui::Order::Foreground).show(ctx, |ui| {
             let glyph = if busy { icon::HOURGLASS_MEDIUM } else { icon::SPARKLE };
             let b = egui::Button::new(RichText::new(glyph).size(20.0).color(theme::c(Color32::WHITE))).fill(ACCENT()).corner_radius(22).min_size(egui::vec2(44.0, 44.0));
-            if ui.add(b).on_hover_text("Pregúntale o pídele algo a la IA sobre lo que estás viendo (Ctrl+J)").clicked() {
+            if ui.add(b).on_hover_text(t!("Pregúntale o pídele algo a la IA sobre lo que estás viendo (Ctrl+J)")).clicked() {
                 open = true;
             }
         });
@@ -76,28 +98,28 @@ impl NotesApp {
     /// El panel de la derecha: la conversación, pedidos rápidos y el campo para escribir.
     pub(super) fn side_ai_panel(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
-        let (label, _) = self.side_context();
+        let label = self.side_view_label();
         let busy = self.ask.busy();
         let tasks_now = self.agenda.tasks();
         let (mut send, mut close, mut big, mut new_chat) = (None, false, false, false);
 
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{} IA", icon::SPARKLE)).font(theme::bold(16.0)).color(ACCENT()));
+            ui.label(RichText::new(format!("{} {}", icon::SPARKLE, t!("IA"))).font(theme::bold(16.0)).color(ACCENT()));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let small = |g: &str| egui::Button::new(RichText::new(g).size(15.0).color(MUTED())).frame(false);
-                if ui.add(small(icon::X)).on_hover_text("Cerrar (Ctrl+J)").clicked() {
+                if ui.add(small(icon::X)).on_hover_text(t!("Cerrar (Ctrl+J)")).clicked() {
                     close = true;
                 }
-                if ui.add(small(icon::ARROWS_OUT_SIMPLE)).on_hover_text("Abrir en la ventana de la IA").clicked() {
+                if ui.add(small(icon::ARROWS_OUT_SIMPLE)).on_hover_text(t!("Abrir en la ventana de la IA")).clicked() {
                     big = true;
                 }
-                if !busy && !self.ask.turns.is_empty() && ui.add(small(icon::PLUS)).on_hover_text("Nueva conversación (esta queda guardada)").clicked() {
+                if !busy && !self.ask.turns.is_empty() && ui.add(small(icon::PLUS)).on_hover_text(t!("Nueva conversación (esta queda guardada)")).clicked() {
                     new_chat = true;
                 }
             });
         });
-        ui.label(RichText::new(format!("{} Viendo {label}", icon::EYE)).size(12.0).color(MUTED()));
+        ui.label(RichText::new(format!("{} {}", icon::EYE, tf!("Viendo {label}", label = label))).size(12.0).color(MUTED()));
         ui.add_space(6.0);
         let r = ui.max_rect();
         ui.painter().hline(r.x_range(), ui.cursor().top(), Stroke::new(1.0, theme::BORDER()));
@@ -116,7 +138,7 @@ impl NotesApp {
                 if self.ask.turns.is_empty() {
                     ui.add_space(8.0);
                     ui.label(
-                        RichText::new("Pregúntale o pídele algo sobre lo que estás viendo: resumir, sacar tareas, agendar, anotar un seguimiento… Lo que haga se puede deshacer.")
+                        RichText::new(t!("Pregúntale o pídele algo sobre lo que estás viendo: resumir, sacar tareas, agendar, anotar un seguimiento… Lo que haga se puede deshacer."))
                             .size(13.0)
                             .color(MUTED()),
                     );
@@ -138,7 +160,7 @@ impl NotesApp {
                             });
                         }
                         Some(Err(e)) => {
-                            ui.label(RichText::new(format!("No se pudo responder: {e}")).size(13.0).color(RED()));
+                            ui.label(RichText::new(tf!("No se pudo responder: {e}", e = e)).size(13.0).color(RED()));
                         }
                         Some(Ok(_)) => {
                             if let Some(a) = self.answer_ui(ui, turn, &tasks_now) {
@@ -152,7 +174,7 @@ impl NotesApp {
                                         ui.add(egui::Label::new(RichText::new(format!("{} {d}", icon::CHECK)).size(12.5).color(theme::c(Color32::from_rgb(46, 98, 56)))).wrap());
                                     }
                                     let can_undo = turn.entry.is_some() && self.undo_entry == turn.entry && self.undo.as_ref().is_some_and(|u| u.at.elapsed() < UNDO_WINDOW);
-                                    if can_undo && ui.button(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5)).clicked() {
+                                    if can_undo && ui.button(RichText::new(format!("{} {}", icon::ARROW_COUNTER_CLOCKWISE, t!("Deshacer"))).size(12.5)).clicked() {
                                         action = Some(Action::Undo);
                                     }
                                 });
@@ -169,7 +191,8 @@ impl NotesApp {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(5.0, 5.0);
                 for s in self.side_suggestions() {
-                    if ui.add(egui::Button::new(RichText::new(*s).size(12.0)).corner_radius(12)).clicked() {
+                    let s = crate::i18n::tr(*s);
+                    if ui.add(egui::Button::new(RichText::new(s).size(12.0)).corner_radius(12)).clicked() {
                         send = Some(s.to_string());
                     }
                 }
@@ -177,8 +200,8 @@ impl NotesApp {
             ui.add_space(6.0);
         }
 
-        ui.checkbox(&mut self.side_all, RichText::new("Buscar en todas mis notas").size(12.5))
-            .on_hover_text("Apagado, la IA solo ve lo que estás mirando (más rápido y liviano)");
+        ui.checkbox(&mut self.side_all, RichText::new(t!("Buscar en todas mis notas")).size(12.5))
+            .on_hover_text(t!("Apagado, la IA solo ve lo que estás mirando (más rápido y liviano)"));
         ui.add_space(4.0);
         // Escribir: Enter envía, Shift+Enter hace otra línea.
         let id = Id::new("ia-lado-campo");
@@ -196,7 +219,7 @@ impl NotesApp {
                         egui::TextEdit::multiline(&mut self.side_input)
                             .id(id)
                             .frame(Frame::NONE)
-                            .hint_text("Pregunta o pide algo…")
+                            .hint_text(t!("Pregunta o pide algo…"))
                             .desired_rows(2)
                             .desired_width(ui.available_width() - 30.0)
                             .font(FontId::proportional(14.0)),
@@ -205,7 +228,7 @@ impl NotesApp {
                         r.request_focus();
                     }
                     let color = if busy || self.side_input.trim().is_empty() { MUTED() } else { ACCENT() };
-                    if ui.add(egui::Button::new(RichText::new(icon::PAPER_PLANE_RIGHT).size(17.0).color(color)).frame(false)).on_hover_text("Enviar (Enter)").clicked() {
+                    if ui.add(egui::Button::new(RichText::new(icon::PAPER_PLANE_RIGHT).size(17.0).color(color)).frame(false)).on_hover_text(t!("Enviar (Enter)")).clicked() {
                         submit = true;
                     }
                 });

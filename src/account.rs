@@ -47,13 +47,13 @@ impl Info {
     /// "Prueba · quedan 9 días", "Pro", "Prueba terminada"
     pub fn plan_label(&self) -> String {
         match self.plan.as_str() {
-            "prueba" if self.dias_prueba > 1 => format!("Prueba gratis · quedan {} días", self.dias_prueba),
-            "prueba" if self.dias_prueba == 1 => "Prueba gratis · queda 1 día".into(),
-            "prueba" if self.prueba_hasta >= chrono::Local::now().format("%Y-%m-%d").to_string() => "Prueba gratis · termina hoy".into(),
-            "prueba" => "Prueba terminada".into(),
+            "prueba" if self.dias_prueba > 1 => tf!("Prueba gratis · quedan {n} días", n = self.dias_prueba),
+            "prueba" if self.dias_prueba == 1 => t!("Prueba gratis · queda 1 día").into(),
+            "prueba" if self.prueba_hasta >= chrono::Local::now().format("%Y-%m-%d").to_string() => t!("Prueba gratis · termina hoy").into(),
+            "prueba" => t!("Prueba terminada").into(),
             "pro" => "Pro".into(),
-            "fundador" => "Fundador".into(),
-            "gratis" => "Gratis (sin IA incluida)".into(),
+            "fundador" => t!("Fundador").into(),
+            "gratis" => t!("Gratis (sin IA incluida)").into(),
             p => p.to_string(),
         }
     }
@@ -81,7 +81,7 @@ async fn check(r: reqwest::Response) -> Result<String, String> {
         return Ok(text);
     }
     let msg = serde_json::from_str::<Value>(&text).ok().and_then(|v| v.pointer("/error/message").and_then(|m| m.as_str()).map(str::to_string));
-    Err(msg.unwrap_or_else(|| format!("el servidor respondió {status}")))
+    Err(msg.unwrap_or_else(|| tf!("el servidor respondió {status}", status = status)))
 }
 
 /// Marca de «tu cuenta espera aprobación» al comienzo del mensaje (no es un error).
@@ -91,7 +91,7 @@ pub const PENDING: &str = "pendiente:";
 fn signed_in(text: &str) -> Result<SignedIn, String> {
     let v: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
     if v["pendiente"].as_bool() == Some(true) {
-        return Err(format!("{PENDING}{}", v["mensaje"].as_str().unwrap_or("Tu cuenta espera aprobación.")));
+        return Err(format!("{PENDING}{}", v["mensaje"].as_str().unwrap_or(t!("Tu cuenta espera aprobación."))));
     }
     serde_json::from_value(v).map_err(|e| e.to_string())
 }
@@ -110,7 +110,7 @@ pub fn send_code(base: String, email: String, ctx: eframe::egui::Context) -> Rec
     spawn(ctx, move || {
         runtime()?.block_on(async {
             let r = http().post(format!("{base}/v1/cuenta/codigo")).json(&serde_json::json!({ "correo": email.trim() })).send().await;
-            check(r.map_err(|e| format!("sin conexión con el servidor ({e})"))?).await.map(|_| ())
+            check(r.map_err(|e| tf!("sin conexión con el servidor ({e})", e = e))?).await.map(|_| ())
         })
     })
 }
@@ -120,7 +120,7 @@ fn session(base: String, path: &'static str, body: Value, ctx: eframe::egui::Con
     spawn(ctx, move || {
         runtime()?.block_on(async {
             let r = http().post(format!("{base}{path}")).json(&body).send().await;
-            let text = check(r.map_err(|e| format!("sin conexión con el servidor ({e})"))?).await?;
+            let text = check(r.map_err(|e| tf!("sin conexión con el servidor ({e})", e = e))?).await?;
             signed_in(&text)
         })
     })
@@ -148,7 +148,7 @@ pub fn sign_in_microsoft(base: String, ctx: eframe::egui::Context) -> Receiver<R
         let token = microsoft_profile_token()?;
         runtime()?.block_on(async {
             let r = http().post(format!("{base}/v1/cuenta/microsoft")).json(&serde_json::json!({ "token": token })).send().await;
-            let text = check(r.map_err(|e| format!("sin conexión con el servidor ({e})"))?).await?;
+            let text = check(r.map_err(|e| tf!("sin conexión con el servidor ({e})", e = e))?).await?;
             signed_in(&text)
         })
     })
@@ -185,7 +185,7 @@ fn microsoft_profile_token() -> Result<String, String> {
         ];
         let r = http().post("https://login.microsoftonline.com/common/oauth2/v2.0/token").form(&form).send().await.map_err(|e| e.to_string())?;
         let v: Value = r.json().await.map_err(|e| e.to_string())?;
-        v["access_token"].as_str().map(str::to_string).ok_or_else(|| "Microsoft no entregó el permiso".to_string())
+        v["access_token"].as_str().map(str::to_string).ok_or_else(|| t!("Microsoft no entregó el permiso").to_string())
     })
 }
 
@@ -193,7 +193,7 @@ pub fn fetch_info(base: String, token: String, ctx: eframe::egui::Context) -> Re
     spawn(ctx, move || {
         runtime()?.block_on(async {
             let r = http().get(format!("{base}/v1/cuenta")).bearer_auth(&token).send().await;
-            let text = check(r.map_err(|e| format!("sin conexión con el servidor ({e})"))?).await?;
+            let text = check(r.map_err(|e| tf!("sin conexión con el servidor ({e})", e = e))?).await?;
             serde_json::from_str(&text).map_err(|e| e.to_string())
         })
     })
@@ -368,9 +368,9 @@ pub fn key_text(root: &Path) -> Option<String> {
 }
 
 pub fn set_key_text(root: &Path, text: &str) -> Result<(), String> {
-    let k = B64.decode(text.trim()).map_err(|_| "Esa clave no es válida".to_string())?;
+    let k = B64.decode(text.trim()).map_err(|_| t!("Esa clave no es válida").to_string())?;
     if k.len() != 32 {
-        return Err("Esa clave no es válida".into());
+        return Err(t!("Esa clave no es válida").into());
     }
     let _ = std::fs::create_dir_all(root.join(".nodex"));
     std::fs::write(key_path(root), B64.encode(k)).map_err(|e| e.to_string())
@@ -381,19 +381,19 @@ pub fn encrypt(key: &[u8; 32], data: &Shared) -> Result<String, String> {
     let mut nonce = [0u8; 24];
     getrandom::fill(&mut nonce).map_err(|e| e.to_string())?;
     let plain = serde_json::to_vec(data).map_err(|e| e.to_string())?;
-    let sealed = cipher.encrypt(XNonce::from_slice(&nonce), plain.as_slice()).map_err(|_| "no se pudo cifrar".to_string())?;
+    let sealed = cipher.encrypt(XNonce::from_slice(&nonce), plain.as_slice()).map_err(|_| t!("no se pudo cifrar").to_string())?;
     Ok(B64.encode([nonce.as_slice(), sealed.as_slice()].concat()))
 }
 
 pub fn decrypt(key: &[u8; 32], text: &str) -> Result<Shared, String> {
     let bytes = B64.decode(text.trim()).map_err(|e| e.to_string())?;
     if bytes.len() < 24 {
-        return Err("datos incompletos".into());
+        return Err(t!("datos incompletos").into());
     }
     let cipher = XChaCha20Poly1305::new(key.into());
     let plain = cipher
         .decrypt(XNonce::from_slice(&bytes[..24]), &bytes[24..])
-        .map_err(|_| "La configuración de tu cuenta está cifrada con otra clave: abre la misma carpeta de notas que en tu otro equipo, o pega su clave en Tu cuenta.".to_string())?;
+        .map_err(|_| t!("La configuración de tu cuenta está cifrada con otra clave: abre la misma carpeta de notas que en tu otro equipo, o pega su clave en Tu cuenta.").to_string())?;
     serde_json::from_slice(&plain).map_err(|e| e.to_string())
 }
 
@@ -420,9 +420,9 @@ pub fn sync(base: String, token: String, root: PathBuf, local: BTreeMap<String, 
             let http = http();
             for _ in 0..3 {
                 let r = http.get(format!("{base}/v1/cuenta/config")).bearer_auth(&token).send().await;
-                let blob: Blob = serde_json::from_str(&check(r.map_err(|e| format!("sin conexión con el servidor ({e})"))?).await?).map_err(|e| e.to_string())?;
+                let blob: Blob = serde_json::from_str(&check(r.map_err(|e| tf!("sin conexión con el servidor ({e})", e = e))?).await?).map_err(|e| e.to_string())?;
                 let key = key(&root, blob.datos.is_empty()).ok_or(
-                    "La configuración de tu cuenta está cifrada con la clave de tu carpeta de notas: abre la misma carpeta que en tu otro equipo, o pega su clave en Tu cuenta.",
+                    t!("La configuración de tu cuenta está cifrada con la clave de tu carpeta de notas: abre la misma carpeta que en tu otro equipo, o pega su clave en Tu cuenta."),
                 )?;
                 let remote = if blob.datos.is_empty() { Shared::new() } else { decrypt(&key, &blob.datos)? };
                 let mut st = state.clone();
@@ -436,14 +436,14 @@ pub fn sync(base: String, token: String, root: PathBuf, local: BTreeMap<String, 
                     .json(&Blob { version: blob.version, datos: encrypt(&key, &merged)? })
                     .send()
                     .await
-                    .map_err(|e| format!("sin conexión con el servidor ({e})"))?;
+                    .map_err(|e| tf!("sin conexión con el servidor ({e})", e = e))?;
                 if put.status() == reqwest::StatusCode::CONFLICT {
                     continue; // otro equipo la cambió: se vuelve a leer y juntar
                 }
                 check(put).await?;
                 return Ok(Synced { apply, state: st });
             }
-            Err("Otro equipo está cambiando la configuración; se reintentará en un rato.".to_string())
+            Err(t!("Otro equipo está cambiando la configuración; se reintentará en un rato.").to_string())
         })
     })
 }

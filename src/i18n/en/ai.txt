@@ -1,0 +1,634 @@
+# Traducciones al inglés (ver src/i18n.rs).
+
+Hoy
+= Today
+
+Ayer
+= Yesterday
+
+La IA anotó correos en tu nota de hoy
+= The AI added emails to Today
+
+La IA no pudo terminar
+= The AI couldn't finish
+
+Las notas del día, en un solo «Hoy»
+= Your daily notes, merged into one “Today”
+
+Se juntaron dos versiones
+= Two versions were merged
+
+Quité tareas repetidas
+= I removed repeated tasks
+
+La IA ordenó tu nota
+= The AI organized your note
+
+Cerrar el aviso (lo que hizo la IA se queda; se puede deshacer en «Lo que hizo»)
+= Close this notice (the AI's change stays; you can undo it in “Activity”)
+
+·  y {n} más
+= ·  and {n} more
+
+Ver lo que hizo
+= See activity
+
+Deshacer
+= Undo
+
+Vuelve a como estaba. La IA no lo intenta de nuevo con este texto, pero no aprende nada (para que aprenda: «No, gracias»)
+= Restores it as it was. The AI won't retry with this text, but it doesn't learn anything (to teach it: “No, thanks”)
+
+No, gracias
+= No, thanks
+
+Deshace esto y además la IA aprende a no repetirlo (te pregunta qué debería hacer)
+= Undoes this and the AI also learns not to repeat it (it asks you what it should do)
+
+IA
+= AI
+
+Configurar la IA
+= AI settings
+
+Preguntas
+= Questions
+
+Conversar
+= Chat
+
+Lo que hizo
+= Activity
+
+Llegaste al límite de IA incluida de este mes; vuelve el {when}. Tus notas se guardan igual.
+= You've reached this month's Included AI limit; it resets on {when}. Your notes are still saved.
+
+Usaste el {pct} % de la IA incluida de este mes (vuelve a cero el {when}).
+= You've used {pct}% of this month's Included AI (it resets on {when}).
+
+{pct} % del mes usado · vuelve a cero el {when}
+= {pct}% of the month used · resets on {when}
+
+no se pudo ver el uso: {e}
+= couldn't check usage: {e}
+
+No disponible: {e}
+= Not available: {e}
+
+Configurar
+= Set up
+
+Organizando «{note}»{progress}
+= Organizing “{note}”{progress}
+
+Todo organizado
+= All organized
+
+1 nota sin organizar
+= 1 note not organized
+
+{pending} notas sin organizar
+= {pending} notes not organized
+
+Ocultar cuáles son
+= Hide which ones
+
+Ver cuáles son
+= Show which ones
+
+Organizar ahora
+= Organize now
+
+La IA pone etiquetas, tareas y fechas, y lleva cada nota a su espacio
+= The AI adds tags, tasks and dates, and moves each note to its Space
+
+· organizar sola: apagado
+= · auto-organize: off
+
+· último error: {e}
+= · last error: {e}
+
+No hay preguntas pendientes.
+= No pending questions.
+
+Cuando la IA no esté segura de algo (a qué proyecto va una nota, de qué fecha habla, si dos notas son la misma), te preguntará aquí. Lo que respondas lo recuerda.
+= When the AI isn't sure about something (which project a note belongs to, what date it means, whether two notes are the same), it will ask you here. It remembers your answers.
+
+Sugerencias
+= Suggestions
+
+Sobre tus notas
+= About your notes
+
+Buscar notas repetidas
+= Find duplicate notes
+
+Revisa todas las notas y pregunta por las que parecen duplicadas
+= Checks all notes and asks about the ones that look like duplicates
+
+Lo que aprendió ({n})
+= What it learned ({n})
+
+aprendido.txt: lo que respondiste; la IA lo lee siempre (puedes editarlo)
+= aprendido.txt: your answers; the AI always reads it (you can edit it)
+
+Este mes: {changes} · {bad} · acertó en el {pct} %
+= This month: {changes} · {bad} · {pct}% right
+
+plural:cambio de la IA
+= AI change|AI changes
+
+1 deshecho o que no quisiste
+= 1 undone or declined
+
+{bad} deshechos o que no quisiste
+= {bad} undone or declined
+
+Todavía no hay cambios.
+= No changes yet.
+
+Cuando la IA organice una nota, anote un correo, o respondas una de sus preguntas, verás aquí qué hizo y dónde.
+= When the AI organizes a note, adds an email, or you answer one of its questions, you'll see here what it did and where.
+
+Abrir {note}
+= Open {note}
+
+no lo quisiste
+= declined
+
+deshecho
+= undone
+
+La IA lo tendrá en cuenta para no repetirlo
+= The AI will keep this in mind so it doesn't repeat it
+
+Buscando en tus notas…
+= Searching your notes…
+
+No se pudo guardar: {e}
+= Couldn't save: {e}
+
+Guardada en «{note}»
+= Saved to “{note}”
+
+Conversaciones ({n})
+= Chats ({n})
+
+Nueva conversación
+= New chat
+
+Pregunta lo que quieras: busca en {notes}, tus tareas, la agenda y tus correos, y cada dato lleva el número de su nota. Por ejemplo:
+= Ask anything: it searches {notes}, your tasks, your calendar and your mail, and every fact links to its note by number. For example:
+
+plural:nota
+= note|notes
+
+¿Cuáles son todas las tareas que me faltan?
+= What tasks do I still have left?
+
+¿Qué tengo para esta semana?
+= What do I have this week?
+
+Resumen de las notas de {ws}
+= Summary of the notes in {ws}
+
+¿Qué se habló en la última reunión?
+= What was discussed in the last meeting?
+
+No se pudo responder: {e}
+= Couldn't answer: {e}
+
+Guardar como nota
+= Save as note
+
+Copiar
+= Copy
+
+Escribe tu pregunta…
+= Type your question…
+
+Otra pregunta, o sigue con esta…
+= Ask another question, or follow up…
+
+Preguntar (Enter)
+= Ask (Enter)
+
+La IA lee tus notas para responder.
+= The AI reads your notes to answer.
+
+Esta queda guardada en la lista de conversaciones
+= This one stays saved in your chat list
+
+Marcar pendiente
+= Mark as not done
+
+Marcar hecha
+= Mark as done
+
+{label} · línea {l}
+= {label} · line {l}
+
+Abrir la nota
+= Open note
+
+una nota nueva, vacía
+= a new, empty note
+
+la nota «{title}»
+= the note “{title}”
+
+Inicio (Tu día)
+= Home (Your day)
+
+Tareas
+= Tasks
+
+la Agenda, el día {day}
+= the Calendar, on {day}
+
+la Agenda
+= the Calendar
+
+la revisión semanal
+= the weekly review
+
+los correos
+= your mail
+
+el Bloc
+= the Scratchpad
+
+la lista de notas
+= the note list
+
+las notas archivadas
+= archived notes
+
+la papelera
+= the Trash
+
+la etiqueta #{tag}
+= the tag #{tag}
+
+la IA
+= the AI
+
+Pregúntale o pídele algo a la IA sobre lo que estás viendo (Ctrl+J)
+= Ask the AI a question or for help with what you're looking at (Ctrl+J)
+
+Cerrar (Ctrl+J)
+= Close (Ctrl+J)
+
+Abrir en la ventana de la IA
+= Open in the AI window
+
+Nueva conversación (esta queda guardada)
+= New chat (this one stays saved)
+
+Viendo {label}
+= Viewing {label}
+
+Pregúntale o pídele algo sobre lo que estás viendo: resumir, sacar tareas, agendar, anotar un seguimiento… Lo que haga se puede deshacer.
+= Ask a question or for help with what you're looking at: summarize, pull out tasks, schedule, add a follow-up… Anything it does can be undone.
+
+Resume esta nota
+= Summarize this note
+
+¿Qué tareas salen de aquí?
+= What tasks come out of this?
+
+¿Qué falta por hacer de esto?
+= What's still left to do here?
+
+Agenda las fechas que dice
+= Add the dates it mentions to the calendar
+
+¿Qué hago primero hoy?
+= What should I do first today?
+
+¿Qué está atrasado y qué hago con eso?
+= What's overdue and what should I do about it?
+
+Agrupa mis tareas por proyecto
+= Group my tasks by project
+
+¿Qué tengo esta semana?
+= What do I have this week?
+
+¿Qué tengo mañana?
+= What do I have tomorrow?
+
+¿Tengo algo que choque?
+= Do I have any conflicts?
+
+¿Qué correos debo responder?
+= Which emails do I need to reply to?
+
+¿Qué me pidieron por correo esta semana?
+= What was I asked for by email this week?
+
+¿Qué tengo para hoy?
+= What do I have today?
+
+¿Qué está atrasado?
+= What's overdue?
+
+Buscar en todas mis notas
+= Search all my notes
+
+Apagado, la IA solo ve lo que estás mirando (más rápido y liviano)
+= When off, the AI only sees what you're looking at (faster and lighter)
+
+Pregunta o pide algo…
+= Ask or request something…
+
+Enviar (Enter)
+= Send (Enter)
+
+No se pudo guardar la conversación: {e}
+= Couldn't save the chat: {e}
+
+No se pudo abrir esa conversación
+= Couldn't open that chat
+
+Conversación borrada
+= Chat deleted
+
+Conversaciones
+= Chats
+
+Aquí quedan tus conversaciones con la IA, para retomarlas.
+= Your chats with the AI are kept here, so you can pick them up again.
+
+plural:pregunta
+= question|questions
+
+Borrar la conversación (se puede deshacer)
+= Delete chat (can be undone)
+
+Pregunta descartada; no se volverá a preguntar
+= Question dismissed; it won't be asked again
+
+Anotado en aprendido.txt; la IA vuelve a revisar la nota
+= Saved to aprendido.txt; the AI will review the note again
+
+Respondiste: {answer}
+= You answered: {answer}
+
+{question} → aprendido; vuelve a revisar la nota
+= {question} → learned; reviewing the note again
+
+Esa línea cambió; la pregunta se descartó
+= That line changed; the question was dismissed
+
+fecha {date}
+= date {date}
+
+unida a «{line}»
+= merged into “{line}”
+
+aprendido
+= learned
+
+No se pudo mover la nota: {e}
+= Couldn't move the note: {e}
+
+listo
+= done
+
+Respuesta aplicada: {what}
+= Answer applied: {what}
+
+Elegiste: {choice}
+= You chose: {choice}
+
+No encontré duplicados
+= No duplicates found
+
+Encontré {n} posibles duplicados: revísalos en la IA (✦)
+= Found {n} possible duplicates: review them in the AI window (✦)
+
+Anotado: son distintas
+= Got it: they're different
+
+Esas líneas cambiaron; la pregunta se descartó
+= Those lines changed; the question was dismissed
+
+Unidas en «{note}»
+= Merged into “{note}”
+
+Unió dos notas repetidas en «{note}»
+= Merged two duplicate notes into “{note}”
+
+La IA pregunta ·
+= The AI asks ·
+
+Nota {number}
+= Note {number}
+
+Estas dos líneas de la nota parecen decir lo mismo:
+= These two lines in the note seem to say the same thing:
+
+Esta línea se parece a una de «{note}»:
+= This line looks like one in “{note}”:
+
+Línea {n}
+= Line {n}
+
+{note} · línea {n}
+= {note} · line {n}
+
+Ver esa línea
+= Go to that line
+
+Dejar una sola (en la línea {n})
+= Keep just one (on line {n})
+
+Dejar una sola
+= Keep just one
+
+mover a {space}
+= move to {space}
+
+mover a {space}/{note}
+= move to {space}/{note}
+
+unir a «{line}»
+= merge into “{line}”
+
+recordar: {fact}
+= remember: {fact}
+
+Otra respuesta…
+= Another answer…
+
+Ignorar
+= Ignore
+
+Descarta la pregunta: no se aplica nada y no se vuelve a preguntar
+= Dismisses the question: nothing is applied and it won't be asked again
+
+Escribe la respuesta (la IA la recordará)
+= Type your answer (the AI will remember it)
+
+Enviar
+= Send
+
+Mover la nota a {space}
+= Move the note to {space}
+
+Título: «{title}»
+= Title: “{title}”
+
+Etiquetas: {tags}
+= Tags: {tags}
+
+Tarea: {task}{when}
+= Task: {task}{when}
+
+Evento: {title} · {date} {time}
+= Event: {title} · {date} {time}
+
+Resumen de la reunión, con decisiones y acuerdos
+= Meeting summary, with decisions and agreements
+
+Ordenar la nota (sin cambios que mostrar)
+= Tidy up the note (no changes to show)
+
+No se pudo guardar la sugerencia: {e}
+= Couldn't save the suggestion: {e}
+
+La IA tiene una sugerencia para «{note}» (en la ventana de la IA → Preguntas)
+= The AI has a suggestion for “{note}” (in the AI window → Questions)
+
+La nota cambió desde la sugerencia: la IA la vuelve a mirar
+= The note changed since the suggestion: the AI will look at it again
+
+Deshecho. La IA lo tendrá en cuenta la próxima vez
+= Undone. The AI will keep it in mind next time
+
+Se quitó {mails} de tus notas, con sus tareas. La IA lo tendrá en cuenta la próxima vez
+= Removed {mails} from your notes, along with their tasks. The AI will keep it in mind next time
+
+plural:correo
+= email|emails
+
+Ya no se puede deshacer solo (hubo otros cambios después), pero la IA lo tendrá en cuenta la próxima vez
+= It can't be undone automatically anymore (other changes came after), but the AI will keep it in mind next time
+
+No quisiste lo que sugirió para «{note}»
+= You declined its suggestion for “{note}”
+
+Sugerencia descartada
+= Suggestion dismissed
+
+La sugerencia se descarta y la nota queda como está.
+= The suggestion is dismissed and the note stays as it is.
+
+La IA deshace esto (si todavía se puede) y lo recuerda para no repetirlo.
+= The AI undoes this (if it still can) and remembers not to repeat it.
+
+¿Qué debería hacer la próxima vez? (opcional)
+= What should it do next time? (optional)
+
+Por ejemplo: «los correos del banco no son importantes» o «lo de LaVet va en Docencia»
+= For example: “emails from the bank aren't important” or “LaVet stuff goes in Teaching”
+
+Descartar
+= Dismiss
+
+Deshacer y enseñar
+= Undo and teach
+
+Cancelar
+= Cancel
+
+Lo que propone la IA
+= What the AI suggests
+
+Estás en «sugerir antes de aplicar»: nada cambia hasta que lo apruebes.
+= You're in “suggest before applying” mode: nothing changes until you approve it.
+
+Aplicar
+= Apply
+
+«{task}» ya estaba hecha
+= “{task}” was already done
+
+Marqué hecha «{task}»
+= Marked “{task}” as done
+
+Nueva tarea «{task}»{when}
+= New task “{task}”{when}
+
+todo el día
+= all day
+
+a las {h}
+= at {h}
+
+Evento «{title}» · {date}, {when}
+= Event “{title}” · {date}, {when}
+
+Anoté en «{note}»: {text}
+= Added to “{note}”: {text}
+
+Seguimiento en «{task}»: {text}
+= Follow-up on “{task}”: {text}
+
+No pude cambiar la fecha de «{task}» (cámbiala en Tareas)
+= Couldn't change the date of “{task}” (change it in Tasks)
+
+«{task}» ahora vence el {date}
+= “{task}” is now due {date}
+
+Hizo lo que pediste: {changes}
+= Did what you asked: {changes}
+
+plural:cambio
+= change|changes
+
+Te vuelvo a sugerir «{name}» cuando haya más notas
+= I'll suggest “{name}” again when there are more notes
+
+No volveré a sugerir el espacio «{name}»
+= I won't suggest the Space “{name}” again
+
+No se pudo crear el espacio: {e}
+= Couldn't create the space: {e}
+
+ con {notes}
+=  with {notes}
+
+Espacio «{ws}» creado{what}
+= Space “{ws}” created{what}
+
+Creaste el espacio «{ws}» que sugirió{what}
+= You created the suggested Space “{ws}”{what}
+
+¿Crear el espacio «{name}»?
+= Create the Space “{name}”?
+
+Tienes {notes} sobre {name} y no tiene espacio propio:
+= You have {notes} about {name} and it doesn't have its own Space:
+
+•  nota «{note}»
+= •  note “{note}”
+
+   y {n} más
+=    and {n} more
+
+Crear y mover {notes}
+= Create and move {notes}
+
+Se puede deshacer
+= Can be undone
+
+Solo crear
+= Just create
+
+Ahora no
+= Not now
+
+No volver a sugerirlo
+= Don't suggest it again

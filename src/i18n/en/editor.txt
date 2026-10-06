@@ -1,0 +1,259 @@
+# Traducciones al inglés (ver src/i18n.rs).
+
+venció {short}
+= overdue {short}
+
+hoy
+= today
+
+mañana
+= tomorrow
+
+Fin · {t}
+= End · {t}
+
+Fin de la reunión
+= End of meeting
+
+Reunión
+= Meeting
+
+Seguimiento
+= Follow-up
+
+Sin título
+= Untitled
+
+editada {day} {month} {time}
+= edited {day} {month} {time}
+
+sin guardar
+= not saved
+
+Diario · la IA lleva cada cosa a su espacio
+= Journal · the AI files each item into its Space
+
+Plantilla · se usa desde el + de las pestañas
+= Template · use it from the + in the tabs
+
+Al crear una nota con ella, {{fecha}}, {{hoy}}, {{hora}} y {{titulo}} se cambian por la fecha, el día, la hora y el nombre de la nota
+= When you create a note from it, {{fecha}}, {{hoy}}, {{hora}} and {{titulo}} are replaced with the date, the day, the time and the note's name
+
+Mover la nota a otro espacio
+= Move the note to another Space
+
+Mover a
+= Move to
+
+Historial
+= History
+
+Ver y recuperar cómo estaba la nota antes
+= See and recover earlier versions of the note
+
+Archivar
+= Archive
+
+Sacarla de la vista sin borrarla (queda en Archivadas, abajo a la izquierda)
+= Hide it without deleting it (it goes to Archived, bottom left)
+
+Enlazada desde {n}
+= Linked from {n}
+
+plural:nota
+= note|notes
+
+Reunión en curso
+= Meeting in progress
+
+Correo de seguimiento
+= Follow-up email
+
+La IA redacta un correo con el resumen, las decisiones y los acuerdos
+= The AI drafts an email with the summary, decisions and agreements
+
+Escribe lo que se va diciendo; cada Enter agrega la hora…
+= Write down what's being said; each Enter adds the time…
+
+Escribe cómo empieza cada nota de este tipo…  {{fecha}}, {{hoy}}, {{hora}} y {{titulo}} se completan solos
+= Write how each note of this kind starts…  {{fecha}}, {{hoy}}, {{hora}} and {{titulo}} fill in automatically
+
+Escribe una idea por línea…  Tab la une a la de arriba · #etiqueta · «el viernes» le pone fecha · Ctrl+R reunión
+= Write one idea per line…  Tab joins it to the one above · #tag · “on Friday” sets a date · Ctrl+R meeting
+
+Pegar imagen del portapapeles
+= Paste image from clipboard
+
+Adjuntar archivo…
+= Attach file…
+
+También puedes arrastrar archivos a la ventana
+= You can also drag files onto the window
+
+Insertar tabla
+= Insert table
+
+Tab pasa a la celda siguiente; Enter agrega una fila
+= Tab moves to the next cell; Enter adds a row
+
+Guardar como plantilla
+= Save as template
+
+Para crear notas que empiecen igual (desde el + de las pestañas)
+= To create notes that start the same way (from the + in the tabs)
+
+Haz clic derecho en una línea con texto
+= Right-click a line with text
+
+Convertir en tarea
+= Turn into a task
+
+Marcar hecha
+= Mark as done
+
+Marcar pendiente
+= Mark as not done
+
+Anotar debajo qué se hizo, con la fecha (la IA lo tiene en cuenta)
+= Note below what was done, with the date (the AI takes it into account)
+
+Abrir en tamaño real
+= Open at full size
+
+Abrir {what}
+= Open {what}
+
+Abrir «{name}»
+= Open “{name}”
+
+Crear la nota «{name}»
+= Create the note “{name}”
+
+No se encuentra {path}
+= Can't find {path}
+
+No se pudo actualizar tareas.txt: {e}
+= Couldn't update tareas.txt: {e}
+
+No se pudo escribir tareas.txt: {e}
+= Couldn't write tareas.txt: {e}
+
+Tarea: «{text}» (Ctrl+Enter la marca hecha)
+= Task: “{text}” (Ctrl+Enter marks it done)
+
+No se pudo convertir la imagen
+= Couldn't convert the image
+
+No se pudo guardar la imagen: {e}
+= Couldn't save the image: {e}
+
+Captura pegada ({w}×{h}), guardada en {dir}/{name}
+= Screenshot pasted ({w}×{h}), saved to {dir}/{name}
+
+«{name}» es una carpeta: se adjuntan solo archivos
+= “{name}” is a folder: only files can be attached
+
+No se pudo adjuntar «{name}»: {e}
+= Couldn't attach “{name}”: {e}
+
+Adjuntado «{one}» (en {dir})
+= Attached “{one}” (in {dir})
+
+{n} adjuntados (en {dir})
+= {n} attached (in {dir})
+
+Adjuntar a la nota
+= Attach to the note
+
+Suelta para adjuntar a «{title}»
+= Drop to attach to “{title}”
+
+Abre una nota para adjuntarle archivos
+= Open a note to attach files to it
+
+Nota nueva «{name}» en {ws}: se guarda al escribir
+= New note “{name}” in {ws}: it's saved when you type
+
+Enlazar a una nota  ·  ↑ ↓ y Enter
+= Link to a note  ·  ↑ ↓ and Enter
+
+Nota nueva «{title}»
+= New note “{title}”
+
+Hoy
+= Today
+
+Ayer
+= Yesterday
+
+Historial de «{title}»
+= History of “{title}”
+
+Cerrar (Esc)
+= Close (Esc)
+
+Se guarda una versión cada vez que la nota cambia (como mucho cada 10 minutos, y siempre antes de un cambio grande), también la que llega de otro equipo.
+= A version is saved every time the note changes (at most every 10 minutes, and always before a big change), including changes that come from another device.
+
+Todavía no hay versiones anteriores de esta nota.
+= There are no earlier versions of this note yet.
+
+Aparecen solas a medida que la nota cambia.
+= They show up on their own as the note changes.
+
+Qué cambió
+= What changed
+
+Comparada con la nota de ahora
+= Compared with the current note
+
+Texto completo
+= Full text
+
+Restaurar esta versión
+= Restore this version
+
+La nota vuelve a como estaba; la de ahora queda en el historial
+= The note goes back to how it was; the current one stays in the history
+
+Cerrar
+= Close
+
+Línea recuperada
+= Line recovered
+
+Se restauró la versión de {day} a las {time}; la que había quedó en el historial
+= Restored the version from {day} at {time}; the previous one stays in the history
+
+1 línea igual
+= 1 unchanged line
+
+{n} líneas iguales
+= {n} unchanged lines
+
+Es igual a la nota de ahora.
+= It's the same as the current note.
+
+Recuperar
+= Recover
+
+Volver a ponerla en la nota, donde estaba
+= Put it back in the note, where it was
+
+En rojo, lo que había en esta versión y ya no está; en verde, lo que se agregó después.
+= In red, what was in this version and is gone now; in green, what was added later.
+
+No se pudo leer la plantilla «{name}»
+= Couldn't read the template “{name}”
+
+No se pudo crear la nota: {e}
+= Couldn't create the note: {e}
+
+Nota nueva desde «{name}»: cámbiale el nombre si quieres
+= New note from “{name}”: rename it if you like
+
+Guardada como plantilla «{name}»: úsala desde el + de las pestañas
+= Saved as template “{name}”: use it from the + in the tabs
+
+No se pudo guardar la plantilla: {e}
+= Couldn't save the template: {e}

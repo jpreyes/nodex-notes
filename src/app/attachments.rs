@@ -90,7 +90,7 @@ impl NotesApp {
         let mut names = Vec::new();
         for f in files {
             if f.is_dir() {
-                self.msg(format!("«{}» es una carpeta: se adjuntan solo archivos", vault::stem(&f)));
+                self.msg(tf!("«{name}» es una carpeta: se adjuntan solo archivos", name = vault::stem(&f)));
                 continue;
             }
             let Some(name) = f.file_name().map(|n| n.to_string_lossy().into_owned()) else { continue };
@@ -100,7 +100,7 @@ impl NotesApp {
             } else {
                 let target = free_name(&dir, &name);
                 if let Err(e) = fs::create_dir_all(&dir).and_then(|_| fs::copy(&f, dir.join(&target))) {
-                    self.msg(format!("No se pudo adjuntar «{name}»: {e}"));
+                    self.msg(tf!("No se pudo adjuntar «{name}»: {e}", name = name, e = e));
                     continue;
                 }
                 target
@@ -113,14 +113,14 @@ impl NotesApp {
         }
         let _ = self.insert_lines_after(line, added);
         self.msg(match names.as_slice() {
-            [one] => format!("Adjuntado «{one}» (en {})", vault::ATTACHMENTS),
-            many => format!("{} adjuntados (en {})", many.len(), vault::ATTACHMENTS),
+            [one] => tf!("Adjuntado «{one}» (en {dir})", one = one, dir = vault::ATTACHMENTS),
+            many => tf!("{n} adjuntados (en {dir})", n = many.len(), dir = vault::ATTACHMENTS),
         });
     }
 
     /// «Adjuntar archivo…»: elegirlos con la ventana del sistema.
     pub(super) fn pick_attachments(&mut self, line: Option<usize>) {
-        if let Some(files) = rfd::FileDialog::new().set_title("Adjuntar a la nota").pick_files() {
+        if let Some(files) = rfd::FileDialog::new().set_title(t!("Adjuntar a la nota")).pick_files() {
             self.attach_files(files, line);
         }
     }
@@ -133,9 +133,9 @@ impl NotesApp {
             let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("soltar-archivos")));
             p.rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(255, 255, 255, 215));
             let text = if self.view == View::Editor {
-                format!("{}  Suelta para adjuntar a «{}»", icon::PAPERCLIP, display_title(&self.note.title))
+                format!("{}  {}", icon::PAPERCLIP, tf!("Suelta para adjuntar a «{title}»", title = display_title(&self.note.title)))
             } else {
-                format!("{}  Abre una nota para adjuntarle archivos", icon::PAPERCLIP)
+                format!("{}  {}", icon::PAPERCLIP, t!("Abre una nota para adjuntarle archivos"))
             };
             p.text(rect.center(), Align2::CENTER_CENTER, text, theme::bold(20.0), ACCENT());
         }
@@ -146,7 +146,7 @@ impl NotesApp {
         if self.view == View::Editor {
             self.attach_files(dropped, cursor_line);
         } else {
-            self.msg("Abre una nota para adjuntarle archivos");
+            self.msg(t!("Abre una nota para adjuntarle archivos"));
         }
     }
 }

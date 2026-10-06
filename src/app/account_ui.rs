@@ -69,55 +69,55 @@ pub(super) enum LoginAction {
 pub(super) fn login_form(ui: &mut Ui, f: &mut LoginForm, busy: bool, can: bool, error: Option<&str>, notice: Option<&str>, code_sent: Option<&str>) -> Option<LoginAction> {
     let mut action = None;
     ui.horizontal(|ui| {
-        if ui.selectable_label(f.mode == LoginMode::SignIn, RichText::new("Iniciar sesión").size(14.0)).clicked() {
+        if ui.selectable_label(f.mode == LoginMode::SignIn, RichText::new(t!("Iniciar sesión")).size(14.0)).clicked() {
             f.mode = LoginMode::SignIn;
         }
-        if ui.selectable_label(f.mode == LoginMode::Register, RichText::new("Crear cuenta").size(14.0)).clicked() {
+        if ui.selectable_label(f.mode == LoginMode::Register, RichText::new(t!("Crear cuenta")).size(14.0)).clicked() {
             f.mode = LoginMode::Register;
         }
         if f.mode == LoginMode::Forgot {
-            ui.label(RichText::new("·  Recuperar tu clave").size(14.0).color(MUTED()));
+            ui.label(RichText::new(t!("·  Recuperar tu clave")).size(14.0).color(MUTED()));
         }
     });
     ui.add_space(8.0);
     let field = |ui: &mut Ui, label: &str| ui.label(RichText::new(label).size(12.5).color(MUTED()));
-    field(ui, "Correo");
-    let er = ui.add(egui::TextEdit::singleline(&mut f.email).hint_text("tu@correo.cl").desired_width(300.0).margin(Margin::symmetric(8, 5)));
+    field(ui, t!("Correo"));
+    let er = ui.add(egui::TextEdit::singleline(&mut f.email).hint_text(t!("tu@correo.cl")).desired_width(300.0).margin(Margin::symmetric(8, 5)));
     let email_ok = f.email.contains('@') && f.email.contains('.');
     let waiting_code = f.mode == LoginMode::Forgot && code_sent.is_none();
     let mut submit = er.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && waiting_code;
     if f.mode == LoginMode::Forgot {
         if let Some(to) = code_sent {
             ui.add_space(4.0);
-            field(ui, &format!("Código (lo enviamos a {to}; revisa también el spam)"));
+            field(ui, &tf!("Código (lo enviamos a {to}; revisa también el spam)", to = to));
             ui.add(egui::TextEdit::singleline(&mut f.code).hint_text("123456").desired_width(120.0).margin(Margin::symmetric(8, 5)));
         }
     }
     if !waiting_code {
         ui.add_space(4.0);
-        field(ui, if f.mode == LoginMode::SignIn { "Clave" } else { "Clave (al menos 8 caracteres)" });
+        field(ui, if f.mode == LoginMode::SignIn { t!("Clave") } else { t!("Clave (al menos 8 caracteres)") });
         ui.horizontal(|ui| {
             let pr = ui.add(egui::TextEdit::singleline(&mut f.password).password(!f.show).desired_width(268.0).margin(Margin::symmetric(8, 5)));
             submit |= pr.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             let eye = if f.show { icon::EYE_SLASH } else { icon::EYE };
-            if ui.add(egui::Button::new(RichText::new(eye).size(15.0).color(MUTED())).frame(false)).on_hover_text(if f.show { "Ocultar" } else { "Mostrar" }).clicked() {
+            if ui.add(egui::Button::new(RichText::new(eye).size(15.0).color(MUTED())).frame(false)).on_hover_text(if f.show { t!("Ocultar") } else { t!("Mostrar") }).clicked() {
                 f.show = !f.show;
             }
         });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("IA:").size(13.0).color(MUTED()));
-            ui.radio_value(&mut f.own_ai, false, RichText::new("La de Notas (incluida)").size(13.0));
-            ui.radio_value(&mut f.own_ai, true, RichText::new("Mi propia clave").size(13.0));
+            ui.label(RichText::new(t!("IA:")).size(13.0).color(MUTED()));
+            ui.radio_value(&mut f.own_ai, false, RichText::new(t!("La de Notas (incluida)")).size(13.0));
+            ui.radio_value(&mut f.own_ai, true, RichText::new(t!("Mi propia clave")).size(13.0));
         });
     }
     ui.add_space(8.0);
     let pw_ok = if f.mode == LoginMode::SignIn { !f.password.is_empty() } else { f.password.chars().count() >= 8 };
     let (label, ready) = match f.mode {
-        LoginMode::SignIn => ("Entrar", email_ok && pw_ok),
-        LoginMode::Register => ("Crear cuenta", email_ok && pw_ok),
-        LoginMode::Forgot if waiting_code => ("Enviarme un código", email_ok),
-        LoginMode::Forgot => ("Guardar la clave y entrar", f.code.trim().len() >= 6 && pw_ok),
+        LoginMode::SignIn => (t!("Entrar"), email_ok && pw_ok),
+        LoginMode::Register => (t!("Crear cuenta"), email_ok && pw_ok),
+        LoginMode::Forgot if waiting_code => (t!("Enviarme un código"), email_ok),
+        LoginMode::Forgot => (t!("Guardar la clave y entrar"), f.code.trim().len() >= 6 && pw_ok),
     };
     let ready = ready && can && !busy;
     ui.horizontal(|ui| {
@@ -137,13 +137,13 @@ pub(super) fn login_form(ui: &mut Ui, f: &mut LoginForm, busy: bool, can: bool, 
         ui.add_space(8.0);
         match f.mode {
             LoginMode::SignIn => {
-                if ui.link(RichText::new("¿Olvidaste tu clave?").size(12.5)).clicked() {
+                if ui.link(RichText::new(t!("¿Olvidaste tu clave?")).size(12.5)).clicked() {
                     f.mode = LoginMode::Forgot;
                     f.password.clear();
                 }
             }
             LoginMode::Forgot => {
-                if ui.link(RichText::new("Volver").size(12.5)).clicked() {
+                if ui.link(RichText::new(t!("Volver")).size(12.5)).clicked() {
                     f.mode = LoginMode::SignIn;
                 }
             }
@@ -159,8 +159,8 @@ pub(super) fn login_form(ui: &mut Ui, f: &mut LoginForm, busy: bool, can: bool, 
     }
     ui.add_space(10.0);
     ui.horizontal(|ui| {
-        ui.label(RichText::new("o").size(12.5).color(MUTED()));
-        if ui.add_enabled(can && !busy, egui::Button::new(RichText::new(format!("{}  Entrar con Microsoft", icon::WINDOWS_LOGO)).size(12.5))).clicked() {
+        ui.label(RichText::new(t!("o")).size(12.5).color(MUTED()));
+        if ui.add_enabled(can && !busy, egui::Button::new(RichText::new(format!("{}  {}", icon::WINDOWS_LOGO, t!("Entrar con Microsoft"))).size(12.5))).clicked() {
             action = Some(LoginAction::Microsoft(!f.own_ai));
         }
     });
@@ -171,7 +171,7 @@ impl NotesApp {
     /// Lo que pidió el formulario de la cuenta.
     pub(super) fn account_login(&mut self, a: LoginAction) {
         let Some(base) = account::server(&self.cfg) else {
-            self.acct.error = Some("Falta la dirección del servidor de Notas".into());
+            self.acct.error = Some(t!("Falta la dirección del servidor de Notas").into());
             return;
         };
         let ctx = self.ctx.clone();
@@ -202,7 +202,7 @@ impl NotesApp {
             return;
         }
         let Some(base) = account::server(&self.cfg) else {
-            self.acct.error = Some("Falta la dirección del servidor de Notas".into());
+            self.acct.error = Some(t!("Falta la dirección del servidor de Notas").into());
             return;
         };
         self.acct.error = None;
@@ -213,14 +213,14 @@ impl NotesApp {
 
     pub(super) fn account_sign_in_microsoft(&mut self, use_included: bool) {
         let Some(base) = account::server(&self.cfg) else {
-            self.acct.error = Some("Falta la dirección del servidor de Notas".into());
+            self.acct.error = Some(t!("Falta la dirección del servidor de Notas").into());
             return;
         };
         self.acct.error = None;
         self.acct.busy = true;
         self.acct.use_included = use_included;
         self.acct.login_rx = Some(account::sign_in_microsoft(base, self.ctx.clone()));
-        self.msg("Se abrió el navegador para entrar con Microsoft");
+        self.msg(t!("Se abrió el navegador para entrar con Microsoft"));
     }
 
     pub(super) fn account_sign_out(&mut self) {
@@ -234,7 +234,7 @@ impl NotesApp {
         self.acct = AccountState::default();
         self.ai_usage = None;
         self.restart_sync();
-        self.msg(format!("Saliste de la cuenta {who} en este equipo (tu configuración queda como está)"));
+        self.msg(tf!("Saliste de la cuenta {who} en este equipo (tu configuración queda como está)", who = who));
     }
 
     /// Junta la configuración ahora.
@@ -249,7 +249,7 @@ impl NotesApp {
             self.acct.code_rx = None;
             self.acct.busy = false;
             match r {
-                Ok(()) => self.msg("Te enviamos un código a tu correo"),
+                Ok(()) => self.msg(t!("Te enviamos un código a tu correo")),
                 Err(e) => {
                     self.acct.code_sent_to = None;
                     self.acct.error = Some(e);
@@ -282,11 +282,11 @@ impl NotesApp {
                     let ai_note = if self.acct.use_included {
                         String::new()
                     } else if self.cfg.proveedor == "notas" || self.cfg.clave_api.trim().is_empty() {
-                        " · pon tu clave de IA en Configuración → Inteligencia artificial".to_string()
+                        t!(" · pon tu clave de IA en Configuración → Inteligencia artificial").to_string()
                     } else {
-                        " · con tu propia clave de IA".to_string()
+                        t!(" · con tu propia clave de IA").to_string()
                     };
-                    self.msg(format!("Entraste como {} · {}{ai_note}", s.cuenta.correo, s.cuenta.plan_label()));
+                    self.msg(tf!("Entraste como {email} · {plan}{note}", email = s.cuenta.correo, plan = s.cuenta.plan_label(), note = ai_note));
                     self.acct.info = Some(Ok(s.cuenta));
                     self.acct.info_at = Some(Instant::now());
                     self.account_sync_now();
@@ -345,7 +345,7 @@ impl NotesApp {
     /// Llegó configuración de la cuenta: se guarda y se reinicia lo que depende de ella.
     fn after_account_changes(&mut self, names: &[String]) {
         if let Err(e) = config::save(&self.cfg) {
-            self.msg(format!("No se pudo guardar la configuración: {e}"));
+            self.msg(tf!("No se pudo guardar la configuración: {e}", e = e));
         }
         if names.iter().any(|n| n == "calendarios") {
             self.cals.last = None;
@@ -363,15 +363,15 @@ impl NotesApp {
         let what: Vec<&str> = names
             .iter()
             .map(|n| match n.as_str() {
-                "calendarios" => "calendarios",
-                "correos" | "correo_al_llegar" | "correo_diario" => "correo",
+                "calendarios" => t!("calendarios"),
+                "correos" | "correo_al_llegar" | "correo_diario" => t!("correo"),
                 "google_client" | "google_token" => "Google Calendar",
                 "microsoft_token" => "Microsoft To Do",
-                _ => "ajustes",
+                _ => t!("ajustes"),
             })
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect();
-        self.msg(format!("Llegó tu configuración de la cuenta: {}", what.join(", ")));
+        self.msg(tf!("Llegó tu configuración de la cuenta: {what}", what = what.join(", ")));
     }
 }

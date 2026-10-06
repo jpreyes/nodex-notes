@@ -92,9 +92,6 @@ const UNDO_WINDOW: Duration = Duration::from_secs(120);
 const GCAL_EVERY: Duration = Duration::from_secs(10 * 60);
 const EDITOR_SIZE: f32 = 15.5;
 const COLUMN_MAX: f32 = 780.0;
-const MESES: [&str; 12] = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-const DIAS: [&str; 7] = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
-const DIAS_CORTOS: [&str; 7] = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
 /// Primera nota de una carpeta nueva: cómo se usa la app.
 const WELCOME: &str = "Escribe una idea por línea: cada línea es una nota distinta, y la IA la lleva después a su espacio.\n  Con Tab al comienzo, la línea se une a la nota de arriba, como un detalle\n  - con Tab dos veces se vuelve un ítem de lista\nPon #etiquetas donde quieras: se ven como píldoras de color #ejemplo\nEscribe tareas como las dirías, por ejemplo «enviar el informe el viernes»: la IA les pone casilla y fecha\nCtrl+R empieza una reunión: cada línea lleva su hora y Esc la cierra con un resumen\nCtrl+K abre la IA: pregúntale lo que quieras sobre tus notas\nCuando ya no la necesites, borra esta nota con el tacho que aparece al pasar el mouse en la barra lateral\n";
 
@@ -647,7 +644,7 @@ fn short_date(t: SystemTime) -> String {
     if d.date_naive() == now.date_naive() {
         d.format("%H:%M").to_string()
     } else if d.year() == now.year() {
-        format!("{} {}", d.day(), MESES[d.month0() as usize])
+        format!("{} {}", d.day(), crate::i18n::meses()[d.month0() as usize])
     } else {
         d.format("%Y-%m-%d").to_string()
     }
@@ -658,9 +655,9 @@ fn long_date(date: &str) -> String {
     match NaiveDate::parse_from_str(date, "%Y-%m-%d") {
         Ok(d) => format!(
             "{} {} {}",
-            DIAS[d.weekday().num_days_from_monday() as usize],
+            crate::i18n::dias()[d.weekday().num_days_from_monday() as usize],
             d.day(),
-            MESES[d.month0() as usize]
+            crate::i18n::meses()[d.month0() as usize]
         ),
         Err(_) => date.to_string(),
     }
@@ -674,13 +671,13 @@ fn display_title(title: &str) -> String {
     };
     let today = Local::now().date_naive();
     match (d - today).num_days() {
-        0 => "Hoy".into(),
-        -1 => "Ayer".into(),
-        1 => "Mañana".into(),
+        0 => t!("Hoy").into(),
+        -1 => t!("Ayer").into(),
+        1 => t!("Mañana").into(),
         _ => {
             let year = if d.year() != today.year() { format!(" {}", d.year()) } else { String::new() };
-            let day = DIAS_CORTOS[d.weekday().num_days_from_monday() as usize];
-            let mut s = format!("{day} {} {}{year}", d.day(), MESES[d.month0() as usize]);
+            let day = crate::i18n::dias_cortos()[d.weekday().num_days_from_monday() as usize];
+            let mut s = format!("{day} {} {}{year}", d.day(), crate::i18n::meses()[d.month0() as usize]);
             if let Some(f) = s.get_mut(0..1) {
                 f.make_ascii_uppercase();
             }
@@ -692,9 +689,9 @@ fn display_title(title: &str) -> String {
 /// Título grande de una nota del día: "Hoy, domingo 27 sep"; `None` si no es una nota del día.
 fn day_heading(title: &str) -> Option<String> {
     let d = NaiveDate::parse_from_str(title, "%Y-%m-%d").ok().filter(|_| agenda::is_date(title))?;
-    let long = format!("{} {} {}", DIAS[d.weekday().num_days_from_monday() as usize], d.day(), MESES[d.month0() as usize]);
+    let long = format!("{} {} {}", crate::i18n::dias()[d.weekday().num_days_from_monday() as usize], d.day(), crate::i18n::meses()[d.month0() as usize]);
     Some(match display_title(title).as_str() {
-        s @ ("Hoy" | "Ayer" | "Mañana") => format!("{s}, {long}"),
+        s if s == t!("Hoy") || s == t!("Ayer") || s == t!("Mañana") => format!("{s}, {long}"),
         _ => {
             let mut s = long;
             if let Some(f) = s.get_mut(0..1) {
@@ -720,7 +717,7 @@ fn open_external(path: &Path) {
 }
 
 fn plural(n: usize, word: &str) -> String {
-    if n == 1 { format!("1 {word}") } else { format!("{n} {word}s") }
+    crate::i18n::plural(n, word)
 }
 
 /// Línea de reunión sin texto: "- 15:03".
@@ -755,7 +752,7 @@ impl NotesApp {
         // La primera vez, el asistente ya explica todo.
         let mut message = if cfg.first_run { None } else { cfg_msg };
         if let Err(e) = fs::create_dir_all(&cfg.carpeta_notas) {
-            message = Some(format!("No se pudo crear {}: {e}", cfg.carpeta_notas.display()));
+            message = Some(tf!("No se pudo crear {path}: {e}", path = cfg.carpeta_notas.display(), e = e));
         }
         let ai = Ai::start(&cfg, ctx.clone());
         let gcal = GCal::start(&cfg.google_client_id, &cfg.google_client_secret, cfg.carpeta_notas.clone(), ctx.clone());
@@ -1029,7 +1026,7 @@ impl NotesApp {
 
     fn save_config(&mut self) {
         if let Err(e) = config::save(&self.cfg) {
-            self.msg(format!("No se pudo guardar la configuración: {e}"));
+            self.msg(tf!("No se pudo guardar la configuración: {e}", e = e));
         }
         // Lo que viaja con la cuenta se sube unos segundos después.
         self.acct.dirty_at = Some(Instant::now());
@@ -1054,7 +1051,7 @@ impl NotesApp {
             return;
         }
         if let Err(e) = fs::create_dir_all(&path) {
-            self.msg(format!("No se pudo usar {}: {e}", path.display()));
+            self.msg(tf!("No se pudo usar {path}: {e}", path = path.display(), e = e));
             return;
         }
         self.close_meeting(Local::now());
@@ -1083,7 +1080,7 @@ impl NotesApp {
         let ws = self.vault.workspaces.first().cloned().unwrap_or_else(|| vault::DEFAULT_WORKSPACE.into());
         self.note.dirty = false;
         self.select_workspace(ws);
-        self.msg(format!("Carpeta de notas: {}", self.vault.root.display()));
+        self.msg(tf!("Carpeta de notas: {path}", path = self.vault.root.display()));
     }
 
     fn rel(&self, path: &Path) -> String {
@@ -1136,7 +1133,7 @@ impl NotesApp {
             }
             Err(e) => {
                 n.last_edit = Instant::now(); // reintenta en el próximo ciclo
-                self.msg(format!("No se pudo guardar: {e}"));
+                self.msg(tf!("No se pudo guardar: {e}", e = e));
             }
         }
     }
@@ -1144,9 +1141,9 @@ impl NotesApp {
     /// Aviso de que se juntó lo escrito aquí con lo que llegó de otro equipo.
     fn merged_msg(&mut self, conflicts: usize) {
         self.msg(match conflicts {
-            0 => "Se juntaron tus cambios con los que llegaron de otro equipo".to_string(),
-            1 => "Se juntaron tus cambios con los de otro equipo; una parte cambió en los dos: quedaron las dos versiones, revísala".to_string(),
-            n => format!("Se juntaron tus cambios con los de otro equipo; {n} partes cambiaron en los dos: quedaron las dos versiones, revísalas"),
+            0 => t!("Se juntaron tus cambios con los que llegaron de otro equipo").to_string(),
+            1 => t!("Se juntaron tus cambios con los de otro equipo; una parte cambió en los dos: quedaron las dos versiones, revísala").to_string(),
+            n => tf!("Se juntaron tus cambios con los de otro equipo; {n} partes cambiaron en los dos: quedaron las dos versiones, revísalas", n = n),
         });
     }
 
@@ -1167,7 +1164,7 @@ impl NotesApp {
             tareas_por_fecha: self.tasks_by_due,
         });
         if let Err(e) = r {
-            self.msg(format!("No se pudo guardar estado.toml: {e}"));
+            self.msg(tf!("No se pudo guardar estado.toml: {e}", e = e));
         }
     }
 
@@ -1282,7 +1279,7 @@ impl NotesApp {
         if self.note.disk_mtime.is_some() {
             if let Err(e) = fs::rename(&self.note.path, &new_path) {
                 self.note.title = current;
-                self.msg(format!("No se pudo renombrar: {e}"));
+                self.msg(tf!("No se pudo renombrar: {e}", e = e));
                 return;
             }
             self.vault.scan();
@@ -1295,7 +1292,7 @@ impl NotesApp {
         let bare = self.note_index().resolve(&current, None).is_none();
         let n = self.update_links(&old_rel, &new_rel, bare);
         if n > 0 {
-            self.msg(format!("Se actualizaron los enlaces a «{}» en {}", self.note.title, plural(n, "nota")));
+            self.msg(tf!("Se actualizaron los enlaces a «{title}» en {notes}", title = self.note.title, notes = plural(n, "nota")));
         }
         // El encabezado de una reunión lleva el mismo título.
         if let Some((_, when)) = meeting_header(&self.note.text) {
@@ -1339,10 +1336,10 @@ impl NotesApp {
                         relinks: Vec::new(),
                     });
                     self.undo_entry = None;
-                    self.msg(format!("«{}» movida a la papelera", vault::stem(&path)));
+                    self.msg(tf!("«{name}» movida a la papelera", name = vault::stem(&path)));
                 }
                 Err(e) => {
-                    self.msg(format!("No se pudo eliminar: {e}"));
+                    self.msg(tf!("No se pudo eliminar: {e}", e = e));
                     return;
                 }
             }
@@ -1386,9 +1383,9 @@ impl NotesApp {
                     let next = self.vault.workspaces.first().cloned().unwrap_or_else(|| vault::DEFAULT_WORKSPACE.into());
                     self.select_workspace(next);
                 }
-                self.msg(format!("Espacio «{ws}» movido a la papelera"));
+                self.msg(tf!("Espacio «{ws}» movido a la papelera", ws = ws));
             }
-            Err(e) => self.msg(format!("No se pudo mover el espacio: {e}")),
+            Err(e) => self.msg(tf!("No se pudo mover el espacio: {e}", e = e)),
         }
     }
 
@@ -1399,17 +1396,17 @@ impl NotesApp {
         let mut answer: Option<bool> = None;
         let modal = egui::Modal::new(Id::new("borrar-espacio")).show(ctx, |ui| {
             ui.set_width(380.0);
-            ui.label(RichText::new(format!("¿Mover el espacio «{ws}» a la papelera?")).font(theme::bold(16.0)));
+            ui.label(RichText::new(tf!("¿Mover el espacio «{ws}» a la papelera?", ws = ws)).font(theme::bold(16.0)));
             ui.add_space(4.0);
-            let what = if n == 0 { "Está vacío.".to_string() } else { format!("Se va con sus {}.", plural(n, "nota")) };
-            ui.label(RichText::new(format!("{what} Queda en la carpeta .papelera y se puede deshacer.")).size(13.0).color(MUTED()));
+            let what = if n == 0 { t!("Está vacío.").to_string() } else { tf!("Se va con sus {notes}.", notes = plural(n, "nota")) };
+            ui.label(RichText::new(tf!("{what} Queda en la carpeta .papelera y se puede deshacer.", what = what)).size(13.0).color(MUTED()));
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                let b = egui::Button::new(RichText::new(format!("{} Mover a la papelera", icon::TRASH)).color(theme::c(Color32::WHITE))).fill(RED());
+                let b = egui::Button::new(RichText::new(format!("{} {}", icon::TRASH, t!("Mover a la papelera"))).color(theme::c(Color32::WHITE))).fill(RED());
                 if ui.add(b).clicked() {
                     answer = Some(true);
                 }
-                if ui.button("Cancelar").clicked() {
+                if ui.button(t!("Cancelar")).clicked() {
                     answer = Some(false);
                 }
             });
@@ -1458,7 +1455,7 @@ impl NotesApp {
         if !self.note.dirty {
             self.note.text = disk_text.clone();
             self.note.base = disk_text;
-            self.msg("Nota actualizada con cambios de otro equipo");
+            self.msg(t!("Nota actualizada con cambios de otro equipo"));
         } else {
             // Cambió aquí y allá: se juntan línea por línea (la base es lo último que se leyó
             // o guardó). Lo que resulte se guarda como cualquier cambio.
@@ -1502,10 +1499,10 @@ impl NotesApp {
         self.pending_cursor = Some(usize::MAX);
         if named.is_some() {
             self.focus_editor = true;
-            self.msg("Reunión iniciada: cada línea lleva su hora. Esc la cierra.");
+            self.msg(t!("Reunión iniciada: cada línea lleva su hora. Esc la cierra."));
         } else {
             self.focus_title = true;
-            self.msg("Reunión iniciada: escribe su nombre y Enter; cada línea lleva su hora. Esc la cierra.");
+            self.msg(t!("Reunión iniciada: escribe su nombre y Enter; cada línea lleva su hora. Esc la cierra."));
         }
     }
 
@@ -1535,7 +1532,7 @@ impl NotesApp {
             }
         }
         self.touched.insert(m.path.clone());
-        self.msg(format!("Reunión «{}» cerrada a las {}", m.title, end.format("%H:%M")));
+        self.msg(tf!("Reunión «{title}» cerrada a las {time}", title = m.title, time = end.format("%H:%M")));
     }
 
     // ---------- IA ----------
@@ -1543,7 +1540,7 @@ impl NotesApp {
     fn start_organize(&mut self) {
         if let Err(e) = &self.ai {
             let e = e.clone();
-            self.msg(format!("IA no disponible: {e}"));
+            self.msg(tf!("IA no disponible: {e}", e = e));
             self.open_settings(Section::Ai);
             return;
         }
@@ -1551,7 +1548,7 @@ impl NotesApp {
         self.backlog = self.unorganized().into();
         self.backlog_total = self.backlog.len();
         if self.backlog.is_empty() {
-            self.msg("Todo está organizado");
+            self.msg(t!("Todo está organizado"));
         }
     }
 
@@ -1677,10 +1674,10 @@ impl NotesApp {
                     self.touched.remove(&r.path);
                     self.backlog.clear(); // sin conexión o clave inválida: no insistir
                     let e: String = e.chars().take(160).collect();
-                    self.msg(format!("IA: {e}"));
+                    self.msg(tf!("IA: {e}", e = e));
                     if self.ai_error.as_deref() != Some(e.as_str()) {
                         let note = self.rel(&r.path);
-                        let what = format!("No pudo organizar «{}»: {e}", vault::stem(&r.path));
+                        let what = tf!("No pudo organizar «{name}»: {e}", name = vault::stem(&r.path), e = e);
                         self.log_ai(crate::activity::Kind::Error, &note, what, Vec::new(), false);
                     }
                     self.ai_error = Some(e);
@@ -1762,7 +1759,7 @@ impl NotesApp {
                 let _ = fs::create_dir_all(dir);
             }
             if let Err(e) = fs::write(target, &new_t) {
-                self.msg(format!("IA: no se pudo escribir {}: {e}", target.display()));
+                self.msg(tf!("IA: no se pudo escribir {path}: {e}", path = target.display(), e = e));
                 continue;
             }
             files.push((target.clone(), before));
@@ -1779,7 +1776,7 @@ impl NotesApp {
             done.push(plural(plan.tags_added, "etiqueta"));
         }
         if plan.grouped > 0 {
-            done.push(format!("{} con su nota", plural(plan.grouped, "detalle")));
+            done.push(tf!("{n} con su nota", n = plural(plan.grouped, "detalle")));
         }
 
         // Nota con título: título (si no tenía) y espacio de la nota completa.
@@ -1812,7 +1809,7 @@ impl NotesApp {
             let _ = self.vault.trash(&path);
         } else if new_text != text {
             if let Err(e) = fs::write(&path, &new_text) {
-                self.msg(format!("IA: no se pudo guardar la nota: {e}"));
+                self.msg(tf!("IA: no se pudo guardar la nota: {e}", e = e));
                 return;
             }
         }
@@ -1823,7 +1820,7 @@ impl NotesApp {
                 Ok(()) => new_path = target,
                 Err(e) => {
                     ws = old_ws.clone();
-                    self.msg(format!("IA: no se pudo mover la nota: {e}"));
+                    self.msg(tf!("IA: no se pudo mover la nota: {e}", e = e));
                 }
             }
         }
@@ -1890,7 +1887,7 @@ impl NotesApp {
         let r1 = self.agenda.replace_for_note(&source_old, &source_rel, &src_tasks, &src_events);
         let r2 = self.agenda.add_lines(&other_tasks, &other_events);
         if let Err(e) = r1.and(r2) {
-            self.msg(format!("IA: no se pudo escribir tareas/agenda: {e}"));
+            self.msg(tf!("IA: no se pudo escribir tareas/agenda: {e}", e = e));
         }
         self.gcal_dirty = true;
         let n_tasks = src_tasks.len() + other_tasks.len();
@@ -1899,7 +1896,7 @@ impl NotesApp {
             done.push(plural(n_tasks, "tarea"));
         }
         if n_events > 0 {
-            done.push(format!("{} en agenda", plural(n_events, "evento")));
+            done.push(tf!("{n} en agenda", n = plural(n_events, "evento")));
         }
 
         // Preguntas de la IA sobre lo que no supo con seguridad.
@@ -1926,7 +1923,7 @@ impl NotesApp {
             }
             let _ = self.ideas.save(&self.vault.root);
             if let Some(i) = self.ideas.ready().find(|i| !ready_before.contains(&i.name)) {
-                done.push(format!("sugerencia: espacio «{}»", i.name));
+                done.push(tf!("sugerencia: espacio «{name}»", name = i.name));
             }
         }
 
@@ -1946,7 +1943,7 @@ impl NotesApp {
         }
         let dups = self.detect_duplicates(fresh);
         if dups > 0 {
-            done.push(format!("{} posible{} duplicado{}", dups, if dups == 1 { "" } else { "s" }, if dups == 1 { "" } else { "s" }));
+            done.push(if dups == 1 { t!("1 posible duplicado").to_string() } else { tf!("{n} posibles duplicados", n = dups) });
         }
         if is_open {
             // Si la nota quedó vacía, sigue abierta como nota nueva para seguir anotando.
@@ -1962,10 +1959,10 @@ impl NotesApp {
         // El detalle, para "Lo que hizo" en la ventana de la IA.
         let mut details: Vec<String> = Vec::new();
         if title != old_title {
-            details.push(format!("Título: «{title}»"));
+            details.push(tf!("Título: «{title}»", title = title));
         }
         if ws != old_ws {
-            details.push(format!("Movida al espacio {ws}"));
+            details.push(tf!("Movida al espacio {ws}", ws = ws));
         }
         for (p, w, _) in &written {
             details.push(format!("→ {w}/{}", vault::stem(p)));
@@ -1975,23 +1972,23 @@ impl NotesApp {
             tags.sort();
             tags.dedup();
             if !tags.is_empty() {
-                details.push(format!("Etiquetas: {}", tags.join(", ")));
+                details.push(tf!("Etiquetas: {tags}", tags = tags.join(", ")));
             }
         }
         let when = |d: Option<&str>| d.filter(|d| agenda::is_date(d)).map(|d| format!(" · {}", long_date(d))).unwrap_or_default();
         for g in &plan.agreements {
             let who = if g.who.is_empty() { String::new() } else { format!("{}: ", g.who) };
-            details.push(format!("Acuerdo: {who}{}{}", g.what, when(g.due.as_deref())));
+            details.push(tf!("Acuerdo: {who}{what}{when}", who = who, what = g.what, when = when(g.due.as_deref())));
         }
         for t in a.tareas.iter().filter(|t| !t.texto.trim().is_empty() && !meeting_units.contains(&t.unidad.trim().to_uppercase())) {
-            details.push(format!("Tarea: {}{}", t.texto.trim(), when(Some(t.fecha.trim()))));
+            details.push(tf!("Tarea: {task}{when}", task = t.texto.trim(), when = when(Some(t.fecha.trim()))));
         }
         for e in a.eventos.iter().filter(|e| agenda::is_date(e.fecha.trim()) && !e.titulo.trim().is_empty()) {
             let hour = Some(e.hora.trim()).filter(|h| agenda::is_time(h)).map(|h| format!(" {h}")).unwrap_or_default();
-            details.push(format!("Evento: {}{}{hour}", e.titulo.trim(), when(Some(e.fecha.trim()))));
+            details.push(tf!("Evento: {title}{when}{hour}", title = e.titulo.trim(), when = when(Some(e.fecha.trim())), hour = hour));
         }
         for q in &questions {
-            details.push(format!("Pregunta: {q}"));
+            details.push(tf!("Pregunta: {q}", q = q));
         }
         self.undo = Some(Undo {
             files,
@@ -2005,9 +2002,9 @@ impl NotesApp {
             relinks: Vec::new(),
         });
         let name = if emptied { String::new() } else { format!(" {}:", vault::stem(&new_path)) };
-        self.msg(format!("IA ·{name} {}", done.join(" · ")));
+        self.msg(tf!("IA ·{name} {done}", name = name, done = done.join(" · ")));
         let note = if emptied { source_old.clone() } else { self.rel(&new_path) };
-        let what = format!("Organizó «{}»: {}", vault::stem(&path), done.join(" · "));
+        let what = tf!("Organizó «{name}»: {done}", name = vault::stem(&path), done = done.join(" · "));
         self.log_ai(crate::activity::Kind::Organizar, &note, what, details, true);
     }
 
@@ -2034,7 +2031,7 @@ impl NotesApp {
         }
         for id in &ids {
             if let Err(e) = self.agenda.set_done_by_id(id, true, &today()) {
-                self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
+                self.msg(tf!("No se pudo actualizar tareas.txt: {e}", e = e));
             }
         }
         self.gcal_dirty = true;
@@ -2146,7 +2143,7 @@ impl NotesApp {
             }
         }
         self.gcal_dirty = true;
-        self.msg("Deshecho");
+        self.msg(t!("Deshecho"));
     }
 
     fn apply(&mut self, action: Action) {
@@ -2170,7 +2167,7 @@ impl NotesApp {
             Action::SelectWorkspace(ws) => self.select_workspace(ws),
             Action::CreateWorkspace(name) => match self.vault.create_workspace(&name) {
                 Ok(ws) => self.select_workspace(ws),
-                Err(e) => self.msg(format!("No se pudo crear el espacio: {e}")),
+                Err(e) => self.msg(tf!("No se pudo crear el espacio: {e}", e = e)),
             },
             Action::Trash(p) => self.trash(p),
             Action::AskTrashWorkspace(ws) => self.confirm_ws = Some(ws),
@@ -2222,9 +2219,9 @@ impl NotesApp {
             Action::GoogleConnect => match &mut self.gcal {
                 Some(g) => {
                     g.connect();
-                    self.msg("Se abrió el navegador: elige tu cuenta y permite el acceso al calendario");
+                    self.msg(t!("Se abrió el navegador: elige tu cuenta y permite el acceso al calendario"));
                 }
-                None => self.msg("Falta google_client_id en config.toml (pasos en el README)"),
+                None => self.msg(t!("Falta google_client_id en config.toml (pasos en el README)")),
             },
             Action::GoogleSync => {
                 self.gcal_dirty = true;
@@ -2238,7 +2235,7 @@ impl NotesApp {
             Action::TodoConnect => {
                 if let Some(t) = &mut self.todo {
                     t.connect();
-                    self.msg("Se abrió el navegador: entra con tu cuenta Microsoft y acepta el permiso");
+                    self.msg(t!("Se abrió el navegador: entra con tu cuenta Microsoft y acepta el permiso"));
                 }
             }
             Action::TodoSync => self.todo_last = long_ago(),
@@ -2250,7 +2247,7 @@ impl NotesApp {
             Action::ToggleTask(raw) => {
                 self.gcal_dirty = true;
                 if let Err(e) = self.agenda.toggle_task(&raw, &today()) {
-                    self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
+                    self.msg(tf!("No se pudo actualizar tareas.txt: {e}", e = e));
                 }
                 // La casilla de su línea en la nota también.
                 if let Some(t) = agenda::parse_task(&raw) {
@@ -2273,7 +2270,7 @@ impl NotesApp {
                 let (text, due) = agenda::parse_when(&text, Local::now().date_naive());
                 let line = agenda::format_task(&today(), &text, &self.ws, due.as_deref(), &self.rel(&self.note.path), None);
                 if let Err(e) = self.agenda.add_task(line) {
-                    self.msg(format!("No se pudo escribir tareas.txt: {e}"));
+                    self.msg(tf!("No se pudo escribir tareas.txt: {e}", e = e));
                 }
             }
             Action::OpenExternal(p) => open_external(&p),
@@ -2285,14 +2282,14 @@ impl NotesApp {
                 self.save_config();
                 let i = self.cfg.correos.len() - 1;
                 self.test_mail_account(i);
-                self.msg(format!("Correo {email} agregado; probando la conexión…"));
+                self.msg(tf!("Correo {email} agregado; probando la conexión…", email = email));
             }
             Action::RemoveMailAccount(i) => {
                 if i < self.cfg.correos.len() {
                     let a = self.cfg.correos.remove(i);
                     self.save_config();
                     self.mail.errors.remove(&a.correo);
-                    self.msg(format!("Correo {} quitado", a.correo));
+                    self.msg(tf!("Correo {email} quitado", email = a.correo));
                 }
             }
             Action::UpdateMailAccount(i, mut a) => {
@@ -2306,7 +2303,7 @@ impl NotesApp {
                     self.cfg.correos[i] = a;
                     self.save_config();
                     self.test_mail_account(i);
-                    self.msg(format!("Correo {email} actualizado; probando la conexión…"));
+                    self.msg(tf!("Correo {email} actualizado; probando la conexión…", email = email));
                 }
             }
             Action::TestMailAccount(i) => self.test_mail_account(i),
@@ -2420,28 +2417,28 @@ impl NotesApp {
         ui.ctx().data_mut(|d| d.insert_temp(Id::new(RAIL_H), h));
         ui.vertical_centered(|ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
-            if rail_item(ui, icon::HOUSE, "Inicio", "Inicio: tu día y un resumen de todo (Ctrl+H)", self.view == View::Home, TEXT()).clicked() {
+            if rail_item(ui, icon::HOUSE, t!("Inicio"), t!("Inicio: tu día y un resumen de todo (Ctrl+H)"), self.view == View::Home, TEXT()).clicked() {
                 action = Some(Action::ShowTab(View::Home));
             }
             let (tip, color) = match &self.meeting {
-                Some(m) => (format!("Cerrar reunión «{}» (Esc)", m.title), SUCCESS()),
-                None => ("Nueva reunión (Ctrl+R)".to_string(), TEXT()),
+                Some(m) => (tf!("Cerrar reunión «{title}» (Esc)", title = m.title), SUCCESS()),
+                None => (t!("Nueva reunión (Ctrl+R)").to_string(), TEXT()),
             };
-            if rail_item(ui, icon::USERS, "Reunión", &tip, self.meeting.is_some(), color).clicked() {
+            if rail_item(ui, icon::USERS, t!("Reunión"), &tip, self.meeting.is_some(), color).clicked() {
                 action = Some(if self.meeting.is_some() { Action::CloseMeeting } else { Action::StartMeeting });
             }
-            if rail_item(ui, icon::FILE_TEXT, "Notas", "Todas tus notas, la más reciente primero", self.view == View::Notes, TEXT()).clicked() {
+            if rail_item(ui, icon::FILE_TEXT, t!("Notas"), t!("Todas tus notas, la más reciente primero"), self.view == View::Notes, TEXT()).clicked() {
                 action = Some(Action::ShowTab(View::Notes));
             }
-            if rail_item(ui, icon::CHECK_SQUARE, "Tareas", "Todas las tareas", self.view == View::Tasks, TEXT()).clicked() {
+            if rail_item(ui, icon::CHECK_SQUARE, t!("Tareas"), t!("Todas las tareas"), self.view == View::Tasks, TEXT()).clicked() {
                 action = Some(Action::ShowTab(View::Tasks));
             }
-            if rail_item(ui, icon::CALENDAR_BLANK, "Agenda", "Tus calendarios, eventos y tareas con fecha", self.view == View::Agenda, TEXT()).clicked() {
+            if rail_item(ui, icon::CALENDAR_BLANK, t!("Agenda"), t!("Tus calendarios, eventos y tareas con fecha"), self.view == View::Agenda, TEXT()).clicked() {
                 action = Some(Action::ShowTab(View::Agenda));
             }
             let checks = self.mail.open_checks().len();
             let color = if self.mail.busy() { ACCENT() } else { TEXT() };
-            let r = rail_item(ui, icon::ENVELOPE_SIMPLE, "Correo", "Compromisos y fechas de tu correo", self.view == View::Mail, color);
+            let r = rail_item(ui, icon::ENVELOPE_SIMPLE, t!("Correo"), t!("Compromisos y fechas de tu correo"), self.view == View::Mail, color);
             if r.clicked() {
                 action = Some(Action::ShowTab(View::Mail));
             }
@@ -2453,11 +2450,11 @@ impl NotesApp {
             let working = self.in_flight.is_some() || self.ask.busy();
             let color = if self.ai.is_err() { MUTED() } else if working { ACCENT() } else { TEXT() };
             let tip = match &self.ai {
-                Ok(_) if asks > 0 => format!("IA: tiene {} para ti · conversar y lo que hizo (Ctrl+K)", plural(asks, "pregunta")),
-                Ok(_) => "IA: conversar con tus notas, sus preguntas y lo que hizo (Ctrl+K)".to_string(),
-                Err(e) => format!("IA no disponible: {e}"),
+                Ok(_) if asks > 0 => tf!("IA: tiene {n} para ti · conversar y lo que hizo (Ctrl+K)", n = plural(asks, "pregunta")),
+                Ok(_) => t!("IA: conversar con tus notas, sus preguntas y lo que hizo (Ctrl+K)").to_string(),
+                Err(e) => tf!("IA no disponible: {e}", e = e),
             };
-            let r = rail_item(ui, icon::SPARKLE, "IA", &tip, self.view == View::Ai, color);
+            let r = rail_item(ui, icon::SPARKLE, t!("IA"), &tip, self.view == View::Ai, color);
             if r.clicked() {
                 let tab = if asks > 0 && self.view != View::Ai { ai_view::AiTab::Asks } else { self.ai_tab };
                 action = Some(Action::ShowAi(tab));
@@ -2465,20 +2462,20 @@ impl NotesApp {
             if asks > 0 {
                 rail_badge(ui, &r, asks, ACCENT());
             }
-            if rail_item(ui, icon::NOTEPAD, "Bloc", "Bloc: pega o escribe lo que sea, tal cual (Ctrl+B)", self.view == View::Bloc, TEXT()).clicked() {
+            if rail_item(ui, icon::NOTEPAD, t!("Bloc"), t!("Bloc: pega o escribe lo que sea, tal cual (Ctrl+B)"), self.view == View::Bloc, TEXT()).clicked() {
                 action = Some(Action::OpenBloc);
             }
             ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
-                if rail_item(ui, icon::GEAR, "Ajustes", "Configuración (Ctrl+,)", self.settings.is_some(), TEXT()).clicked() {
+                if rail_item(ui, icon::GEAR, t!("Ajustes"), t!("Configuración (Ctrl+,)"), self.settings.is_some(), TEXT()).clicked() {
                     action = Some(Action::OpenSettings(Section::General));
                 }
-                if rail_item(ui, icon::TRASH, "Papelera", "Lo que borraste: restaurar o borrar para siempre", self.view == View::Trash, TEXT()).clicked() {
+                if rail_item(ui, icon::TRASH, t!("Papelera"), t!("Lo que borraste: restaurar o borrar para siempre"), self.view == View::Trash, TEXT()).clicked() {
                     action = Some(Action::ShowTab(View::Trash));
                 }
-                if rail_item(ui, icon::ARCHIVE, "Archivo", "Notas archivadas: fuera de la vista, sin borrarlas", self.view == View::Archive, TEXT()).clicked() {
+                if rail_item(ui, icon::ARCHIVE, t!("Archivo"), t!("Notas archivadas: fuera de la vista, sin borrarlas"), self.view == View::Archive, TEXT()).clicked() {
                     action = Some(Action::ShowTab(View::Archive));
                 }
-                if rail_item(ui, icon::FOLDER_OPEN, "Carpeta", "Abrir la carpeta de notas", false, TEXT()).clicked() {
+                if rail_item(ui, icon::FOLDER_OPEN, t!("Carpeta"), t!("Abrir la carpeta de notas"), false, TEXT()).clicked() {
                     action = Some(Action::OpenExternal(self.vault.root.clone()));
                 }
             });
@@ -2491,7 +2488,7 @@ impl NotesApp {
 
         let search = ui.add(
             egui::TextEdit::singleline(&mut self.search)
-                .hint_text(format!("{}  Buscar en todas las notas", icon::MAGNIFYING_GLASS))
+                .hint_text(format!("{}  {}", icon::MAGNIFYING_GLASS, t!("Buscar en todas las notas")))
                 .desired_width(f32::INFINITY)
                 .margin(Margin::symmetric(8, 5)),
         );
@@ -2510,7 +2507,7 @@ impl NotesApp {
             // Una nota se puede arrastrar a un espacio, o moverla con el clic derecho.
             let spaces = self.vault.workspaces.clone();
             let row_action = |ui: &Ui, r: &Response, path: &PathBuf| -> Option<Action> {
-                if row_trash_button(ui, r, "Mover a la papelera (se puede deshacer)") {
+                if row_trash_button(ui, r, t!("Mover a la papelera (se puede deshacer)")) {
                     return Some(Action::Trash(path.clone()));
                 }
                 let mut act = None;
@@ -2526,7 +2523,7 @@ impl NotesApp {
                 r.context_menu(|ui| {
                     if movable {
                         let here = workspace_of(path);
-                        ui.menu_button(format!("{}  Mover a", icon::FOLDER_SIMPLE), |ui| {
+                        ui.menu_button(format!("{}  {}", icon::FOLDER_SIMPLE, t!("Mover a")), |ui| {
                             for w in spaces.iter().filter(|w| Some(*w) != here.as_ref()) {
                                 if ui.button(w).clicked() {
                                     act = Some(Action::MoveNote(path.clone(), w.clone()));
@@ -2535,15 +2532,15 @@ impl NotesApp {
                             }
                         });
                     }
-                    if ui.button(format!("{}  Convertir en tarea", icon::CHECK_SQUARE)).clicked() {
+                    if ui.button(format!("{}  {}", icon::CHECK_SQUARE, t!("Convertir en tarea"))).clicked() {
                         act = Some(Action::NoteToTask(path.clone()));
                         ui.close();
                     }
-                    if ui.button(format!("{}  Archivar", icon::ARCHIVE)).on_hover_text("Sale de la vista sin borrarse (queda en Archivadas)").clicked() {
+                    if ui.button(format!("{}  {}", icon::ARCHIVE, t!("Archivar"))).on_hover_text(t!("Sale de la vista sin borrarse (queda en Archivadas)")).clicked() {
                         act = Some(Action::Archive(path.clone()));
                         ui.close();
                     }
-                    if ui.button(format!("{}  Mover a la papelera", icon::TRASH)).clicked() {
+                    if ui.button(format!("{}  {}", icon::TRASH, t!("Mover a la papelera"))).clicked() {
                         act = Some(Action::Trash(path.clone()));
                         ui.close();
                     }
@@ -2555,8 +2552,8 @@ impl NotesApp {
             // escribir); la IA reparte lo que tiene a cada espacio.
             let today_path = self.today_path();
             let today_exists = summary.today_exists;
-            let r = list_row(ui, icon::SUN, "Hoy", if today_exists { "" } else { "vacía" }, today_path == self.note.path && editing);
-            let r = r.on_hover_text("La nota de hoy: escribe aquí lo que vaya surgiendo; la IA reparte cada cosa a su espacio (Ctrl+D)");
+            let r = list_row(ui, icon::SUN, t!("Hoy"), if today_exists { "" } else { t!("vacía") }, today_path == self.note.path && editing);
+            let r = r.on_hover_text(t!("La nota de hoy: escribe aquí lo que vaya surgiendo; la IA reparte cada cosa a su espacio (Ctrl+D)"));
             if today_exists {
                 if let Some(a) = row_action(ui, &r, &today_path) {
                     action = Some(a);
@@ -2570,8 +2567,8 @@ impl NotesApp {
             if !diary.is_empty() {
                 let open = self.diary_open || diary.iter().any(|n| n.path == self.note.path);
                 let caret = if open { icon::CARET_DOWN } else { icon::CARET_RIGHT };
-                let r = list_row(ui, caret, "Diario", &diary.len().to_string(), false)
-                    .on_hover_text("Las notas de días anteriores");
+                let r = list_row(ui, caret, t!("Diario"), &diary.len().to_string(), false)
+                    .on_hover_text(t!("Las notas de días anteriores"));
                 if r.clicked() {
                     self.diary_open = !open;
                 }
@@ -2595,13 +2592,13 @@ impl NotesApp {
             ui.add_space(14.0);
 
             // Espacios
-            if section(ui, "Espacios", Some("Nuevo espacio")) {
+            if section(ui, t!("Espacios"), Some(t!("Nuevo espacio"))) {
                 self.new_ws = Some(String::new());
             }
             for ws in self.vault.workspaces.clone() {
                 // Cambiando el nombre: un campo en vez de la fila (Enter guarda, Esc o clic afuera cancela).
                 if let Some((_, name)) = self.renaming_ws.as_mut().filter(|(old, _)| *old == ws) {
-                    let r = ui.add(egui::TextEdit::singleline(name).hint_text("Nombre del espacio").desired_width(f32::INFINITY));
+                    let r = ui.add(egui::TextEdit::singleline(name).hint_text(t!("Nombre del espacio")).desired_width(f32::INFINITY));
                     if !r.has_focus() && !r.lost_focus() {
                         r.request_focus();
                     }
@@ -2621,21 +2618,21 @@ impl NotesApp {
                 }
                 if let Some(p) = r.dnd_release_payload::<PathBuf>() {
                     action = Some(Action::MoveNote((*p).clone(), ws.clone()));
-                } else if row_trash_button(ui, &r, "Mover el espacio a la papelera") {
+                } else if row_trash_button(ui, &r, t!("Mover el espacio a la papelera")) {
                     action = Some(Action::AskTrashWorkspace(ws.clone()));
                 } else if r.clicked() {
                     action = Some(Action::SelectWorkspace(ws.clone()));
                 }
                 r.context_menu(|ui| {
-                    if ui.button(format!("{}  Cambiar nombre", icon::PENCIL_SIMPLE)).clicked() {
+                    if ui.button(format!("{}  {}", icon::PENCIL_SIMPLE, t!("Cambiar nombre"))).clicked() {
                         self.renaming_ws = Some((ws.clone(), ws.clone()));
                         ui.close();
                     }
-                    if ui.button(format!("{}  Archivar el espacio", icon::ARCHIVE)).on_hover_text("Sus notas salen de la vista sin borrarse (quedan en Archivo)").clicked() {
+                    if ui.button(format!("{}  {}", icon::ARCHIVE, t!("Archivar el espacio"))).on_hover_text(t!("Sus notas salen de la vista sin borrarse (quedan en Archivo)")).clicked() {
                         action = Some(Action::ArchiveSpace(ws.clone()));
                         ui.close();
                     }
-                    if ui.button(format!("{}  Mover el espacio a la papelera", icon::TRASH)).clicked() {
+                    if ui.button(format!("{}  {}", icon::TRASH, t!("Mover el espacio a la papelera"))).clicked() {
                         action = Some(Action::AskTrashWorkspace(ws.clone()));
                         ui.close();
                     }
@@ -2643,7 +2640,7 @@ impl NotesApp {
             }
             if let Some(name) = &mut self.new_ws {
                 let r = ui.add(
-                    egui::TextEdit::singleline(name).hint_text("Nombre del espacio").desired_width(f32::INFINITY),
+                    egui::TextEdit::singleline(name).hint_text(t!("Nombre del espacio")).desired_width(f32::INFINITY),
                 );
                 if !r.has_focus() && !r.lost_focus() {
                     r.request_focus();
@@ -2660,13 +2657,13 @@ impl NotesApp {
             ui.add_space(14.0);
 
             // Notas del espacio (las reuniones con su ícono)
-            if section(ui, "Notas", Some(&format!("Nueva nota en {} (Ctrl+N)", self.ws))) {
+            if section(ui, t!("Notas"), Some(&tf!("Nueva nota en {ws} (Ctrl+N)", ws = self.ws))) {
                 action = Some(Action::NewNote);
             }
             let open_is_new = self.note.disk_mtime.is_none();
             if open_is_new && self.note.path != today_path && workspace_of(&self.note.path).as_deref() == Some(self.ws.as_str()) {
-                let r = list_row(ui, icon::FILE_TEXT, &self.note.title, "nueva", editing);
-                if row_trash_button(ui, &r, "Descartar la nota nueva") {
+                let r = list_row(ui, icon::FILE_TEXT, &self.note.title, t!("nueva"), editing);
+                if row_trash_button(ui, &r, t!("Descartar la nota nueva")) {
                     action = Some(Action::Trash(self.note.path.clone()));
                 }
             }
@@ -2675,7 +2672,7 @@ impl NotesApp {
             let below = summary.others.len() - rows.end;
             for n in &summary.others[rows] {
                 let glyph = if n.meeting { icon::USERS } else { icon::FILE_TEXT };
-                let right = if live.as_ref() == Some(&n.path) { "en curso" } else { n.right.as_str() };
+                let right = if live.as_ref() == Some(&n.path) { t!("en curso") } else { n.right.as_str() };
                 let r = list_row(ui, glyph, &n.title, right, n.path == self.note.path && editing);
                 if let Some(a) = row_action(ui, &r, &n.path) {
                     action = Some(a);
@@ -2686,17 +2683,17 @@ impl NotesApp {
 
             // Etiquetas del espacio
             let tags = summary.tags.clone();
-            section(ui, "Etiquetas", None);
+            section(ui, t!("Etiquetas"), None);
             if tags.is_empty() {
-                ui.label(RichText::new("Escribe #palabra en una nota.").color(MUTED()).size(12.5));
+                ui.label(RichText::new(t!("Escribe #palabra en una nota.")).color(MUTED()).size(12.5));
             }
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(5.0, 6.0);
                 for (tag, count) in tags {
                     let selected = self.view == View::Tag(tag.clone());
-                    let r = tag_pill(ui, &tag, count, selected).on_hover_text(format!("Ver las líneas con #{tag} (clic derecho: cambiar nombre)"));
+                    let r = tag_pill(ui, &tag, count, selected).on_hover_text(tf!("Ver las líneas con #{tag} (clic derecho: cambiar nombre)", tag = tag));
                     r.context_menu(|ui| {
-                        if ui.button(format!("{}  Cambiar nombre", icon::PENCIL_SIMPLE)).clicked() {
+                        if ui.button(format!("{}  {}", icon::PENCIL_SIMPLE, t!("Cambiar nombre"))).clicked() {
                             self.renaming_tag = Some((tag.clone(), tag.clone()));
                             ui.close();
                         }
@@ -2717,7 +2714,7 @@ impl NotesApp {
                     .interactable(false)
                     .show(ui.ctx(), |ui| {
                         Frame::popup(ui.style()).show(ui, |ui| {
-                            ui.label(RichText::new(format!("{} {} → suéltala en un espacio", icon::FILE_TEXT, vault::stem(&p))).size(13.0));
+                            ui.label(RichText::new(format!("{} {} {}", icon::FILE_TEXT, vault::stem(&p), t!("→ suéltala en un espacio"))).size(13.0));
                         });
                     });
             }
@@ -2731,10 +2728,10 @@ impl NotesApp {
             // Reunión en curso (siempre visible).
             if let Some(m) = &self.meeting {
                 let mins = (Local::now() - m.started).num_minutes();
-                let text = RichText::new(format!("{} {} · {mins} min · Esc para cerrar", icon::RECORD, m.title))
+                let text = RichText::new(format!("{} {}", icon::RECORD, tf!("{title} · {mins} min · Esc para cerrar", title = m.title, mins = mins)))
                     .size(12.5)
                     .color(SUCCESS());
-                let r = ui.add(egui::Label::new(text).sense(Sense::click())).on_hover_text("Ir a la reunión");
+                let r = ui.add(egui::Label::new(text).sense(Sense::click())).on_hover_text(t!("Ir a la reunión"));
                 if r.clicked() {
                     action = Some(Action::Open(m.path.clone(), Some(usize::MAX)));
                 }
@@ -2748,29 +2745,29 @@ impl NotesApp {
             self.sync_status(ui);
             // Dropbox cerrado: se puede seguir trabajando, pero no se sincroniza.
             if self.dropbox.as_ref().is_some_and(|d| d.closed()) {
-                let text = RichText::new(format!("{} Dropbox no está abierto", icon::CLOUD_SLASH)).size(12.5).color(WARN());
+                let text = RichText::new(format!("{} {}", icon::CLOUD_SLASH, t!("Dropbox no está abierto"))).size(12.5).color(WARN());
                 ui.label(text).on_hover_text(
-                    "Tus notas están en una carpeta de Dropbox, pero la app de Dropbox no está abierta. Puedes seguir trabajando: los cambios quedan en este equipo y se sincronizarán cuando la abras.",
+                    t!("Tus notas están en una carpeta de Dropbox, pero la app de Dropbox no está abierta. Puedes seguir trabajando: los cambios quedan en este equipo y se sincronizarán cuando la abras."),
                 );
                 ui.add_space(12.0);
             }
             // Copias en conflicto de Dropbox que se están por juntar (se juntan solas).
             if !self.conflict_seen.is_empty() {
                 let n = self.conflict_seen.len();
-                let text = RichText::new(format!("{} Juntando {}", icon::ARROWS_MERGE, plural(n, "copia en conflicto"))).size(12.5).color(MUTED());
-                ui.label(text).on_hover_text("Dropbox dejó dos versiones de un archivo; en unos segundos se juntan solas, sin perder nada");
+                let text = RichText::new(format!("{} {}", icon::ARROWS_MERGE, tf!("Juntando {n}", n = plural(n, "copia en conflicto")))).size(12.5).color(MUTED());
+                ui.label(text).on_hover_text(t!("Dropbox dejó dos versiones de un archivo; en unos segundos se juntan solas, sin perder nada"));
                 ui.add_space(12.0);
             }
             let (glyph, text, color) = if self.note.dirty {
-                (icon::CIRCLE_NOTCH, "Guardando…", MUTED())
+                (icon::CIRCLE_NOTCH, t!("Guardando…"), MUTED())
             } else if self.note.disk_mtime.is_none() {
-                (icon::FILE_TEXT, "Nota nueva — se guarda al escribir", MUTED())
+                (icon::FILE_TEXT, t!("Nota nueva — se guarda al escribir"), MUTED())
             } else {
-                (icon::CHECK_CIRCLE, "Guardado", SUCCESS())
+                (icon::CHECK_CIRCLE, t!("Guardado"), SUCCESS())
             };
             ui.label(RichText::new(format!("{glyph} {text}")).size(12.5).color(color));
             let words = self.note.text.split_whitespace().count();
-            ui.label(RichText::new(format!("   {words} palabras")).size(12.5).color(MUTED()));
+            ui.label(RichText::new(format!("   {}", tf!("{n} palabras", n = words))).size(12.5).color(MUTED()));
             // IA trabajando.
             if let Some(p) = &self.in_flight {
                 let progress = if self.backlog_total > 0 {
@@ -2779,14 +2776,14 @@ impl NotesApp {
                     String::new()
                 };
                 ui.label(
-                    RichText::new(format!("   {} Analizando «{}»{progress}", icon::SPARKLE, vault::stem(p)))
+                    RichText::new(format!("   {} {}", icon::SPARKLE, tf!("Analizando «{name}»{progress}", name = vault::stem(p), progress = progress)))
                         .size(12.5)
                         .color(ACCENT()),
                 );
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if self.undo.as_ref().is_some_and(|u| u.at.elapsed() < UNDO_WINDOW) {
-                    let b = egui::Button::new(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5));
+                    let b = egui::Button::new(RichText::new(format!("{} {}", icon::ARROW_COUNTER_CLOCKWISE, t!("Deshacer"))).size(12.5));
                     if ui.add(b).clicked() {
                         action = Some(Action::Undo);
                     }
@@ -2900,16 +2897,16 @@ impl NotesApp {
         };
         let heading = match &tag {
             Some(t) => t.clone(),
-            None => format!("Buscar «{}»", self.search.trim()),
+            None => tf!("Buscar «{q}»", q = self.search.trim()),
         };
-        let scope = if tag.is_some() { format!("en {}", self.ws) } else { "en todos los espacios".into() };
-        let subtitle = format!("{} en {}, {scope}", plural(total, "línea"), plural(notes, "nota"));
+        let scope = if tag.is_some() { tf!("en {ws}", ws = self.ws) } else { t!("en todos los espacios").into() };
+        let subtitle = tf!("{lines} en {notes}, {scope}", lines = plural(total, "línea"), notes = plural(notes, "nota"), scope = scope);
         let Some(found) = self.found.take() else { return None };
         let mut more = false;
         Self::column(ui, "results", |ui, _| {
             view_header(ui, &heading, &subtitle);
             if found.hits.is_empty() {
-                ui.label(RichText::new("Sin resultados.").color(MUTED()));
+                ui.label(RichText::new(t!("Sin resultados.")).color(MUTED()));
             }
             // Solo las primeras líneas (dibujar miles es lento); el resto con «Mostrar más».
             let mut drawn = 0;
@@ -2937,7 +2934,7 @@ impl NotesApp {
             if drawn < total {
                 ui.add_space(4.0);
                 let rest = total.saturating_sub(drawn);
-                if ui.button(format!("Mostrar más ({})", plural(rest, "línea"))).clicked() {
+                if ui.button(tf!("Mostrar más ({n})", n = plural(rest, "línea"))).clicked() {
                     more = true;
                 }
             }
@@ -2961,19 +2958,19 @@ impl NotesApp {
         // Las hechas: la última que se terminó, primero.
         done.reverse();
         done.sort_by(|a, b| b.done_on.cmp(&a.done_on));
-        let subtitle = format!("{} · marca la casilla cuando la termines", plural(pending.len(), "pendiente"));
+        let subtitle = tf!("{n} · marca la casilla cuando la termines", n = plural(pending.len(), "pendiente"));
         let root = self.vault.root.clone();
         let follows = self.follow_up_map();
         let mut typing = false;
         Self::column(ui, "tasks", |ui, _| {
-            view_header(ui, "Tareas", &subtitle);
+            view_header(ui, t!("Tareas"), &subtitle);
             if let Some(a) = self.todo_panel(ui) {
                 action = Some(a);
             }
             ui.add_space(10.0);
             let r = ui.add(
                 egui::TextEdit::singleline(&mut self.new_task)
-                    .hint_text(format!("{}  Nueva tarea en {}: «Enviar planos el viernes», «Llamar a Pedro mañana»…", icon::PLUS, self.ws))
+                    .hint_text(format!("{}  {}", icon::PLUS, tf!("Nueva tarea en {ws}: «Enviar planos el viernes», «Llamar a Pedro mañana»…", ws = self.ws)))
                     .desired_width(f32::INFINITY)
                     .margin(Margin::symmetric(8, 6)),
             );
@@ -2986,15 +2983,15 @@ impl NotesApp {
             // Orden: lo más reciente primero (las atrasadas, arriba) o por fecha límite.
             ui.horizontal(|ui| {
                 let before = self.tasks_by_due;
-                ui.selectable_value(&mut self.tasks_by_due, false, RichText::new("Recientes primero").size(12.5));
-                ui.selectable_value(&mut self.tasks_by_due, true, RichText::new("Por fecha").size(12.5));
+                ui.selectable_value(&mut self.tasks_by_due, false, RichText::new(t!("Recientes primero")).size(12.5));
+                ui.selectable_value(&mut self.tasks_by_due, true, RichText::new(t!("Por fecha")).size(12.5));
                 if self.tasks_by_due != before {
                     self.save_estado();
                 }
             });
             ui.add_space(8.0);
             if pending.is_empty() {
-                ui.label(RichText::new("No hay tareas pendientes. La IA las encuentra en tus notas, o agrégalas arriba.").color(MUTED()));
+                ui.label(RichText::new(t!("No hay tareas pendientes. La IA las encuentra en tus notas, o agrégalas arriba.")).color(MUTED()));
             }
             for t in &pending {
                 if let Some(a) = task_row(ui, t, &today, &root, &follows) {
@@ -3003,7 +3000,7 @@ impl NotesApp {
             }
             if !done.is_empty() {
                 ui.add_space(16.0);
-                egui::CollapsingHeader::new(RichText::new(format!("Hechas ({})", done.len())).color(MUTED()))
+                egui::CollapsingHeader::new(RichText::new(tf!("Hechas ({n})", n = done.len())).color(MUTED()))
                     .default_open(false)
                     .show(ui, |ui| {
                         for t in done.iter().take(50) {
@@ -3027,16 +3024,16 @@ impl NotesApp {
             ui.label(RichText::new(format!("{} Google Calendar", icon::GOOGLE_LOGO)).font(theme::bold(14.0)));
             match &self.gcal {
                 None => {
-                    ui.label(RichText::new("Si quieres, tus tareas y eventos también pueden aparecer en Google Calendar.").size(13.0).color(MUTED()));
-                    if ui.link(RichText::new("Cómo activarlo").size(13.0)).clicked() {
+                    ui.label(RichText::new(t!("Si quieres, tus tareas y eventos también pueden aparecer en Google Calendar.")).size(13.0).color(MUTED()));
+                    if ui.link(RichText::new(t!("Cómo activarlo")).size(13.0)).clicked() {
                         action = Some(Action::OpenSettings(Section::Calendar));
                     }
                 }
                 Some(g) if g.connecting => {
-                    ui.label(RichText::new("Esperando tu permiso en el navegador…").size(12.5).color(ACCENT()));
+                    ui.label(RichText::new(t!("Esperando tu permiso en el navegador…")).size(12.5).color(ACCENT()));
                 }
                 Some(g) if !g.connected => {
-                    if ui.button(format!("{} Conectar Google Calendar", icon::LINK)).clicked() {
+                    if ui.button(format!("{} {}", icon::LINK, t!("Conectar Google Calendar"))).clicked() {
                         action = Some(Action::GoogleConnect);
                     }
                     if let Some(e) = &g.last_error {
@@ -3045,20 +3042,20 @@ impl NotesApp {
                 }
                 Some(g) => {
                     let status = if g.busy {
-                        "sincronizando…".to_string()
+                        t!("sincronizando…").to_string()
                     } else if let Some(e) = &g.last_error {
-                        format!("error: {e}")
+                        tf!("error: {e}", e = e)
                     } else if let Some(t) = g.last_sync {
-                        format!("sincronizado a las {}", t.format("%H:%M"))
+                        tf!("sincronizado a las {time}", time = t.format("%H:%M"))
                     } else {
-                        "conectado".to_string()
+                        t!("conectado").to_string()
                     };
                     let color = if g.last_error.is_some() { RED() } else { SUCCESS() };
-                    ui.label(RichText::new(format!("calendario «Notas» · {status}")).size(12.5).color(color));
-                    if ui.link(RichText::new("Sincronizar ahora").size(12.5)).clicked() {
+                    ui.label(RichText::new(tf!("calendario «Notas» · {status}", status = status)).size(12.5).color(color));
+                    if ui.link(RichText::new(t!("Sincronizar ahora")).size(12.5)).clicked() {
                         action = Some(Action::GoogleSync);
                     }
-                    if ui.link(RichText::new("Desconectar").size(12.5)).clicked() {
+                    if ui.link(RichText::new(t!("Desconectar")).size(12.5)).clicked() {
                         action = Some(Action::GoogleDisconnect);
                     }
                 }
@@ -3116,22 +3113,22 @@ impl NotesApp {
         let root = self.vault.root.clone();
         let follows = self.follow_up_map();
         Self::column(ui, "agenda", |ui, col_w| {
-            let subtitle = "Tus calendarios, los eventos de tus notas y las tareas con fecha".to_string();
-            view_header(ui, "Agenda", &subtitle);
+            let subtitle = t!("Tus calendarios, los eventos de tus notas y las tareas con fecha").to_string();
+            view_header(ui, t!("Agenda"), &subtitle);
             let subs = self.cfg.calendarios.clone();
             if let Some(a) = calendars_ui::calendars_panel(ui, &subs, &self.cals, &mut self.cal_form) {
                 action = Some(a);
             }
             ui.add_space(4.0);
             let n = self.recurring().len();
-            let label = if n == 0 { "Reuniones y notas que se repiten…".to_string() } else { format!("Reuniones y notas que se repiten ({n})") };
+            let label = if n == 0 { t!("Reuniones y notas que se repiten…").to_string() } else { tf!("Reuniones y notas que se repiten ({n})", n = n) };
             if ui.link(RichText::new(format!("{} {label}", icon::ARROWS_CLOCKWISE)).size(12.5)).clicked() {
                 action = Some(Action::OpenRecurring);
             }
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.agenda_list, false, RichText::new(format!("{} Mes", icon::CALENDAR_BLANK)).size(13.0));
-                ui.selectable_value(&mut self.agenda_list, true, RichText::new(format!("{} Lista", icon::LIST_BULLETS)).size(13.0));
+                ui.selectable_value(&mut self.agenda_list, false, RichText::new(format!("{} {}", icon::CALENDAR_BLANK, t!("Mes"))).size(13.0));
+                ui.selectable_value(&mut self.agenda_list, true, RichText::new(format!("{} {}", icon::LIST_BULLETS, t!("Lista"))).size(13.0));
             });
             ui.add_space(10.0);
             if !self.agenda_list {
@@ -3141,7 +3138,7 @@ impl NotesApp {
             }
             ui.add_space(14.0);
             if !overdue.is_empty() {
-                ui.label(RichText::new("Atrasadas").font(theme::bold(15.0)).color(RED()));
+                ui.label(RichText::new(t!("Atrasadas")).font(theme::bold(15.0)).color(RED()));
                 ui.add_space(4.0);
                 for t in &overdue {
                     if let Some(a) = task_row(ui, t, &today, &root, &follows) {
@@ -3151,16 +3148,16 @@ impl NotesApp {
                 ui.add_space(14.0);
             }
             if items.is_empty() && self.agenda_list {
-                ui.label(RichText::new("Nada agendado. La IA agrega aquí las fechas que menciones en tus notas.").color(MUTED()));
+                ui.label(RichText::new(t!("Nada agendado. La IA agrega aquí las fechas que menciones en tus notas.")).color(MUTED()));
             }
             let mut current = String::new();
             for (date, time, text, project, note, task, external) in items.iter().filter(|_| self.agenda_list) {
                 if *date != current {
                     current = date.clone();
                     let label = if *date == today {
-                        format!("Hoy · {}", long_date(date))
+                        tf!("Hoy · {date}", date = long_date(date))
                     } else if *date == tomorrow {
-                        format!("Mañana · {}", long_date(date))
+                        tf!("Mañana · {date}", date = long_date(date))
                     } else {
                         long_date(date)
                     };
@@ -3183,7 +3180,7 @@ impl NotesApp {
                 ui.horizontal(|ui| {
                     if let Some(raw) = task {
                         let b = egui::Button::new(RichText::new(icon::SQUARE).size(18.0).color(MUTED())).frame(false);
-                        if ui.add(b).on_hover_text("Marcar hecha").clicked() {
+                        if ui.add(b).on_hover_text(t!("Marcar hecha")).clicked() {
                             action = Some(Action::ToggleTask(raw.clone()));
                         }
                     }
@@ -3196,7 +3193,7 @@ impl NotesApp {
                     // Tomar notas de un evento de hoy: abre una reunión con su nombre.
                     if *external && *date == today {
                         ui.add_space(8.0);
-                        if ui.link(RichText::new(format!("{} Tomar notas", icon::NOTE_PENCIL)).size(12.5)).clicked() {
+                        if ui.link(RichText::new(format!("{} {}", icon::NOTE_PENCIL, t!("Tomar notas"))).size(12.5)).clicked() {
                             action = Some(Action::StartMeetingNamed(text.clone()));
                         }
                     }
@@ -3391,7 +3388,7 @@ impl NotesApp {
         let focus = self.follow_ask.as_ref().and_then(tracking::Ask::focus_key);
         ctx.data_mut(|d| d.insert_temp(Id::new(day_items::FOCUS), focus));
 
-        let title = format!("{} — Notas", display_title(&self.note.title));
+        let title = tf!("{title} — Notas", title = display_title(&self.note.title));
         if title != self.window_title {
             ctx.send_viewport_cmd(ViewportCommand::Title(title.clone()));
             self.window_title = title;
@@ -3494,7 +3491,7 @@ fn task_row_inner(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follo
     ui.horizontal(|ui| {
         let (glyph, color) = if t.done { (icon::CHECK_SQUARE, ACCENT()) } else { (icon::SQUARE, MUTED()) };
         let check = egui::Button::new(RichText::new(glyph).size(18.0).color(color)).frame(false);
-        if ui.add(check).on_hover_text(if t.done { "Marcar pendiente" } else { "Marcar hecha" }).clicked() {
+        if ui.add(check).on_hover_text(if t.done { t!("Marcar pendiente") } else { t!("Marcar hecha") }).clicked() {
             action = Some(Action::ToggleTask(t.raw.clone()));
         }
         let mut job = LayoutJob::default();
@@ -3505,7 +3502,7 @@ fn task_row_inner(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follo
         job.append(&agenda::display_text(&t.text), 0.0, body);
         if let Some(d) = &t.due {
             let color = if !t.done && d.as_str() < today { RED() } else if d == today { ACCENT() } else { MUTED() };
-            let label = if d == today { "hoy".to_string() } else { long_date(d) };
+            let label = if d == today { t!("hoy").to_string() } else { long_date(d) };
             job.append(&format!("   {} {label}", icon::CALENDAR_BLANK), 0.0, fmt(FontId::proportional(12.5), color));
         }
         if !t.project.is_empty() {
@@ -3522,26 +3519,26 @@ fn task_row_inner(ui: &mut Ui, t: &agenda::Task, today: &str, root: &Path, follo
         });
         if let Some(n) = t.note.as_deref().filter(|n| !n.is_empty()) {
             let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(MUTED())).frame(false);
-            if ui.add(b).on_hover_text(format!("Ir a donde está escrita («{n}»)")).clicked() {
+            if ui.add(b).on_hover_text(tf!("Ir a donde está escrita («{n}»)", n = n)).clicked() {
                 action = Some(Action::Item(day_items::ItemDo::OpenTask(t.raw.clone())));
             }
         }
         let _ = root;
         if let Some(m) = &t.mail {
             let b = egui::Button::new(RichText::new(icon::ENVELOPE_SIMPLE).size(14.0).color(MUTED())).frame(false);
-            if ui.add(b).on_hover_text("Salió de un correo: verlo").clicked() {
+            if ui.add(b).on_hover_text(t!("Salió de un correo: verlo")).clicked() {
                 action = Some(Action::OpenMail(m.clone()));
             }
         }
         if t.from.as_deref() == Some("todo") {
-            ui.label(RichText::new(icon::CHECK_SQUARE_OFFSET).size(14.0).color(MUTED())).on_hover_text("Llegó de Microsoft To Do (se agregó allá)");
+            ui.label(RichText::new(icon::CHECK_SQUARE_OFFSET).size(14.0).color(MUTED())).on_hover_text(t!("Llegó de Microsoft To Do (se agregó allá)"));
         }
         let b = egui::Button::new(RichText::new(icon::ARROW_ELBOW_DOWN_RIGHT).size(14.0).color(MUTED())).frame(false);
-        if ui.add(b).on_hover_text("Anotar un seguimiento: qué se hizo (la IA lo tiene en cuenta)").clicked() {
+        if ui.add(b).on_hover_text(t!("Anotar un seguimiento: qué se hizo (la IA lo tiene en cuenta)")).clicked() {
             action = Some(Action::FollowUp(t.raw.clone()));
         }
         let b = egui::Button::new(RichText::new(icon::DOTS_THREE).size(16.0).color(MUTED())).frame(false);
-        let r = ui.add(b).on_hover_text("Más: cambiar fecha, convertir en nota, borrar…");
+        let r = ui.add(b).on_hover_text(t!("Más: cambiar fecha, convertir en nota, borrar…"));
         egui::Popup::menu(&r).show(|ui| {
             if let Some(a) = day_items::task_menu(ui, t) {
                 action = Some(a);
@@ -3860,7 +3857,7 @@ mod tests {
         assert!(day_heading("Sin título").is_none());
         let old = day(-10);
         let d = NaiveDate::parse_from_str(&old, "%Y-%m-%d").unwrap();
-        assert!(display_title(&old).contains(&format!("{} {}", d.day(), MESES[d.month0() as usize])), "{}", display_title(&old));
+        assert!(display_title(&old).contains(&format!("{} {}", d.day(), crate::i18n::meses()[d.month0() as usize])), "{}", display_title(&old));
     }
 
     /// Una carpeta vacía recibe la nota de bienvenida, abierta, y la IA no la organiza.

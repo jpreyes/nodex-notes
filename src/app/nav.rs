@@ -91,8 +91,8 @@ impl NotesApp {
                 .on_hover_text(tip)
                 .clicked()
         };
-        let back = arrow(ui, icon::ARROW_LEFT, can_back, "Anterior (Alt+←)");
-        let fwd = arrow(ui, icon::ARROW_RIGHT, can_fwd, "Siguiente (Alt+→)");
+        let back = arrow(ui, icon::ARROW_LEFT, can_back, t!("Anterior (Alt+←)"));
+        let fwd = arrow(ui, icon::ARROW_RIGHT, can_fwd, t!("Siguiente (Alt+→)"));
         if (back || alt_left || mouse_back) && can_back {
             self.go_back();
         } else if (fwd || alt_right || mouse_fwd) && can_fwd {

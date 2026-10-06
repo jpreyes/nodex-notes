@@ -88,7 +88,7 @@ impl NotesApp {
             if self.analyzed.contains(&ai::fnv(&old)) {
                 self.analyzed.insert(ai::fnv(&new));
             }
-            details.push(format!("«{}»: {}", vault::stem(&path), if k == 1 { "1 línea".to_string() } else { format!("{k} líneas") }));
+            details.push(tf!("«{note}»: {lines}", note = vault::stem(&path), lines = plural(k, "línea")));
             files.push((path, Some(old)));
         }
         self.save_analyzed();
@@ -105,7 +105,7 @@ impl NotesApp {
             keep_tasks: Vec::new(),
             relinks: Vec::new(),
         });
-        let text = if total == 1 { "Juntó 1 línea repetida".to_string() } else { format!("Juntó {total} líneas repetidas") };
+        let text = if total == 1 { t!("Juntó 1 línea repetida").to_string() } else { tf!("Juntó {total} líneas repetidas", total = total) };
         self.log_ai(crate::activity::Kind::Duplicado, &note, text.clone(), details.clone(), true);
         self.show_toast(crate::activity::Kind::Duplicado, text, details);
         total
@@ -182,7 +182,7 @@ impl NotesApp {
                 }
             };
             if let Err(e) = r {
-                self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
+                self.msg(tf!("No se pudo actualizar tareas.txt: {e}", e = e));
             }
         }
         if n > 0 {
@@ -223,19 +223,19 @@ impl NotesApp {
         }
         let snapshot = self.agenda.snapshot();
         if let Err(e) = self.agenda.remove_ids(&gone) {
-            self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
+            self.msg(tf!("No se pudo actualizar tareas.txt: {e}", e = e));
             return 0;
         }
         self.dedupe_hash = ai::fnv(&vault::read_text(&self.vault.root.join(agenda::TASKS_FILE)).unwrap_or_default());
         self.gcal_dirty = true;
         let n = gone.len();
         let mut details: Vec<String> =
-            tasks.iter().filter(|t| t.id.as_ref().is_some_and(|i| gone.contains(i))).map(|t| format!("«{}»", agenda::display_text(&t.text))).collect();
+            tasks.iter().filter(|t| t.id.as_ref().is_some_and(|i| gone.contains(i))).map(|t| tf!("«{task}»", task = agenda::display_text(&t.text))).collect();
         details.dedup();
         if details.len() > 8 {
             let more = details.len() - 6;
             details.truncate(6);
-            details.push(format!("y {more} más"));
+            details.push(tf!("y {more} más", more = more));
         }
         self.undo = Some(Undo {
             files: Vec::new(),
@@ -248,7 +248,7 @@ impl NotesApp {
             keep_tasks: gone,
             relinks: Vec::new(),
         });
-        let text = if n == 1 { "Quitó 1 tarea repetida (ya estaba la misma)".to_string() } else { format!("Quitó {n} tareas repetidas (ya estaba la misma)") };
+        let text = if n == 1 { t!("Quitó 1 tarea repetida (ya estaba la misma)").to_string() } else { tf!("Quitó {n} tareas repetidas (ya estaba la misma)", n = n) };
         self.log_ai(crate::activity::Kind::Duplicado, "", text.clone(), details.clone(), true);
         self.show_toast(crate::activity::Kind::Duplicado, text, details);
         n

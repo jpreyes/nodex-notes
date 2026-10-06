@@ -69,7 +69,7 @@ impl NotesApp {
         let dir = self.archive_dir().join(&from);
         let dest = Self::free_path(&dir, &vault::stem(&path));
         if let Err(e) = fs::create_dir_all(&dir).and_then(|_| fs::rename(&path, &dest)) {
-            self.msg(format!("No se pudo archivar: {e}"));
+            self.msg(tf!("No se pudo archivar: {e}", e = e));
             return;
         }
         self.undo = Some(Undo {
@@ -84,7 +84,7 @@ impl NotesApp {
             relinks: Vec::new(),
         });
         self.undo_entry = None;
-        self.msg(format!("«{}» archivada: la encuentras en Archivadas (abajo a la izquierda)", display_title(&vault::stem(&path))));
+        self.msg(tf!("«{name}» archivada: la encuentras en Archivadas (abajo a la izquierda)", name = display_title(&vault::stem(&path))));
         if self.meeting.as_ref().is_some_and(|m| m.path == path) {
             self.meeting = None;
         }
@@ -112,7 +112,7 @@ impl NotesApp {
         let mut moved = Vec::new();
         if !dest.exists() {
             if let Err(e) = fs::create_dir_all(self.archive_dir()).and_then(|_| fs::rename(&src, &dest)) {
-                self.msg(format!("No se pudo archivar el espacio: {e}"));
+                self.msg(tf!("No se pudo archivar el espacio: {e}", e = e));
                 return;
             }
             moved.push((src.clone(), dest.clone()));
@@ -148,7 +148,7 @@ impl NotesApp {
             let next = self.vault.workspaces.first().cloned().unwrap_or_else(|| vault::DEFAULT_WORKSPACE.into());
             self.select_workspace(next);
         }
-        self.msg(format!("«{ws}» archivado ({}): lo encuentras en Archivo, abajo a la izquierda", plural(count, "nota")));
+        self.msg(tf!("«{ws}» archivado ({n}): lo encuentras en Archivo, abajo a la izquierda", ws = ws, n = plural(count, "nota")));
     }
 
     /// Saca del archivo todas las notas de un espacio (vuelve a ser un espacio).
@@ -173,7 +173,7 @@ impl NotesApp {
             let _ = fs::remove_dir(&src);
         }
         self.vault.scan();
-        self.msg(format!("«{ws}» volvió ({})", plural(n, "nota")));
+        self.msg(tf!("«{ws}» volvió ({n})", ws = ws, n = plural(n, "nota")));
         if !vault::is_diary_dir(&ws) && self.vault.workspaces.contains(&ws) {
             self.select_workspace(ws);
         }
@@ -191,12 +191,12 @@ impl NotesApp {
         };
         let dest = Self::free_path(&dir, &vault::stem(&path));
         if let Err(e) = fs::create_dir_all(&dir).and_then(|_| fs::rename(&path, &dest)) {
-            self.msg(format!("No se pudo sacar del archivo: {e}"));
+            self.msg(tf!("No se pudo sacar del archivo: {e}", e = e));
             return;
         }
         let _ = fs::remove_dir(path.parent().unwrap_or(&path)); // si quedó vacía
         self.vault.scan();
-        self.msg(format!("«{}» volvió a {}", display_title(&vault::stem(&dest)), if vault::is_diary_dir(&from) { vault::DIARY } else { from.as_str() }));
+        self.msg(tf!("«{name}» volvió a {ws}", name = display_title(&vault::stem(&dest)), ws = if vault::is_diary_dir(&from) { vault::DIARY } else { from.as_str() }));
         self.open_in_tab(dest, None);
     }
 
@@ -205,21 +205,21 @@ impl NotesApp {
         let mut action = None;
         let items = self.archived();
         Self::column(ui, "archivadas", |ui, _| {
-            ui.label(RichText::new(format!("{} Archivadas", icon::ARCHIVE)).font(theme::bold(24.0)));
+            ui.label(RichText::new(format!("{} {}", icon::ARCHIVE, t!("Archivadas"))).font(theme::bold(24.0)));
             ui.add_space(4.0);
             ui.label(
-                RichText::new("Notas que ya no necesitas a la vista: no salen en las listas, la búsqueda, Tu día ni la IA, pero siguen aquí (en la carpeta Archivo). «Sacar del archivo» la devuelve a su espacio.")
+                RichText::new(t!("Notas que ya no necesitas a la vista: no salen en las listas, la búsqueda, Tu día ni la IA, pero siguen aquí (en la carpeta Archivo). «Sacar del archivo» la devuelve a su espacio."))
                     .size(13.0)
                     .color(MUTED()),
             );
             ui.add_space(10.0);
             if items.is_empty() {
-                ui.label(RichText::new("No hay notas archivadas. Para archivar una, clic derecho sobre ella en la lista de notas → Archivar.").color(MUTED()));
+                ui.label(RichText::new(t!("No hay notas archivadas. Para archivar una, clic derecho sobre ella en la lista de notas → Archivar.")).color(MUTED()));
                 return;
             }
             ui.add(
                 egui::TextEdit::singleline(&mut self.archive_filter)
-                    .hint_text(format!("{}  Buscar en las archivadas", icon::MAGNIFYING_GLASS))
+                    .hint_text(format!("{}  {}", icon::MAGNIFYING_GLASS, t!("Buscar en las archivadas")))
                     .desired_width(f32::INFINITY)
                     .margin(Margin::symmetric(8, 5)),
             );
@@ -242,7 +242,7 @@ impl NotesApp {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{} {group}", icon::FOLDER_SIMPLE)).font(theme::bold(15.0)));
                         ui.label(RichText::new(plural(n, "nota")).size(12.5).color(MUTED()));
-                        if n > 1 && ui.link(RichText::new(format!("{} Sacar todo el espacio", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5)).clicked() {
+                        if n > 1 && ui.link(RichText::new(format!("{} {}", icon::ARROW_COUNTER_CLOCKWISE, t!("Sacar todo el espacio"))).size(12.5)).clicked() {
                             action = Some(Action::UnarchiveSpace(group.clone()));
                         }
                     });
@@ -254,10 +254,10 @@ impl NotesApp {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{}  {title}", icon::FILE_TEXT)).font(theme::bold(14.5)));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui.button(RichText::new(format!("{} Sacar del archivo", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5)).clicked() {
+                            if ui.button(RichText::new(format!("{} {}", icon::ARROW_COUNTER_CLOCKWISE, t!("Sacar del archivo"))).size(12.5)).clicked() {
                                 action = Some(Action::Unarchive(a.path.clone()));
                             }
-                            let label = if open { "Ocultar" } else { "Ver" };
+                            let label = if open { t!("Ocultar") } else { t!("Ver") };
                             if ui.button(RichText::new(label).size(12.5)).clicked() {
                                 self.archive_open = if open { None } else { Some(a.path.clone()) };
                             }
@@ -265,9 +265,9 @@ impl NotesApp {
                     });
                     let when = a
                         .modified
-                        .map(|m| format!(" · editada el {}", long_date(&chrono::DateTime::<Local>::from(m).format("%Y-%m-%d").to_string())))
+                        .map(|m| tf!(" · editada el {date}", date = long_date(&chrono::DateTime::<Local>::from(m).format("%Y-%m-%d").to_string())))
                         .unwrap_or_default();
-                    ui.label(RichText::new(format!("De {}{when}", a.from)).size(12.5).color(MUTED()));
+                    ui.label(RichText::new(tf!("De {from}{when}", from = a.from, when = when)).size(12.5).color(MUTED()));
                     if open {
                         ui.add_space(6.0);
                         ui.label(RichText::new(&text).size(13.5).color(TEXT()));
@@ -282,7 +282,7 @@ impl NotesApp {
                 ui.add_space(8.0);
             }
             if shown == 0 {
-                ui.label(RichText::new("Ninguna archivada tiene eso.").color(MUTED()));
+                ui.label(RichText::new(t!("Ninguna archivada tiene eso.")).color(MUTED()));
             }
         });
         action

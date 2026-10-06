@@ -110,11 +110,11 @@ impl NotesApp {
             let _ = fs::create_dir_all(dir);
         }
         if let Err(e) = fs::rename(&path, &target) {
-            self.msg(format!("No se pudo mover la nota: {e}"));
+            self.msg(tf!("No se pudo mover la nota: {e}", e = e));
             return;
         }
         if let Err(e) = self.agenda.retarget(Some(&old_rel), &[], &new_rel, &ws) {
-            self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
+            self.msg(tf!("No se pudo actualizar tareas.txt: {e}", e = e));
         }
         self.gcal_dirty = true;
         self.relink(&old_rel, &new_rel);
@@ -135,7 +135,7 @@ impl NotesApp {
             relinks: vec![(old_rel, new_rel)],
         });
         self.undo_entry = None;
-        self.msg(format!("«{title}» movida a {ws}"));
+        self.msg(tf!("«{title}» movida a {ws}", title = title, ws = ws));
     }
 
     /// Cambia el nombre de un espacio (su carpeta), con sus notas, tareas y eventos.
@@ -145,22 +145,22 @@ impl NotesApp {
             return;
         }
         if vault::is_reserved_dir(&new) {
-            self.msg(format!("«{new}» es una carpeta reservada (Diario, Adjuntos, Plantillas o Bloc); elige otro nombre"));
+            self.msg(tf!("«{new}» es una carpeta reservada (Diario, Adjuntos, Plantillas o Bloc); elige otro nombre", new = new));
             return;
         }
         if self.vault.workspaces.iter().any(|w| *w != old && w.eq_ignore_ascii_case(&new)) {
-            self.msg(format!("Ya hay un espacio «{new}»"));
+            self.msg(tf!("Ya hay un espacio «{new}»", new = new));
             return;
         }
         self.save();
         let (from, to) = (self.vault.root.join(&old), self.vault.root.join(&new));
         let snapshot = self.agenda.snapshot();
         if let Err(e) = fs::rename(&from, &to) {
-            self.msg(format!("No se pudo cambiar el nombre: {e}"));
+            self.msg(tf!("No se pudo cambiar el nombre: {e}", e = e));
             return;
         }
         if let Err(e) = self.agenda.rename_space(&old, &new) {
-            self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
+            self.msg(tf!("No se pudo actualizar tareas.txt: {e}", e = e));
         }
         self.gcal_dirty = true;
         self.relink(&old, &new);
@@ -177,7 +177,7 @@ impl NotesApp {
             relinks: vec![(old.clone(), new.clone())],
         });
         self.undo_entry = None;
-        self.msg(format!("El espacio «{old}» ahora se llama «{new}»"));
+        self.msg(tf!("El espacio «{old}» ahora se llama «{new}»", old = old, new = new));
     }
 
     /// Cambia el nombre de una etiqueta en todas las notas (si ya existe la nueva, se juntan).
@@ -193,7 +193,7 @@ impl NotesApp {
             let Ok(text) = vault::read_text(&p) else { continue };
             let Some(new_text) = tags::rename(&text, &old, &new) else { continue };
             if let Err(e) = fs::write(&p, &new_text) {
-                self.msg(format!("No se pudo cambiar {}: {e}", vault::stem(&p)));
+                self.msg(tf!("No se pudo cambiar {note}: {e}", note = vault::stem(&p), e = e));
                 continue;
             }
             // Cambiar una etiqueta no es contenido nuevo: la IA no la vuelve a organizar.
@@ -228,7 +228,7 @@ impl NotesApp {
             relinks: Vec::new(),
         });
         self.undo_entry = None;
-        self.msg(format!("#{old} ahora es #{new} en {}", plural(n, "nota")));
+        self.msg(tf!("#{old} ahora es #{new} en {notes}", old = old, new = new, notes = plural(n, "nota")));
     }
 
     /// Deja una nota completa como tarea (con su título; la tarea abre la nota).
@@ -240,16 +240,16 @@ impl NotesApp {
         let title = if agenda::is_date(&stem) { format!("Revisar la nota del {}", long_date(&stem)) } else { stem };
         let rel = self.rel(&path);
         if self.agenda.tasks().iter().any(|t| !t.done && t.note.as_deref() == Some(rel.as_str()) && t.text == title) {
-            self.msg(format!("«{title}» ya es una tarea"));
+            self.msg(tf!("«{title}» ya es una tarea", title = title));
             return;
         }
         let ws = self.space_of(&path);
         match self.agenda.add_task(agenda::format_task(&today(), &title, &ws, None, &rel, Some(&new_task_id()))) {
             Ok(()) => {
                 self.gcal_dirty = true;
-                self.msg(format!("«{title}» quedó como tarea (en Tareas)"));
+                self.msg(tf!("«{title}» quedó como tarea (en Tareas)", title = title));
             }
-            Err(e) => self.msg(format!("No se pudo escribir tareas.txt: {e}")),
+            Err(e) => self.msg(tf!("No se pudo escribir tareas.txt: {e}", e = e)),
         }
     }
 
@@ -261,22 +261,22 @@ impl NotesApp {
         let mut close = false;
         let modal = egui::Modal::new(Id::new("renombrar-etiqueta")).show(ctx, |ui| {
             ui.set_width(360.0);
-            ui.label(RichText::new(format!("Cambiar el nombre de #{old}")).font(theme::bold(16.0)));
+            ui.label(RichText::new(tf!("Cambiar el nombre de #{old}", old = old)).font(theme::bold(16.0)));
             ui.add_space(4.0);
-            ui.label(RichText::new("Cambia en todas las notas. Si ya existe la etiqueta nueva, se juntan.").size(13.0).color(MUTED()));
+            ui.label(RichText::new(t!("Cambia en todas las notas. Si ya existe la etiqueta nueva, se juntan.")).size(13.0).color(MUTED()));
             ui.add_space(8.0);
-            let r = ui.add(egui::TextEdit::singleline(name).hint_text("Nombre nuevo").desired_width(f32::INFINITY));
+            let r = ui.add(egui::TextEdit::singleline(name).hint_text(t!("Nombre nuevo")).desired_width(f32::INFINITY));
             if !r.has_focus() && !r.lost_focus() && ui.memory(|m| m.focused().is_none()) {
                 r.request_focus();
             }
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                if ui.add(egui::Button::new(RichText::new("Cambiar").color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() || enter {
+                if ui.add(egui::Button::new(RichText::new(t!("Cambiar")).color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() || enter {
                     action = Some(Action::RenameTag(old.clone(), name.clone()));
                     close = true;
                 }
-                if ui.button("Cancelar").clicked() {
+                if ui.button(t!("Cancelar")).clicked() {
                     close = true;
                 }
             });

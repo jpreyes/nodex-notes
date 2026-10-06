@@ -252,7 +252,7 @@ impl NotesApp {
             None => question.clone(),
         };
         let input = ask::Input { question: asked, history, docs, tasks: task_list, events, mails, today: today() };
-        let turn = Turn { question, answer: None, blocks: Vec::new(), progress: "Buscando en tus notas…".into(), sources, tasks, actions: Vec::new(), done: Vec::new(), entry: None };
+        let turn = Turn { question, answer: None, blocks: Vec::new(), progress: t!("Buscando en tus notas…").into(), sources, tasks, actions: Vec::new(), done: Vec::new(), entry: None };
         (input, turn)
     }
 
@@ -295,14 +295,14 @@ impl NotesApp {
     pub(super) fn save_text_note(&mut self, title: &str, text: String) {
         let path = self.vault.unique_path(&self.ws, title);
         if let Err(e) = fs::write(&path, &text) {
-            self.msg(format!("No se pudo guardar: {e}"));
+            self.msg(tf!("No se pudo guardar: {e}", e = e));
             return;
         }
         // Es un resumen: no hace falta que la IA vuelva a sacar tareas de ella.
         self.analyzed.insert(ai::fnv(&text));
         self.save_analyzed();
         self.vault.scan();
-        self.msg(format!("Guardada en «{}»", vault::stem(&path)));
+        self.msg(tf!("Guardada en «{note}»", note = vault::stem(&path)));
         self.open(path, Some(0));
     }
 
@@ -344,8 +344,8 @@ impl NotesApp {
                     if !self.chats_wide {
                         let list = self.chat_list();
                         if !list.is_empty() {
-                            ui.menu_button(RichText::new(format!("{} Conversaciones ({})", icon::CLOCK_COUNTER_CLOCKWISE, list.len())).size(12.5), |ui| {
-                                if ui.button(format!("{}  Nueva conversación", icon::PLUS)).clicked() {
+                            ui.menu_button(RichText::new(format!("{} {}", icon::CLOCK_COUNTER_CLOCKWISE, tf!("Conversaciones ({n})", n = list.len()))).size(12.5), |ui| {
+                                if ui.button(format!("{}  {}", icon::PLUS, t!("Nueva conversación"))).clicked() {
                                     open_chat = Some(None);
                                     ui.close();
                                 }
@@ -361,14 +361,14 @@ impl NotesApp {
                         }
                     }
                     if self.ask.turns.is_empty() {
-                        let intro = format!("Pregunta lo que quieras: busca en {}, tus tareas, la agenda y tus correos, y cada dato lleva el número de su nota. Por ejemplo:", plural(n_notes, "nota"));
+                        let intro = tf!("Pregunta lo que quieras: busca en {notes}, tus tareas, la agenda y tus correos, y cada dato lleva el número de su nota. Por ejemplo:", notes = plural(n_notes, "nota"));
                         ui.label(RichText::new(intro).color(MUTED()));
                         ui.add_space(6.0);
                         let examples = [
-                            "¿Cuáles son todas las tareas que me faltan?".to_string(),
-                            "¿Qué tengo para esta semana?".to_string(),
-                            format!("Resumen de las notas de {}", self.ws),
-                            "¿Qué se habló en la última reunión?".to_string(),
+                            t!("¿Cuáles son todas las tareas que me faltan?").to_string(),
+                            t!("¿Qué tengo para esta semana?").to_string(),
+                            tf!("Resumen de las notas de {ws}", ws = self.ws),
+                            t!("¿Qué se habló en la última reunión?").to_string(),
                         ];
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
@@ -399,7 +399,7 @@ impl NotesApp {
                                 });
                             }
                             Some(Err(e)) => {
-                                ui.label(RichText::new(format!("No se pudo responder: {e}")).color(RED()));
+                                ui.label(RichText::new(tf!("No se pudo responder: {e}", e = e)).color(RED()));
                             }
                             Some(Ok(_)) => {
                                 if let Some(a) = self.answer_ui(ui, turn, &tasks_now) {
@@ -416,7 +416,7 @@ impl NotesApp {
                                         let can_undo = turn.entry.is_some()
                                             && self.undo_entry == turn.entry
                                             && self.undo.as_ref().is_some_and(|u| u.at.elapsed() < UNDO_WINDOW);
-                                        if can_undo && ui.add(egui::Button::new(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5))).clicked() {
+                                        if can_undo && ui.add(egui::Button::new(RichText::new(format!("{} {}", icon::ARROW_COUNTER_CLOCKWISE, t!("Deshacer"))).size(12.5))).clicked() {
                                             action = Some(Action::Undo);
                                         }
                                     });
@@ -424,10 +424,10 @@ impl NotesApp {
                                 ui.add_space(6.0);
                                 ui.horizontal(|ui| {
                                     let small = |t: String| egui::Button::new(RichText::new(t).size(12.5).color(MUTED())).frame(false);
-                                    if ui.add(small(format!("{} Guardar como nota", icon::FLOPPY_DISK))).clicked() {
+                                    if ui.add(small(format!("{} {}", icon::FLOPPY_DISK, t!("Guardar como nota")))).clicked() {
                                         save = Some(ti);
                                     }
-                                    if ui.add(small(format!("{} Copiar", icon::COPY))).clicked() {
+                                    if ui.add(small(format!("{} {}", icon::COPY, t!("Copiar")))).clicked() {
                                         ui.ctx().copy_text(plain(turn));
                                     }
                                 });
@@ -442,7 +442,7 @@ impl NotesApp {
                     let enter = focused
                         && !ui.input(|i| i.modifiers.shift)
                         && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
-                    let hint = if self.ask.turns.is_empty() { "Escribe tu pregunta…" } else { "Otra pregunta, o sigue con esta…" };
+                    let hint = if self.ask.turns.is_empty() { t!("Escribe tu pregunta…") } else { t!("Otra pregunta, o sigue con esta…") };
                     let mut submit = false;
                     Frame::new()
                         .fill(theme::c(Color32::WHITE))
@@ -465,7 +465,7 @@ impl NotesApp {
                                 }
                                 let color = if busy || self.ask.input.trim().is_empty() { MUTED() } else { ACCENT() };
                                 let b = egui::Button::new(RichText::new(icon::PAPER_PLANE_RIGHT).size(18.0).color(color)).frame(false);
-                                if ui.add(b).on_hover_text("Preguntar (Enter)").clicked() {
+                                if ui.add(b).on_hover_text(t!("Preguntar (Enter)")).clicked() {
                                     submit = true;
                                 }
                             });
@@ -477,8 +477,8 @@ impl NotesApp {
                     if !self.ask.turns.is_empty() {
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("La IA lee tus notas para responder.").size(12.5).color(MUTED()));
-                            if !busy && ui.link(RichText::new("Nueva conversación").size(12.5)).on_hover_text("Esta queda guardada en la lista de conversaciones").clicked() {
+                            ui.label(RichText::new(t!("La IA lee tus notas para responder.")).size(12.5).color(MUTED()));
+                            if !busy && ui.link(RichText::new(t!("Nueva conversación")).size(12.5)).on_hover_text(t!("Esta queda guardada en la lista de conversaciones")).clicked() {
                                 self.new_chat();
                             }
                         });
@@ -532,7 +532,7 @@ impl NotesApp {
                         (_, Some(t)) => {
                             let (glyph, color) = if t.done { (icon::CHECK_SQUARE, ACCENT()) } else { (icon::SQUARE, MUTED()) };
                             let b = egui::Button::new(RichText::new(glyph).size(17.0).color(color)).frame(false);
-                            if ui.add(b).on_hover_text(if t.done { "Marcar pendiente" } else { "Marcar hecha" }).clicked() {
+                            if ui.add(b).on_hover_text(if t.done { t!("Marcar pendiente") } else { t!("Marcar hecha") }).clicked() {
                                 action = Some(Action::ToggleTask(t.raw.clone()));
                             }
                         }
@@ -579,7 +579,7 @@ impl NotesApp {
                                 }
                             };
                             let tip = match line {
-                                Some(l) => format!("{} · línea {l}", src.label),
+                                Some(l) => tf!("{label} · línea {l}", label = src.label, l = l),
                                 None => src.label.clone(),
                             };
                             ui.add_space(2.0);
@@ -606,7 +606,7 @@ impl NotesApp {
                     let Some(src) = turn.sources.get(k) else { continue };
                     let text = format!("{}  {}", i + 1, src.label);
                     let b = egui::Button::new(RichText::new(text).size(12.5).color(ACCENT())).corner_radius(6);
-                    if ui.add(b).on_hover_text("Abrir la nota").clicked() {
+                    if ui.add(b).on_hover_text(t!("Abrir la nota")).clicked() {
                         action = Some(self.open_at_line(&src.path, *line));
                     }
                 }

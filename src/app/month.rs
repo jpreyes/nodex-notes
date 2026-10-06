@@ -5,8 +5,6 @@
 use super::*;
 use chrono::{Datelike, Duration as Days};
 
-const WEEKDAYS: [&str; 7] = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
-const MONTHS: [&str; 12] = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 /// Cuántas cosas se ven dentro de un día (las demás, «+N»).
 const IN_CELL: usize = 3;
 
@@ -64,16 +62,16 @@ impl NotesApp {
 
         // Mes, flechas y «Hoy».
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{} {}", MONTHS[shown.month0() as usize], shown.year())).font(theme::bold(18.0)));
+            ui.label(RichText::new(format!("{} {}", crate::i18n::months()[shown.month0() as usize], shown.year())).font(theme::bold(18.0)));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button(RichText::new(icon::CARET_RIGHT).size(14.0)).on_hover_text("Mes siguiente").clicked() {
+                if ui.button(RichText::new(icon::CARET_RIGHT).size(14.0)).on_hover_text(t!("Mes siguiente")).clicked() {
                     self.agenda_month = Some(add_months(shown, 1));
                 }
-                if ui.button(RichText::new("Hoy").size(13.0)).clicked() {
+                if ui.button(RichText::new(t!("Hoy")).size(13.0)).clicked() {
                     self.agenda_month = None;
                     self.agenda_day = Some(key(today_d));
                 }
-                if ui.button(RichText::new(icon::CARET_LEFT).size(14.0)).on_hover_text("Mes anterior").clicked() {
+                if ui.button(RichText::new(icon::CARET_LEFT).size(14.0)).on_hover_text(t!("Mes anterior")).clicked() {
                     self.agenda_month = Some(add_months(shown, -1));
                 }
             });
@@ -85,7 +83,7 @@ impl NotesApp {
         let cell_h = 92.0;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
-            for d in WEEKDAYS {
+            for d in crate::i18n::dias_cortos() {
                 let (r, _) = ui.allocate_exact_size(egui::vec2(cell_w, 20.0), Sense::hover());
                 ui.painter().text(r.center(), Align2::CENTER_CENTER, d, FontId::proportional(12.0), MUTED());
             }
@@ -122,12 +120,12 @@ impl NotesApp {
                         y += 16.0;
                     }
                     if list.len() > IN_CELL {
-                        p.text(egui::pos2(rect.left() + 6.0, y), Align2::LEFT_TOP, format!("+{} más", list.len() - IN_CELL), FontId::proportional(10.5), MUTED());
+                        p.text(egui::pos2(rect.left() + 6.0, y), Align2::LEFT_TOP, tf!("+{n} más", n = list.len() - IN_CELL), FontId::proportional(10.5), MUTED());
                     }
                     if resp.clicked() {
                         self.agenda_day = Some(k.clone());
                     }
-                    let tip = if list.is_empty() { "Nada este día".to_string() } else { list.iter().map(|c| if c.0.is_empty() { c.1.clone() } else { format!("{} {}", c.0, c.1) }).collect::<Vec<_>>().join("\n") };
+                    let tip = if list.is_empty() { t!("Nada este día").to_string() } else { list.iter().map(|c| if c.0.is_empty() { c.1.clone() } else { format!("{} {}", c.0, c.1) }).collect::<Vec<_>>().join("\n") };
                     resp.on_hover_text(tip);
                 }
             });
@@ -136,7 +134,7 @@ impl NotesApp {
         // El día elegido, con todo lo que se puede hacer con cada cosa.
         ui.add_space(14.0);
         let sel = NaiveDate::parse_from_str(&selected, "%Y-%m-%d").unwrap_or(today_d);
-        let label = if sel == today_d { format!("Hoy · {}", long_date(&selected)) } else { long_date(&selected) };
+        let label = if sel == today_d { tf!("Hoy · {date}", date = long_date(&selected)) } else { long_date(&selected) };
         ui.label(RichText::new(label).font(theme::bold(15.0)).color(if sel == today_d { ACCENT() } else { TEXT() }));
         ui.add_space(4.0);
         let follows = self.follow_up_map();
@@ -144,7 +142,7 @@ impl NotesApp {
         let day_events: Vec<&agenda::Event> = events.iter().filter(|e| e.date == selected).collect();
         let day_tasks: Vec<&agenda::Task> = tasks.iter().filter(|t| t.due.as_deref() == Some(selected.as_str())).collect();
         if day_events.is_empty() && day_tasks.is_empty() {
-            ui.label(RichText::new("Nada este día.").color(MUTED()));
+            ui.label(RichText::new(t!("Nada este día.")).color(MUTED()));
         }
         for e in day_events {
             let done = marks.get(&day_items::event_key(e)).map(String::as_str) == Some("hecho");

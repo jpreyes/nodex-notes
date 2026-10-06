@@ -61,22 +61,22 @@ impl NotesApp {
             }
             ui.add_space(10.0);
         };
-        section_ui(ui, &format!("{} Atrasadas", icon::WARNING_CIRCLE), RED(), &overdue, &[]);
-        section_ui(ui, "Hoy", ACCENT(), &for_today, &ev_today);
-        section_ui(ui, &format!("Mañana · {}", long_date(&tomorrow)), TEXT(), &for_tomorrow, &ev_tomorrow);
-        section_ui(ui, "Esta semana", TEXT(), &this_week, &ev_week);
+        section_ui(ui, &format!("{} {}", icon::WARNING_CIRCLE, t!("Atrasadas")), RED(), &overdue, &[]);
+        section_ui(ui, t!("Hoy"), ACCENT(), &for_today, &ev_today);
+        section_ui(ui, &tf!("Mañana · {date}", date = long_date(&tomorrow)), TEXT(), &for_tomorrow, &ev_tomorrow);
+        section_ui(ui, t!("Esta semana"), TEXT(), &this_week, &ev_week);
         if nothing {
-            ui.label(RichText::new("Nada atrasado ni pendiente para esta semana.").color(MUTED()));
+            ui.label(RichText::new(t!("Nada atrasado ni pendiente para esta semana.")).color(MUTED()));
             ui.add_space(8.0);
         }
         ui.horizontal_wrapped(|ui| {
-            if ui.button(format!("{} Escribir en la nota de hoy", icon::NOTE_PENCIL)).clicked() {
+            if ui.button(format!("{} {}", icon::NOTE_PENCIL, t!("Escribir en la nota de hoy"))).clicked() {
                 action = Some(Action::Today);
             }
-            if ui.link(RichText::new(format!("{} Revisión semanal", icon::CALENDAR_CHECK)).size(12.5)).clicked() {
+            if ui.link(RichText::new(format!("{} {}", icon::CALENDAR_CHECK, t!("Revisión semanal"))).size(12.5)).clicked() {
                 action = Some(Action::ShowTab(View::Week));
             }
-            if undated > 0 && ui.link(RichText::new(format!("{} sin fecha", plural(undated, "tarea"))).size(12.5)).clicked() {
+            if undated > 0 && ui.link(RichText::new(tf!("{n} sin fecha", n = plural(undated, "tarea"))).size(12.5)).clicked() {
                 action = Some(Action::ShowTab(View::Tasks));
             }
         });

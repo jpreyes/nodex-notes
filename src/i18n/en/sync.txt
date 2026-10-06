@@ -1,0 +1,214 @@
+# Traducciones al inglés (ver src/i18n.rs).
+
+el servidor respondió {status}
+= the server replied {status}
+
+no se pudo escribir {ruta}: {e}
+= couldn't write {ruta}: {e}
+
+Prueba gratis · quedan {n} días
+= Free trial · {n} days left
+
+Prueba gratis · queda 1 día
+= Free trial · 1 day left
+
+Prueba gratis · termina hoy
+= Free trial · ends today
+
+Prueba terminada
+= Trial ended
+
+Fundador
+= Founder
+
+Gratis (sin IA incluida)
+= Free (no Included AI)
+
+Tu cuenta espera aprobación.
+= Your account is waiting for approval.
+
+sin conexión con el servidor ({e})
+= no connection to the server ({e})
+
+Microsoft no entregó el permiso
+= Microsoft didn't grant permission
+
+Esa clave no es válida
+= That key isn't valid
+
+no se pudo cifrar
+= couldn't encrypt
+
+datos incompletos
+= incomplete data
+
+La configuración de tu cuenta está cifrada con otra clave: abre la misma carpeta de notas que en tu otro equipo, o pega su clave en Tu cuenta.
+= Your account settings are encrypted with a different key: open the same notes folder as on your other computer, or paste its key in Your account.
+
+La configuración de tu cuenta está cifrada con la clave de tu carpeta de notas: abre la misma carpeta que en tu otro equipo, o pega su clave en Tu cuenta.
+= Your account settings are encrypted with your notes folder's key: open the same folder as on your other computer, or paste its key in Your account.
+
+Otro equipo está cambiando la configuración; se reintentará en un rato.
+= Another computer is changing the settings; we'll try again in a bit.
+
+sin conexión ({e})
+= no connection ({e})
+
+GitHub respondió {status}
+= GitHub replied {status}
+
+GitHub no respondió la versión
+= GitHub didn't return the version
+
+Windows te pedirá permiso para instalarla.
+= Windows will ask for permission to install it.
+
+Se te pedirá tu contraseña para instalarla.
+= You'll be asked for your password to install it.
+
+La actualiza la Microsoft Store.
+= The Microsoft Store keeps it up to date.
+
+Esta copia no se puede actualizar sola ({why}): baja la nueva desde GitHub.
+= This copy can't update itself ({why}): download the new one from GitHub.
+
+no se sabe dónde está
+= its location is unknown
+
+es una copia de desarrollo
+= it's a development build
+
+no hay versión para este procesador
+= there's no version for this processor
+
+está en una carpeta donde no se puede escribir
+= it's in a folder that can't be written to
+
+no está dentro de Notas.app
+= it isn't inside Notas.app
+
+la versión nueva llegó incompleta
+= the new version arrived incomplete
+
+la versión nueva llegó dañada (su huella no coincide)
+= the new version arrived damaged (its checksum doesn't match)
+
+se cortó la descarga ({e})
+= the download was interrupted ({e})
+
+no se pudo {what}
+= couldn't {what}
+
+descomprimir la versión nueva
+= unzip the new version
+
+la versión nueva no trae el programa
+= the new version doesn't include the program
+
+la versión nueva no trae Notas.app
+= the new version doesn't include Notas.app
+
+no se pudo reemplazar la app ({e})
+= couldn't replace the app ({e})
+
+no se pudo copiar la versión nueva ({e})
+= couldn't copy the new version ({e})
+
+no se pudo abrir la versión nueva ({e})
+= couldn't open the new version ({e})
+
+no se pudo poner la versión nueva ({e})
+= couldn't put the new version in place ({e})
+
+no se instaló (¿se canceló la contraseña?)
+= it wasn't installed (was the password canceled?)
+
+esta copia no se puede actualizar sola
+= this copy can't update itself
+
+el instalador .msi es solo para Windows
+= the .msi installer is only for Windows
+
+Microsoft To Do conectado: tus tareas van a la lista «Notas»
+= Microsoft To Do connected: your tasks go to the “Notas” list
+
+Microsoft To Do: {sent} enviadas, {got} recibidas
+= Microsoft To Do: {sent} sent, {got} received
+
+Microsoft To Do desconectado
+= Microsoft To Do disconnected
+
+Microsoft no entregó un permiso permanente
+= Microsoft didn't grant lasting permission
+
+no conectado
+= not connected
+
+respuesta sin token
+= response without a token
+
+Microsoft retiró el permiso; vuelve a conectar desde Tareas
+= Microsoft revoked permission; reconnect from Tasks
+
+Microsoft no devolvió la lista
+= Microsoft didn't return the list
+
+la lista «Notas» ya no existía en To Do; se volverá a crear
+= the “Notas” list no longer existed in To Do; it will be created again
+
+no se pudieron enviar todas ({msg})
+= couldn't send them all ({msg})
+
+Google Calendar conectado: se creó el calendario «Notas»
+= Google Calendar connected: the “Notas” calendar was created
+
+Google Calendar: {created} agregados, {deleted} quitados
+= Google Calendar: {created} added, {deleted} removed
+
+Google Calendar desconectado
+= Google Calendar disconnected
+
+tu Google Calendar
+= your Google Calendar
+
+Google no entregó un token de acceso permanente
+= Google didn't grant a lasting access token
+
+Google retiró el permiso; vuelve a conectar desde Agenda
+= Google revoked permission; reconnect from Calendar
+
+Google no devolvió el calendario
+= Google didn't return the calendar
+
+el calendario «Notas» ya no existía; se volverá a crear
+= the “Notas” calendar no longer existed; it will be created again
+
+Listo: Notas quedó conectada a {service}. Ya puedes cerrar esta pestaña.
+= Done: Notas is now connected to {service}. You can close this tab.
+
+No se dio el permiso. Puedes cerrar esta pestaña e intentarlo de nuevo.
+= Permission wasn't granted. You can close this tab and try again.
+
+permiso rechazado ({error})
+= permission denied ({error})
+
+se acabó el tiempo para dar el permiso en el navegador
+= time ran out to grant permission in the browser
+
+el enlace no es un calendario ICS
+= the link isn't an ICS calendar
+
+Abrir Notas
+= Open Notas
+
+Salir de Notas
+= Quit Notas
+
+Notas · sigue sincronizando tus notas
+= Notas · still syncing your notes
+
+Windows no lo permitió
+= Windows didn't allow it
+
+solo en Windows
+= Windows only

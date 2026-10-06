@@ -87,13 +87,13 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
             let (host, _) = mail::server_for(a);
             ui.label(RichText::new(host).size(12.5).color(MUTED()));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("Quitar").clicked() {
+                if ui.button(t!("Quitar")).clicked() {
                     action = Some(Action::RemoveMailAccount(i));
                 }
-                if ui.button("Editar").on_hover_text("Cambiar el correo, la contraseña de aplicación o el servidor").clicked() {
+                if ui.button(t!("Editar")).on_hover_text(t!("Cambiar el correo, la contraseña de aplicación o el servidor")).clicked() {
                     *form = Some((a.correo.clone(), String::new(), a.servidor.clone(), Some(i)));
                 }
-                if ui.button("Probar").clicked() {
+                if ui.button(t!("Probar")).clicked() {
                     action = Some(Action::TestMailAccount(i));
                 }
             });
@@ -101,7 +101,7 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
         let status = state.tests.get(&a.correo).cloned().or_else(|| state.errors.get(&a.correo).cloned().map(Err));
         match status {
             Some(Ok(())) => {
-                ui.label(RichText::new(format!("{} Conexión correcta", icon::CHECK_CIRCLE)).size(12.5).color(SUCCESS()));
+                ui.label(RichText::new(format!("{} {}", icon::CHECK_CIRCLE, t!("Conexión correcta"))).size(12.5).color(SUCCESS()));
             }
             Some(Err(e)) => {
                 ui.label(RichText::new(format!("{} {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED()));
@@ -112,7 +112,7 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
     }
     match form {
         None => {
-            if ui.button(format!("{}  Agregar correo", icon::PLUS)).clicked() {
+            if ui.button(format!("{}  {}", icon::PLUS, t!("Agregar correo"))).clicked() {
                 *form = Some((String::new(), String::new(), String::new(), None));
             }
         }
@@ -122,16 +122,16 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
             Frame::new().fill(BG_SIDE()).stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 if editing.is_some() {
-                    ui.label(RichText::new("Cambiar la conexión").font(theme::bold(14.0)));
+                    ui.label(RichText::new(t!("Cambiar la conexión")).font(theme::bold(14.0)));
                 }
-                ui.add(egui::TextEdit::singleline(email).hint_text("tu@gmail.com").desired_width(f32::INFINITY));
-                let hint = if editing.is_some() { "Contraseña de aplicación (vacía = se mantiene la actual)" } else { "Contraseña de aplicación (no la de siempre)" };
+                ui.add(egui::TextEdit::singleline(email).hint_text(t!("tu@gmail.com")).desired_width(f32::INFINITY));
+                let hint = if editing.is_some() { t!("Contraseña de aplicación (vacía = se mantiene la actual)") } else { t!("Contraseña de aplicación (no la de siempre)") };
                 ui.add(egui::TextEdit::singleline(pass).hint_text(hint).password(true).desired_width(f32::INFINITY));
-                ui.add(egui::TextEdit::singleline(server).hint_text("Servidor IMAP (opcional: se deduce del correo)").desired_width(f32::INFINITY));
+                ui.add(egui::TextEdit::singleline(server).hint_text(t!("Servidor IMAP (opcional: se deduce del correo)")).desired_width(f32::INFINITY));
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     let ok = email.contains('@') && (editing.is_some() || !pass.trim().is_empty());
-                    if ui.add_enabled(ok, egui::Button::new(if editing.is_some() { "Guardar" } else { "Agregar" })).clicked() {
+                    if ui.add_enabled(ok, egui::Button::new(if editing.is_some() { t!("Guardar") } else { t!("Agregar") })).clicked() {
                         let a = Account { correo: email.trim().to_string(), clave: pass.trim().to_string(), servidor: server.trim().to_string() };
                         action = Some(match editing {
                             Some(i) => Action::UpdateMailAccount(i, a),
@@ -139,17 +139,17 @@ pub(super) fn accounts_panel(ui: &mut Ui, accounts: &[Account], state: &MailStat
                         });
                         close = true;
                     }
-                    if ui.button("Cancelar").clicked() {
+                    if ui.button(t!("Cancelar")).clicked() {
                         close = true;
                     }
                 });
                 ui.add_space(4.0);
-                ui.label(RichText::new("¿Qué es la contraseña de aplicación? Una contraseña especial que se crea en tu cuenta y sirve solo para esta app; se puede borrar cuando quieras.").size(12.5).color(MUTED()));
+                ui.label(RichText::new(t!("¿Qué es la contraseña de aplicación? Una contraseña especial que se crea en tu cuenta y sirve solo para esta app; se puede borrar cuando quieras.")).size(12.5).color(MUTED()));
                 for (service, steps, url) in HELP {
                     ui.horizontal_wrapped(|ui| {
                         ui.label(RichText::new(service).size(12.5).strong());
-                        ui.label(RichText::new(steps).size(12.5).color(MUTED()));
-                        if ui.link(RichText::new("Abrir").size(12.5)).clicked() {
+                        ui.label(RichText::new(crate::i18n::tr(steps)).size(12.5).color(MUTED()));
+                        if ui.link(RichText::new(t!("Abrir")).size(12.5)).clicked() {
                             gcal::open_browser(url);
                         }
                     });
@@ -174,7 +174,7 @@ fn mail_key(m: &Mail) -> String {
 /// Cómo empieza la línea de un correo en la nota de hoy: "Correo de Ana (26 sep): Visita."
 pub(super) fn mail_prefix(m: &Mail) -> String {
     let d = NaiveDate::parse_from_str(m.date.get(..10).unwrap_or(""), "%Y-%m-%d")
-        .map(|d| format!("{} {}", d.day(), MESES[d.month0() as usize]))
+        .map(|d| format!("{} {}", d.day(), crate::i18n::meses_es()[d.month0() as usize]))
         .unwrap_or_default();
     let who = if m.sent { format!("Correo a {}", short_name(&m.to)) } else { format!("Correo de {}", short_name(&m.from)) };
     format!("{who} ({d}): {}.", m.subject.trim().trim_end_matches('.'))
@@ -315,7 +315,7 @@ impl NotesApp {
                 match r {
                     Ok(()) => self.mail.due = true,
                     Err(e) => {
-                        self.mail.errors.insert(account, format!("aviso de correo nuevo: {e}"));
+                        self.mail.errors.insert(account, tf!("aviso de correo nuevo: {e}", e = e));
                     }
                 }
             }
@@ -538,7 +538,7 @@ impl NotesApp {
                     let _ = fs::create_dir_all(dir);
                 }
                 if let Err(e) = fs::write(&path, &text) {
-                    self.msg(format!("No se pudo anotar el correo: {e}"));
+                    self.msg(tf!("No se pudo anotar el correo: {e}", e = e));
                     continue;
                 }
                 if let Some(mt) = vault::modified(&path) {
@@ -563,9 +563,9 @@ impl NotesApp {
         }
         let notes: Vec<String> = files.iter().map(|(p, _)| self.rel(p)).collect();
         self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), keep_tasks: Vec::new(), relinks: Vec::new() });
-        let replies_text = if followed > 0 { format!("{} como seguimiento del correo original", plural(followed, "respuesta")) } else { String::new() };
-        let new_text = if entries.is_empty() { String::new() } else { format!("{} en la nota de hoy; la IA los ordena", plural(entries.len(), "correo anotado")) };
-        self.msg(format!("Correo · {}", [new_text, replies_text].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")));
+        let replies_text = if followed > 0 { tf!("{n} como seguimiento del correo original", n = plural(followed, "respuesta")) } else { String::new() };
+        let new_text = if entries.is_empty() { String::new() } else { tf!("{n} en la nota de hoy; la IA los ordena", n = plural(entries.len(), "correo anotado")) };
+        self.msg(tf!("Correo · {what}", what = [new_text, replies_text].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")));
         details.extend(entries.iter().map(|(_, l, _)| l.chars().take(220).collect::<String>()));
         let what = format!("Anotó {} en {}", plural(entries.len() + followed, "correo"), notes.join(", "));
         self.log_ai(crate::activity::Kind::Correo, notes.first().map_or("", |s| s.as_str()), what, details, true);
@@ -583,7 +583,7 @@ impl NotesApp {
         let task = self.agenda.tasks().into_iter().find(|t| t.id.as_deref() == Some(task_id.as_str()) || t.raw == task_id);
         if let Some(t) = task.filter(|t| !t.done) {
             self.apply(Action::ToggleTask(t.raw.clone()));
-            self.msg(format!("Hecho: {}", t.text));
+            self.msg(tf!("Hecho: {task}", task = t.text));
         }
     }
 
@@ -598,7 +598,7 @@ impl NotesApp {
         }
         let _ = self.agenda.remove_events(&events);
         self.gcal_dirty = true;
-        self.msg("Se quitó lo que la IA sacó de ese correo");
+        self.msg(t!("Se quitó lo que la IA sacó de ese correo"));
     }
 
     /// Guarda un correo como nota (en su espacio, o en el actual).
@@ -613,7 +613,7 @@ impl NotesApp {
     pub(super) fn test_mail_account(&mut self, i: usize) {
         let Some(a) = self.cfg.correos.get(i).cloned() else { return };
         if self.mail.rx.is_some() {
-            self.msg("El correo se está revisando; prueba en un momento");
+            self.msg(t!("El correo se está revisando; prueba en un momento"));
             return;
         }
         self.mail.tests.remove(&a.correo);
@@ -633,37 +633,37 @@ impl NotesApp {
         let mut toggle_open: Option<String> = None;
         let mut toggle_bulk = false;
         Self::column(ui, "correos", |ui, _| {
-            view_header(ui, "Correos", "Lo que la IA encontró en tu bandeja de entrada y en tus enviados");
+            view_header(ui, t!("Correos"), t!("Lo que la IA encontró en tu bandeja de entrada y en tus enviados"));
             if accounts.is_empty() {
-                ui.label(RichText::new("Agrega tu correo y la IA revisará tus correos para no perder compromisos ni fechas.").color(MUTED()));
+                ui.label(RichText::new(t!("Agrega tu correo y la IA revisará tus correos para no perder compromisos ni fechas.")).color(MUTED()));
                 ui.add_space(6.0);
-                if ui.button(format!("{}  Agregar correo", icon::PLUS)).clicked() {
+                if ui.button(format!("{}  {}", icon::PLUS, t!("Agregar correo"))).clicked() {
                     action = Some(Action::OpenSettings(Section::Mail));
                 }
                 return;
             }
             ui.horizontal_wrapped(|ui| {
                 let status = if self.mail.fetching {
-                    "revisando…".to_string()
+                    t!("revisando…").to_string()
                 } else if self.mail.analyzing {
-                    "la IA está leyendo…".to_string()
+                    t!("la IA está leyendo…").to_string()
                 } else if let Some(t) = self.mail.last_ok {
-                    format!("revisado a las {}", t.format("%H:%M"))
+                    tf!("revisado a las {time}", time = t.format("%H:%M"))
                 } else {
-                    "sin revisar todavía".to_string()
+                    t!("sin revisar todavía").to_string()
                 };
                 let mut when = Vec::new();
                 if self.cfg.correo_al_llegar {
-                    when.push("al llegar un correo".to_string());
+                    when.push(t!("al llegar un correo").to_string());
                 }
                 if !self.cfg.correo_diario.trim().is_empty() {
-                    when.push(format!("a diario a las {}", self.cfg.correo_diario.trim()));
+                    when.push(tf!("a diario a las {time}", time = self.cfg.correo_diario.trim()));
                 }
-                let status = if when.is_empty() { status } else { format!("{status} · revisa {}", when.join(" y ")) };
+                let status = if when.is_empty() { status } else { tf!("{status} · revisa {when}", status = status, when = when.join(&format!(" {} ", t!("y")))) };
                 ui.label(RichText::new(format!("{} · {status}", accounts.join(", "))).size(12.5).color(MUTED()));
                 if self.mail.busy() {
                     ui.spinner();
-                } else if ui.link(RichText::new("Revisar ahora").size(12.5)).clicked() {
+                } else if ui.link(RichText::new(t!("Revisar ahora")).size(12.5)).clicked() {
                     action = Some(Action::CheckMail);
                 }
             });
@@ -671,7 +671,7 @@ impl NotesApp {
                 ui.label(RichText::new(format!("{} {a}: {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED()));
             }
             if let Some(e) = &self.mail.ai_error {
-                ui.label(RichText::new(format!("{} La IA no pudo leer los correos: {e}", icon::WARNING_CIRCLE)).size(12.5).color(RED()));
+                ui.label(RichText::new(format!("{} {}", icon::WARNING_CIRCLE, tf!("La IA no pudo leer los correos: {e}", e = e))).size(12.5).color(RED()));
             }
             ui.add_space(10.0);
 
@@ -680,14 +680,14 @@ impl NotesApp {
                 let f = &m.fulfills[*i];
                 Frame::new().fill(theme::c(Color32::from_rgb(236, 248, 241))).stroke(Stroke::new(1.0, theme::c(Color32::from_rgb(170, 220, 190)))).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.label(RichText::new(format!("{} Verificar un compromiso", icon::CHECK_CIRCLE)).size(12.5).color(SUCCESS()));
-                    ui.label(RichText::new(format!("¿Se cumplió «{}»?", f.task_text)).size(14.5));
-                    ui.label(RichText::new(format!("Llegó «{}» de {} · {}", m.subject, short_name(&m.from), m.date)).size(12.5).color(MUTED()));
+                    ui.label(RichText::new(format!("{} {}", icon::CHECK_CIRCLE, t!("Verificar un compromiso"))).size(12.5).color(SUCCESS()));
+                    ui.label(RichText::new(tf!("¿Se cumplió «{task}»?", task = f.task_text)).size(14.5));
+                    ui.label(RichText::new(tf!("Llegó «{subject}» de {from} · {date}", subject = m.subject, from = short_name(&m.from), date = m.date)).size(12.5).color(MUTED()));
                     ui.horizontal(|ui| {
-                        if ui.button("Sí, marcar hecho").clicked() {
+                        if ui.button(t!("Sí, marcar hecho")).clicked() {
                             action = Some(Action::MailFulfill(m.id.clone(), *i, true));
                         }
-                        if ui.button("Todavía no").clicked() {
+                        if ui.button(t!("Todavía no")).clicked() {
                             action = Some(Action::MailFulfill(m.id.clone(), *i, false));
                         }
                     });
@@ -702,9 +702,9 @@ impl NotesApp {
                 if d != day {
                     day = d.clone();
                     ui.add_space(8.0);
-                    ui.label(RichText::new(if d == today() { format!("Hoy · {}", long_date(&d)) } else { long_date(&d) }).font(theme::bold(14.0)));
+                    ui.label(RichText::new(if d == today() { tf!("Hoy · {date}", date = long_date(&d)) } else { long_date(&d) }).font(theme::bold(14.0)));
                 }
-                let who = if m.sent { format!("Tú → {}", short_name(&m.to)) } else { short_name(&m.from) };
+                let who = if m.sent { tf!("Tú → {to}", to = short_name(&m.to)) } else { short_name(&m.from) };
                 let mut head = egui::Rect::NOTHING;
                 let r = Frame::new().inner_margin(Margin::symmetric(4, 6)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -715,7 +715,7 @@ impl NotesApp {
                                 ui.label(RichText::new(&who).size(14.0).strong().color(color));
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     let time = m.date.get(11..).unwrap_or("");
-                                    ui.label(RichText::new(if m.sent { format!("{time} · enviado") } else { time.to_string() }).size(12.5).color(MUTED()));
+                                    ui.label(RichText::new(if m.sent { tf!("{time} · enviado", time = time) } else { time.to_string() }).size(12.5).color(MUTED()));
                                 });
                             });
                             ui.label(RichText::new(&m.subject).size(14.0));
@@ -725,7 +725,7 @@ impl NotesApp {
                     if !m.summary.is_empty() {
                         ui.label(RichText::new(&m.summary).size(12.5).color(MUTED()));
                     } else if !m.analyzed {
-                        ui.label(RichText::new("La IA todavía no lo lee…").size(12.5).color(MUTED()));
+                        ui.label(RichText::new(t!("La IA todavía no lo lee…")).size(12.5).color(MUTED()));
                     }
                     if !m.items.is_empty() || !m.workspace.is_empty() {
                         ui.horizontal_wrapped(|ui| {
@@ -735,7 +735,7 @@ impl NotesApp {
                                 ui.label(RichText::new(format!("{} {it}", icon::CHECK_SQUARE)).size(12.5).color(c.text).background_color(c.bg));
                             }
                             if !m.noted.is_empty() {
-                                ui.label(RichText::new(format!("→ anotado en {}", m.noted.replace('/', " / "))).size(12.5).color(MUTED()));
+                                ui.label(RichText::new(tf!("→ anotado en {note}", note = if m.noted == "otro equipo" { t!("otro equipo").to_string() } else { m.noted.replace('/', " / ") })).size(12.5).color(MUTED()));
                             } else if !m.workspace.is_empty() {
                                 ui.label(RichText::new(format!("→ {}", m.workspace)).size(12.5).color(MUTED()));
                             }
@@ -745,21 +745,21 @@ impl NotesApp {
                         ui.add_space(6.0);
                         Frame::new().fill(BG_SIDE()).corner_radius(8).inner_margin(Margin::symmetric(10, 8)).show(ui, |ui| {
                             ui.set_width(ui.available_width());
-                            ui.label(RichText::new(format!("De: {}\nPara: {}", m.from, m.to)).size(12.5).color(MUTED()));
+                            ui.label(RichText::new(tf!("De: {from}\nPara: {to}", from = m.from, to = m.to)).size(12.5).color(MUTED()));
                             ui.add_space(4.0);
                             ui.label(RichText::new(m.body.chars().take(3000).collect::<String>()).size(13.0));
                         });
                         ui.horizontal(|ui| {
-                            if ui.button(format!("{} Guardar como nota", icon::FLOPPY_DISK)).clicked() {
+                            if ui.button(format!("{} {}", icon::FLOPPY_DISK, t!("Guardar como nota"))).clicked() {
                                 action = Some(Action::MailSaveNote(m.id.clone()));
                             }
                             if !m.task_ids.is_empty() || !m.event_lines.is_empty() {
-                                if ui.button(format!("{} Quitar lo que sacó la IA", icon::TRASH)).clicked() {
+                                if ui.button(format!("{} {}", icon::TRASH, t!("Quitar lo que sacó la IA"))).clicked() {
                                     action = Some(Action::MailRemoveItems(m.id.clone()));
                                 }
                             }
                             if m.account.to_lowercase().ends_with("@gmail.com") && !m.message_id.is_empty() {
-                                if ui.button(format!("{} Abrir en Gmail", icon::ARROW_SQUARE_OUT)).clicked() {
+                                if ui.button(format!("{} {}", icon::ARROW_SQUARE_OUT, t!("Abrir en Gmail"))).clicked() {
                                     gcal::open_browser(&format!("https://mail.google.com/mail/u/0/#search/rfc822msgid%3A{}", m.message_id.trim_matches(['<', '>'])));
                                 }
                             }
@@ -775,11 +775,11 @@ impl NotesApp {
                 }
             }
             if self.mail.store.mails.is_empty() {
-                ui.label(RichText::new("Todavía no hay correos: la primera revisión trae los de la última semana.").color(MUTED()));
+                ui.label(RichText::new(t!("Todavía no hay correos: la primera revisión trae los de la última semana.")).color(MUTED()));
             }
             if bulk > 0 {
                 ui.add_space(8.0);
-                let label = if self.mail.show_bulk { "Ocultar boletines y correos sin compromisos".to_string() } else { format!("{} sin compromisos (boletines, avisos…): ver", plural(bulk, "correo")) };
+                let label = if self.mail.show_bulk { t!("Ocultar boletines y correos sin compromisos").to_string() } else { tf!("{n} sin compromisos (boletines, avisos…): ver", n = plural(bulk, "correo")) };
                 if ui.link(RichText::new(label).size(12.5).color(MUTED())).clicked() {
                     toggle_bulk = true;
                 }

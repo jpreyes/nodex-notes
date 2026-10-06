@@ -83,11 +83,11 @@ impl Calendars {
                     Ok(c) => rt.block_on(async {
                         let r = c.get(&url).header("User-Agent", format!("nodex-notes/{}", env!("CARGO_PKG_VERSION"))).send().await.map_err(|e| e.to_string())?;
                         if !r.status().is_success() {
-                            return Err(format!("el servidor respondió {}", r.status()));
+                            return Err(tf!("el servidor respondió {status}", status = r.status()));
                         }
                         let text = r.text().await.map_err(|e| e.to_string())?;
                         if !text.contains("BEGIN:VCALENDAR") {
-                            return Err("el enlace no es un calendario ICS".into());
+                            return Err(t!("el enlace no es un calendario ICS").into());
                         }
                         Ok(text)
                     }),

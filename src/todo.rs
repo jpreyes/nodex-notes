@@ -325,7 +325,7 @@ impl ToDo {
                     self.connecting = false;
                     self.connected = true;
                     self.last_error = None;
-                    msgs.push("Microsoft To Do conectado: tus tareas van a la lista «Notas»".into());
+                    msgs.push(t!("Microsoft To Do conectado: tus tareas van a la lista «Notas»").into());
                 }
                 Reply::Connected(Err(e)) => {
                     self.connecting = false;
@@ -337,7 +337,7 @@ impl ToDo {
                     self.last_error = s.warning.clone();
                     let got = s.changes.len();
                     if s.sent + got > 0 {
-                        msgs.push(format!("Microsoft To Do: {} enviadas, {} recibidas", s.sent, got));
+                        msgs.push(tf!("Microsoft To Do: {sent} enviadas, {got} recibidas", sent = s.sent, got = got));
                     }
                     if let Some(w) = s.warning {
                         msgs.push(format!("Microsoft To Do: {w}"));
@@ -352,7 +352,7 @@ impl ToDo {
                 Reply::Disconnected => {
                     self.connected = false;
                     self.last_sync = None;
-                    msgs.push("Microsoft To Do desconectado".into());
+                    msgs.push(t!("Microsoft To Do desconectado").into());
                 }
             }
         }
@@ -376,7 +376,7 @@ struct HttpError {
 impl Worker {
     fn send(&self, req: reqwest::RequestBuilder) -> Result<Value, HttpError> {
         self.rt.block_on(async {
-            let resp = req.send().await.map_err(|e| HttpError { status: 0, message: format!("sin conexión ({e})") })?;
+            let resp = req.send().await.map_err(|e| HttpError { status: 0, message: tf!("sin conexión ({e})", e = e) })?;
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
             if (200..300).contains(&status) {
@@ -452,7 +452,7 @@ impl Worker {
 
     /// Microsoft entrega un token de renovación nuevo cada vez: se guarda el último.
     fn save_token(&self, v: &Value) -> Result<(), String> {
-        let refresh = v["refresh_token"].as_str().ok_or("Microsoft no entregó un permiso permanente")?;
+        let refresh = v["refresh_token"].as_str().ok_or(t!("Microsoft no entregó un permiso permanente"))?;
         let token = serde_json::to_string(&Token { refresh_token: refresh.to_string() }).map_err(|e| e.to_string())?;
         if let Some(dir) = token_path().parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -473,7 +473,7 @@ impl Worker {
                 return Ok(t.clone());
             }
         }
-        let raw = std::fs::read_to_string(token_path()).map_err(|_| "no conectado".to_string())?;
+        let raw = std::fs::read_to_string(token_path()).map_err(|_| t!("no conectado").to_string())?;
         let tok: Token = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
         let form = [
             ("client_id", CLIENT_ID),
@@ -485,11 +485,11 @@ impl Worker {
             Ok(v) => {
                 let _ = self.save_token(&v);
                 self.remember_access(&v);
-                self.access.as_ref().map(|(t, _)| t.clone()).ok_or_else(|| "respuesta sin token".into())
+                self.access.as_ref().map(|(t, _)| t.clone()).ok_or_else(|| t!("respuesta sin token").into())
             }
             Err(e) if e.status == 400 || e.status == 401 => {
                 let _ = std::fs::remove_file(token_path());
-                Err("Microsoft retiró el permiso; vuelve a conectar desde Tareas".into())
+                Err(t!("Microsoft retiró el permiso; vuelve a conectar desde Tareas").into())
             }
             Err(e) => Err(e.message),
         }
@@ -521,7 +521,7 @@ impl Worker {
             None => {
                 let body = json!({ "displayName": LIST_NAME });
                 let v = self.send(self.http.post(format!("{}/me/todo/lists", self.ep.api)).bearer_auth(&token).json(&body)).map_err(|e| e.message)?;
-                v["id"].as_str().ok_or("Microsoft no devolvió la lista")?.to_string()
+                v["id"].as_str().ok_or(t!("Microsoft no devolvió la lista"))?.to_string()
             }
         };
         st.links.clear();
@@ -565,7 +565,7 @@ impl Worker {
                 st.list_id.clear();
                 st.links.clear();
                 self.save_state(&st);
-                return Err("la lista «Notas» ya no existía en To Do; se volverá a crear".into());
+                return Err(t!("la lista «Notas» ya no existía en To Do; se volverá a crear").into());
             }
             Err(e) => return Err(e.message),
         };
@@ -624,7 +624,7 @@ impl Worker {
                     }
                 }
                 Err(e) => {
-                    warning = Some(format!("no se pudieron enviar todas ({})", e.message));
+                    warning = Some(tf!("no se pudieron enviar todas ({msg})", msg = e.message));
                     break;
                 }
             }

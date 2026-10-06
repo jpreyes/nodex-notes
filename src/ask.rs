@@ -191,15 +191,15 @@ pub fn start(cfg: &Config, input: Input, ctx: eframe::egui::Context) -> Receiver
         let chosen: Vec<usize> = if total <= ALL_LIMIT {
             (0..input.docs.len()).collect()
         } else {
-            send(Msg::Progress(format!("Buscando entre {} notas…", input.docs.len())));
+            send(Msg::Progress(tf!("Buscando entre {n} notas…", n = input.docs.len())));
             let (system, user) = selection_prompt(&input);
             let picked = crate::ai::complete(&cfg, &system, &user).ok().map(|r| parse_selection(&r, &input.docs)).unwrap_or_default();
             if picked.is_empty() { keyword_pick(&input) } else { picked }
         };
         send(Msg::Progress(match chosen.len() {
-            0 => "Pensando…".to_string(),
-            1 => "Leyendo 1 nota…".to_string(),
-            n => format!("Leyendo {n} notas…"),
+            0 => t!("Pensando…").to_string(),
+            1 => t!("Leyendo 1 nota…").to_string(),
+            n => tf!("Leyendo {n} notas…", n = n),
         }));
         let (system, user) = answer_prompt(&input, &chosen);
         let result = crate::ai::complete(&cfg, &system, &user);

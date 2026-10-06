@@ -165,7 +165,7 @@ impl NotesApp {
             }
         }
         let Some(png) = encode_png(img.width, img.height, &rgba) else {
-            self.msg("No se pudo convertir la imagen");
+            self.msg(t!("No se pudo convertir la imagen"));
             return true;
         };
         let now = Local::now();
@@ -177,13 +177,13 @@ impl NotesApp {
             i += 1;
         }
         if let Err(e) = fs::create_dir_all(&dir).and_then(|_| fs::write(dir.join(&name), &png)) {
-            self.msg(format!("No se pudo guardar la imagen: {e}"));
+            self.msg(tf!("No se pudo guardar la imagen: {e}", e = e));
             return true;
         }
-        let md = format!("![Captura {} {} {}](../{}/{name})", now.day(), MESES[now.month0() as usize], now.format("%H:%M"), vault::ATTACHMENTS);
+        let md = format!("![Captura {} {} {}](../{}/{name})", now.day(), crate::i18n::meses()[now.month0() as usize], now.format("%H:%M"), vault::ATTACHMENTS);
         // Va en la línea del cursor si está vacía, o en una nueva debajo (sin cursor: al final).
         let _ = self.insert_lines_after(line, vec![md]);
-        self.msg(format!("Captura pegada ({}×{}), guardada en {}/{name}", img.width, img.height, vault::ATTACHMENTS));
+        self.msg(tf!("Captura pegada ({w}×{h}), guardada en {dir}/{name}", w = img.width, h = img.height, dir = vault::ATTACHMENTS, name = name));
         true
     }
 }

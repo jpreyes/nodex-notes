@@ -1,0 +1,784 @@
+# Traducciones al inglés (ver src/i18n.rs).
+
+Ocultar
+= Hide
+
+Mostrar
+= Show
+
+Configuración
+= Settings
+
+Cerrar (Esc)
+= Close (Esc)
+
+Clave guardada; juntando tu configuración…
+= Key saved; syncing your settings…
+
+Tu cuenta
+= Your account
+
+La IA incluida y tu configuración en todos tus equipos.
+= Included AI and your settings on all your devices.
+
+Servidor
+= Server
+
+La dirección del servicio de Notas
+= The address of the Notas service
+
+Entra y listo: la IA queda activa y tus calendarios, correos, Google Calendar y Microsoft To Do te siguen a cualquier equipo. Las cuentas nuevas se aprueban antes de usarse; al aprobarla empiezan tus 14 días gratis.
+= Sign in and you're set: AI turns on, and your calendars, mail, Google Calendar and Microsoft To Do follow you to any device. New accounts are approved before they can be used; your 14-day free trial starts once yours is approved.
+
+Falta la dirección del servidor de Notas (vendrá puesta en los instaladores).
+= The Notas server address is missing (installers will come with it set).
+
+Avanzado
+= Advanced
+
+Entraste como
+= Signed in as
+
+Salir
+= Sign out
+
+Cierra la sesión en este equipo
+= Signs you out on this device
+
+La IA
+= AI
+
+La de Notas, incluida con tu cuenta
+= Notas AI, included with your account
+
+Tu propia clave (en Inteligencia artificial)
+= Your own key (under Artificial intelligence)
+
+Usar mi propia clave
+= Use my own key
+
+Usar la de Notas
+= Use Notas AI
+
+Plan
+= Plan
+
+IA incluida este mes
+= Included AI this month
+
+Juntando…
+= Syncing…
+
+Tu configuración
+= Your settings
+
+Juntar ahora
+= Sync now
+
+Clave de otro equipo
+= Key from another device
+
+Si tus equipos no comparten la carpeta de notas, pega aquí la clave del otro
+= If your devices don't share the notes folder, paste the other device's key here
+
+Usar
+= Use
+
+clave
+= key
+
+Clave de tu configuración
+= Your settings key
+
+Va cifrada con esta clave, que está en tu carpeta de notas. Solo hace falta si otro equipo no comparte la carpeta
+= Your settings are encrypted with this key, which lives in your notes folder. You only need it if another device doesn't share the folder
+
+Copiar
+= Copy
+
+General
+= General
+
+Dónde se guardan tus notas.
+= Where your notes are saved.
+
+Carpeta de notas
+= Notes folder
+
+Elegir carpeta…
+= Choose folder…
+
+Abrir
+= Open
+
+Cada nota es un archivo Markdown (.md) que puedes abrir con cualquier editor; cada subcarpeta es un espacio de trabajo. Si usas Dropbox, elige una carpeta dentro de Dropbox para tener tus notas en todos tus equipos.
+= Each note is a Markdown (.md) file you can open with any editor; each subfolder is a space. If you use Dropbox, choose a folder inside Dropbox to have your notes on all your devices.
+
+Tema
+= Theme
+
+El oscuro es suave, para trabajar de noche sin cansar la vista
+= Dark is easy on the eyes for working at night
+
+Claro
+= Light
+
+Oscuro
+= Dark
+
+Según el sistema
+= Match system
+
+Importar notas
+= Import notes
+
+De Obsidian, Notion (exportado a Markdown) o cualquier carpeta de archivos .md
+= From Obsidian, Notion (exported to Markdown) or any folder of .md files
+
+Archivo de configuración
+= Settings file
+
+Abrir config.toml
+= Open config.toml
+
+Seguir en segundo plano
+= Keep running in the background
+
+Al cerrar la ventana, Notas queda junto al reloj y sigue sincronizando; un clic en su ícono la vuelve a abrir (clic derecho → Salir, para cerrarla)
+= When you close the window, Notas stays next to the clock and keeps syncing; click its icon to open it again (right-click → Quit to close it)
+
+Abrir al iniciar Windows
+= Open when Windows starts
+
+Notas se abre sola al prender el computador, ya en segundo plano
+= Notas opens on its own when you turn on your computer, already in the background
+
+Inteligencia artificial
+= Artificial intelligence
+
+Organiza tus notas sola: espacio, etiquetas, resumen, tareas y agenda.
+= Organizes your notes for you: space, tags, summary, tasks and calendar.
+
+Organizar automáticamente
+= Organize automatically
+
+Al dejar una nota o tras 45 s sin escribir
+= When you leave a note or after 45 s without typing
+
+Sugerir antes de aplicar
+= Suggest before applying
+
+La IA propone (en la ventana de la IA → Preguntas) y nada cambia hasta que lo apruebas
+= The AI suggests (in the AI window → Questions) and nothing changes until you approve it
+
+Proveedor
+= Provider
+
+Tu código
+= Your code
+
+El que te dimos al suscribirte (nx-…). Se guarda solo en este equipo
+= The one we gave you when you subscribed (nx-…). It's saved only on this device
+
+Uso de este mes
+= Usage this month
+
+Modelo
+= Model
+
+Escribe el nombre exacto del modelo
+= Type the exact model name
+
+nombre del modelo
+= model name
+
+Otro…
+= Other…
+
+Clave API
+= API key
+
+No hace falta con Ollama
+= Not needed with Ollama
+
+Se guarda solo en este equipo, nunca en Dropbox
+= Saved only on this device, never in Dropbox
+
+pega aquí tu clave
+= paste your key here
+
+Conexión
+= Connection
+
+Envía un mensaje corto para comprobar la clave y el modelo
+= Sends a short message to check the key and the model
+
+Probar conexión
+= Test connection
+
+Probando…
+= Testing…
+
+¿No tienes clave?
+= Don't have a key?
+
+Crear una en opencode.ai
+= Create one at opencode.ai
+
+OpenCode Zen cobra por uso desde tu saldo; OpenCode Go es una suscripción mensual con límite de uso. Ambos usan la misma clave.
+= OpenCode Zen charges per use from your balance; OpenCode Go is a monthly subscription with a usage limit. Both use the same key.
+
+Correo
+= Mail
+
+La IA revisa tu bandeja de entrada y tus enviados para no perder compromisos ni fechas.
+= The AI checks your inbox and sent mail so you don't miss commitments or dates.
+
+Cuándo revisar
+= When to check
+
+Al llegar un correo nuevo (al instante)
+= When new mail arrives (right away)
+
+Una vez al día a las
+= Once a day at
+
+Y siempre que quieras, con «Revisar ahora» en Correos.
+= And whenever you like, with “Check now” in Mail.
+
+Cómo funciona: se leen los correos nuevos (la primera vez, los de la última semana) de entrada y enviados, sin marcarlos como leídos. La IA los resume y lleva a Tareas y Agenda los compromisos y fechas (se puede deshacer), y avisa cuando un correo parece cumplir algo pendiente. Los boletines y avisos automáticos se ignoran.
+= How it works: new inbox and sent mail is read (the first time, the last week's), without marking it as read. The AI summarizes it and brings commitments and dates to Tasks and Calendar (you can undo this), and lets you know when an email seems to complete something pending. Newsletters and automated notices are ignored.
+
+Privacidad: la contraseña de aplicación queda en config.toml, solo en este equipo; los correos, en correos.json junto a él. Para entenderlos, su texto se envía al modelo de IA configurado.
+= Privacy: the app password stays in config.toml, only on this device; emails are kept in correos.json next to it. To understand them, their text is sent to the configured AI model.
+
+Tareas
+= Tasks
+
+Las tareas que la IA encuentra en tus notas, también en otras apps.
+= The tasks the AI finds in your notes, in other apps too.
+
+Tus tareas quedan en una lista «Notas» de To Do, en los dos sentidos: lo que marcas hecho o cambias de fecha en un lado pasa al otro, y lo que agregas a esa lista desde To Do (por ejemplo, desde el celular) llega a Tareas.
+= Your tasks go to a “Notas” list in To Do, both ways: whatever you mark done or reschedule on one side carries over to the other, and whatever you add to that list from To Do (from your phone, for example) shows up in Tasks.
+
+No se pudo iniciar la conexión con To Do
+= Couldn't start the connection with To Do
+
+Esperando tu permiso en el navegador…
+= Waiting for your permission in the browser…
+
+Conectar Microsoft To Do
+= Connect Microsoft To Do
+
+Se abre el navegador: entra con tu cuenta Microsoft (personal, o del trabajo si tu organización lo permite) y acepta el permiso.
+= Your browser opens: sign in with your Microsoft account (personal, or work if your organization allows it) and grant permission.
+
+Conectado · sincronizando…
+= Connected · syncing…
+
+Conectado
+= Connected
+
+Sincronizar ahora
+= Sync now
+
+Desconectar
+= Disconnect
+
+Se sincroniza al cambiar algo y cada 2 minutos.
+= Syncs whenever something changes and every 2 minutes.
+
+Privacidad: el permiso queda solo en este equipo (microsoft_token.json, junto a config.toml). La app solo usa tus tareas de To Do; no lee tu correo ni tus archivos. También puedes conectarlo desde Tareas.
+= Privacy: the permission stays only on this device (microsoft_token.json, next to config.toml). The app only uses your To Do tasks; it doesn't read your mail or your files. You can also connect it from Tasks.
+
+Calendar
+= Calendar
+
+Agrega tus calendarios con su enlace y verás sus eventos en la Agenda y en Inicio.
+= Add your calendars by their link and you'll see their events in Calendar and on Home.
+
+Tus calendarios
+= Your calendars
+
+Google Calendar, Outlook, iCloud o cualquier calendario con enlace ICS. Solo se leen; se actualizan cada 15 minutos.
+= Google Calendar, Outlook, iCloud or any calendar with an ICS link. They're read-only and refresh every 15 minutes.
+
+Enviar tu agenda a Google Calendar (avanzado)
+= Send your calendar to Google Calendar (advanced)
+
+Falta el ID de cliente
+= Client ID missing
+
+error (ver abajo)
+= error (see below)
+
+conectado
+= connected
+
+Conectar
+= Connect
+
+Crea un calendario propio llamado «Notas» y solo toca ese; tus otros calendarios quedan fuera de su alcance.
+= It creates its own calendar called “Notas” and only touches that one; your other calendars stay out of its reach.
+
+ID de cliente
+= Client ID
+
+Secreto de cliente
+= Client secret
+
+¿Cómo obtengo estas credenciales? (una vez, ~5 minutos)
+= How do I get these credentials? (once, ~5 minutes)
+
+Crea un proyecto en Google Cloud (por ejemplo «Notas»).
+= Create a project in Google Cloud (for example “Notas”).
+
+Abrir Google Cloud
+= Open Google Cloud
+
+Habilita la Google Calendar API en ese proyecto.
+= Enable the Google Calendar API in that project.
+
+Abrir Calendar API
+= Open Calendar API
+
+En Google Auth Platform → Branding pon el nombre «Notas» y tu correo; en Público elige Externo.
+= In Google Auth Platform → Branding, enter the name “Notas” and your email; under Audience choose External.
+
+Abrir Google Auth Platform
+= Open Google Auth Platform
+
+En Público presiona «Publicar app» (si queda en Prueba, el permiso vence cada 7 días).
+= Under Audience, click “Publish app” (if it stays in Testing, the permission expires every 7 days).
+
+En Clientes → Crear cliente elige «App de escritorio» y pega aquí el ID y el secreto.
+= In Clients → Create client, choose “Desktop app” and paste the ID and secret here.
+
+Abrir Clientes
+= Open Clients
+
+Abrir carpeta
+= Open folder
+
+Atajos
+= Shortcuts
+
+Atajos de teclado (en Mac, Cmd en lugar de Ctrl).
+= Keyboard shortcuts (on Mac, Cmd instead of Ctrl).
+
+Nueva nota
+= New note
+
+Nota de hoy
+= Today's note
+
+Inicio: tu día y un resumen de todo
+= Home: your day and an overview of everything
+
+La IA: conversar con tus notas
+= AI: chat with your notes
+
+Nueva pestaña / cerrar pestaña
+= New tab / close tab
+
+Pestaña siguiente (con Shift, la anterior); Ctrl + 1…9 salta a una
+= Next tab (with Shift, the previous one); Ctrl + 1…9 jumps to one
+
+Ctrl + clic
+= Ctrl + click
+
+Abrir la nota en otra pestaña
+= Open the note in another tab
+
+Nueva reunión
+= New meeting
+
+Cerrar la reunión, la búsqueda o la vista
+= Close the meeting, search or view
+
+Buscar en todas las notas
+= Search all notes
+
+Guardar ahora (se guarda solo igual)
+= Save now (it saves on its own anyway)
+
+Una vez: parte de la nota de arriba · dos: ítem de lista
+= Once: part of the note above · twice: list item
+
+Quitar un nivel de sangría
+= Remove one indent level
+
+En una lista, sigue la lista (en un ítem vacío, sale)
+= In a list, continues the list (on an empty item, exits it)
+
+#palabra
+= #word
+
+Etiqueta (se ve como píldora, sin el #)
+= Tag (shown as a pill, without the #)
+
+Tarea pendiente / hecha (clic en la casilla)
+= Open / done task (click the checkbox)
+
+Fecha de una tarea
+= Task due date
+
+Acerca de
+= About
+
+Notas rápidas con espacios de trabajo, reuniones e IA que organiza sola.
+= Quick notes with spaces, meetings and AI that organizes them for you.
+
+Código abierto (MIT) · hecho en Rust con egui
+= Open source (MIT) · built in Rust with egui
+
+Actualizar sola
+= Update automatically
+
+Busca y baja las versiones nuevas; se instalan cuando haces clic en «Actualizar», abajo
+= Finds and downloads new versions; they install when you click “Update” at the bottom
+
+No se pudo cambiar: {e}
+= Couldn't change it: {e}
+
+Al día (a las {t}). Viajan tus calendarios, cuentas de correo, Google Calendar, Microsoft To Do y «organizar sola».
+= Up to date (at {t}). Your calendars, mail accounts, Google Calendar, Microsoft To Do and “organize automatically” travel with you.
+
+Desconocido: {p}
+= Unknown: {p}
+
+Conectado · respondió en {s} s
+= Connected · replied in {s} s
+
+Conectado · sincronizado a las {h}
+= Connected · synced at {h}
+
+sincronizado {h}
+= synced {h}
+
+Otros calendarios (Outlook, Apple) llegarán más adelante. Mientras, puedes importar {file}.
+= Other calendars (Outlook, Apple) are coming later. Meanwhile, you can import {file}.
+
+Te damos la bienvenida a Notas
+= Welcome to Notas
+
+Escribe como en un bloc, una idea por línea. La IA las ordena sola: cada cosa a su espacio, con etiquetas, tareas y fechas.
+= Write like in a notepad, one idea per line. The AI sorts them for you: each thing to its space, with tags, tasks and dates.
+
+Tus notas se guardan aquí, como archivos de texto que siempre son tuyos:
+= Your notes are saved here, as text files that are always yours:
+
+Elegir otra carpeta…
+= Choose another folder…
+
+Está en tu nube: tus notas estarán en todos tus equipos.
+= It's in your cloud: your notes will be on all your devices.
+
+Con tu cuenta (en el paso siguiente), tus notas se sincronizan solas en todos tus equipos.
+= With your account (in the next step), your notes sync on their own across all your devices.
+
+Seguir
+= Continue
+
+Con una cuenta, la IA queda activa al entrar (14 días gratis), sin claves ni configuración, y tu configuración te sigue a tus otros equipos. Las cuentas nuevas se aprueban antes de usarse: te avisamos por correo.
+= With an account, AI is on as soon as you sign in (14 days free), with no keys or setup, and your settings follow you to your other devices. New accounts are approved before they can be used: we'll let you know by email.
+
+Ahora no (puedes usar tu propia clave de IA, o ninguna)
+= Not now (you can use your own AI key, or none)
+
+¡Listo! A escribir
+= All set! Start writing
+
+Una idea por línea
+= One idea per line
+
+la IA la lleva a su espacio, con etiquetas, tareas y fechas
+= the AI moves it to its space, with tags, tasks and dates
+
+Hoy (Ctrl+D)
+= Today (Ctrl+D)
+
+la nota del día, para anotar lo que vaya surgiendo
+= the day's note, for jotting things down as they come up
+
+una reunión: cada línea con su hora, y un resumen al cerrarla
+= a meeting: each line with its time, and a summary when you close it
+
+pregúntale a la IA sobre todas tus notas
+= ask the AI about all your notes
+
+la línea se vuelve tarea
+= the line becomes a task
+
+La IA aún no está activa: entra con tu cuenta o pon tu clave en Configuración → Inteligencia artificial.
+= AI isn't on yet: sign in with your account or add your key in Settings → Artificial intelligence.
+
+Empezar a escribir
+= Start writing
+
+Iniciar sesión
+= Sign in
+
+Crear cuenta
+= Create account
+
+·  Recuperar tu clave
+= ·  Reset your password
+
+tu@correo.cl
+= you@email.com
+
+Clave
+= Password
+
+Clave (al menos 8 caracteres)
+= Password (at least 8 characters)
+
+IA:
+= AI:
+
+La de Notas (incluida)
+= Notas AI (included)
+
+Mi propia clave
+= My own key
+
+Entrar
+= Sign in
+
+Enviarme un código
+= Send me a code
+
+Guardar la clave y entrar
+= Save password and sign in
+
+¿Olvidaste tu clave?
+= Forgot your password?
+
+Volver
+= Back
+
+o
+= or
+
+Entrar con Microsoft
+= Sign in with Microsoft
+
+Falta la dirección del servidor de Notas
+= The Notas server address is missing
+
+Se abrió el navegador para entrar con Microsoft
+= Your browser opened so you can sign in with Microsoft
+
+Te enviamos un código a tu correo
+= We sent a code to your email
+
+ · pon tu clave de IA en Configuración → Inteligencia artificial
+=  · add your AI key in Settings → Artificial intelligence
+
+ · con tu propia clave de IA
+=  · with your own AI key
+
+calendarios
+= calendars
+
+correo
+= mail
+
+ajustes
+= settings
+
+Código (lo enviamos a {to}; revisa también el spam)
+= Code (we sent it to {to}; check your spam folder too)
+
+Saliste de la cuenta {who} en este equipo (tu configuración queda como está)
+= Signed out of {who} on this device (your settings stay as they are)
+
+Entraste como {email} · {plan}{note}
+= Signed in as {email} · {plan}{note}
+
+No se pudo guardar la configuración: {e}
+= Couldn't save settings: {e}
+
+Llegó tu configuración de la cuenta: {what}
+= Your account settings arrived: {what}
+
+Al terminar la reunión
+= When the meeting ends
+
+Notas se cierra y se abre con la versión nueva, en unos segundos. No se pierde nada.
+= Notas closes and reopens with the new version in a few seconds. Nothing is lost.
+
+Descargarla desde GitHub
+= Download it from GitHub
+
+Actualizando…
+= Updating…
+
+Notas se cierra y se abre con la versión nueva, en unos segundos
+= Notas closes and reopens with the new version in a few seconds
+
+Buscar actualizaciones
+= Check for updates
+
+Lista para instalar
+= Ready to install
+
+Tienes la última versión
+= You have the latest version
+
+Descargar
+= Download
+
+Todo sigue donde estaba.
+= Everything is right where you left it.
+
+Qué hay de nuevo:
+= What's new:
+
+Listo
+= Done
+
+No se instaló la versión {new}: sigues con la {cur}. Puedes intentarlo de nuevo desde Configuración → Acerca de.
+= Version {new} wasn't installed: you're still on {cur}. You can try again from Settings → About.
+
+No se pudo actualizar: {e}
+= Couldn't update: {e}
+
+Actualizar a la {v}
+= Update to {v}
+
+Versión nueva: {v}
+= New version: {v}
+
+Bajando la {v}… {pct} %
+= Downloading {v}… {pct}%
+
+Hay una versión nueva: {v}
+= A new version is available: {v}
+
+Notas se actualizó a la {v}
+= Notas was updated to {v}
+
+Carpeta con notas Markdown (Obsidian, Notion exportado…)
+= Folder with Markdown notes (Obsidian, exported Notion…)
+
+Esa carpeta es (o contiene) tu carpeta de notas: elige otra
+= That folder is (or contains) your notes folder: choose another one
+
+En esa carpeta no hay notas Markdown (.md)
+= There are no Markdown (.md) notes in that folder
+
+Cada carpeta de primer nivel pasa a ser un espacio. Las imágenes y archivos se copian a Adjuntos, y los enlaces entre páginas quedan como [[enlaces]]. Tu carpeta original no se toca, y si importas dos veces no se repite nada.
+= Each top-level folder becomes a space. Images and files are copied to the Adjuntos (attachments) folder, and links between pages become [[links]]. Your original folder isn't touched, and importing twice doesn't duplicate anything.
+
+Que la IA las organice después (etiquetas, tareas y fechas)
+= Let the AI organize them afterwards (tags, tasks and dates)
+
+Importar
+= Import
+
+Cancelar
+= Cancel
+
+Importé {notes} de «{name}»
+= Imported {notes} from “{name}”
+
+ y {files}
+=  and {files}
+
+, en {spaces}
+= , into {spaces}
+
+ ({n} ya estaban)
+=  ({n} were already there)
+
+ · {n} no se pudieron: {error}
+=  · {n} couldn't be imported: {error}
+
+{path} · {notes} y {files}
+= {path} · {notes} and {files}
+
+Con {notes} usa bastante IA y toma un buen rato.
+= With {notes}, this uses a lot of AI and takes quite a while.
+
+Importando «{name}»…
+= Importing “{name}”…
+
+{d} de {t}
+= {d} of {t}
+
+Tus notas se sincronizan con tu cuenta
+= Your notes sync with your account
+
+Tus notas ya no se sincronizan con tu cuenta (quedan en este equipo)
+= Your notes no longer sync with your account (they stay on this device)
+
+Sincronizando…
+= Syncing…
+
+Sin conexión: tus cambios quedan aquí
+= Offline: your changes are kept here
+
+Sincronizado
+= Synced
+
+Conectando…
+= Connecting…
+
+¿Sincronizamos tus notas con tu cuenta?
+= Sync your notes with your account?
+
+Sí, sincronizar
+= Yes, sync
+
+Tus notas en todos tus equipos, sin Dropbox: cada cambio sube a tu cuenta y llega al instante a tus otros equipos. Si dos equipos cambian la misma nota, se juntan. Sin conexión, escribes igual. Se enciende sola al entrar.
+= Your notes on all your devices, without Dropbox: every change goes up to your account and reaches your other devices instantly. If two devices change the same note, the changes are merged. Offline, you can still write. It turns on by itself when you sign in.
+
+Sincronizar tus notas
+= Sync your notes
+
+Tu carpeta de notas está en Dropbox u OneDrive, que ya la sincroniza: con las dos a la vez se pelearían. Para usar tu cuenta, tus notas se copian a una carpeta fuera de la nube (la de Dropbox queda como está).
+= Your notes folder is in Dropbox or OneDrive, which already syncs it: running both at once would make them clash. To use your account, your notes are copied to a folder outside the cloud (the Dropbox one stays as it is).
+
+Tus notas ahora están en {path} y se sincronizan con tu cuenta (la carpeta de Dropbox quedó como estaba)
+= Your notes are now in {path} and sync with your account (the Dropbox folder was left as it was)
+
+No se pudieron copiar tus notas: {e}
+= Couldn't copy your notes: {e}
+
+Sincronizando ({n})
+= Syncing ({n})
+
+{e}. Se reintenta solo; lo que escribas queda en este equipo y se sube al volver.
+= {e}. It retries on its own; whatever you write stays on this device and is uploaded once you're back online.
+
+Tus notas están al día con tu cuenta (a las {h})
+= Your notes are up to date with your account (at {h})
+
+Tus notas están en {cloud}. Con tu cuenta, cada cambio llega en segundos a tus otros equipos, sin depender de {cloud}, y si dos equipos cambian la misma nota, se juntan.
+= Your notes are in {cloud}. With your account, every change reaches your other devices in seconds, without relying on {cloud}, and if two devices change the same note, the changes are merged.
+
+Para que no se peleen las dos sincronizaciones, tus notas se copian a {path} y la app pasa a usar esa carpeta. La de {cloud} queda como está.
+= So the two syncs don't clash, your notes are copied to {path} and the app switches to that folder. The {cloud} one stays as it is.
+
+Seguir con {cloud}
+= Keep using {cloud}
+
+Tus notas siguen con {cloud}. Puedes cambiarlo en Configuración → Tu cuenta
+= Your notes stay with {cloud}. You can change this in Settings → Your account
+
+Copiando tus notas a {path}… {n} de {total}
+= Copying your notes to {path}… {n} of {total}
+
+Copiar mis notas a {path} y sincronizarlas
+= Copy my notes to {path} and sync them
+
+Espacio usado: {used} MB de {limit} MB
+= Storage used: {used} MB of {limit} MB
+
+plural:nota
+= note|notes
+
+plural:archivo
+= file|files

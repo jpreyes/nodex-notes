@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// Primero: sus macros (t!, tf!) se usan en todos los demás.
+#[macro_use]
+mod i18n;
 mod account;
 mod activity;
 mod agenda;
@@ -44,7 +47,15 @@ fn main() -> eframe::Result {
     };
     // Abierta con Windows: empieza escondida, junto al reloj.
     let hidden = cfg!(windows) && std::env::args().any(|a| a == background::HIDDEN_ARG);
+    // Antes de leer la configuración, el idioma del sistema (para sus avisos); después, el elegido.
+    i18n::set_english(i18n::system_is_english());
     let (cfg, cfg_msg) = config::load();
+    // El idioma: el elegido o, si no se eligió, el del sistema.
+    i18n::set_english(match cfg.idioma.as_str() {
+        "en" => true,
+        "es" => false,
+        _ => i18n::system_is_english(),
+    });
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Notas")

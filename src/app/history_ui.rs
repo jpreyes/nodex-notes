@@ -58,11 +58,11 @@ fn day_label(when: DateTime<Local>) -> String {
     let today = Local::now().date_naive();
     let d = when.date_naive();
     match (today - d).num_days() {
-        0 => "Hoy".into(),
-        1 => "Ayer".into(),
+        0 => t!("Hoy").into(),
+        1 => t!("Ayer").into(),
         _ => {
             let year = if d.year() != today.year() { format!(" {}", d.year()) } else { String::new() };
-            format!("{} {} {}{year}", DIAS_CORTOS[d.weekday().num_days_from_monday() as usize], d.day(), MESES[d.month0() as usize])
+            format!("{} {} {}{year}", crate::i18n::dias_cortos()[d.weekday().num_days_from_monday() as usize], d.day(), crate::i18n::meses()[d.month0() as usize])
         }
     }
 }
@@ -117,23 +117,23 @@ impl NotesApp {
                 ui.set_width(w);
                 ui.set_height(hgt);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("{} Historial de «{}»", icon::CLOCK_COUNTER_CLOCKWISE, display_title(&self.note.title))).font(theme::bold(18.0)));
+                    ui.label(RichText::new(format!("{} {}", icon::CLOCK_COUNTER_CLOCKWISE, tf!("Historial de «{title}»", title = display_title(&self.note.title)))).font(theme::bold(18.0)));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.add(egui::Button::new(RichText::new(icon::X).size(18.0).color(MUTED())).frame(false)).on_hover_text("Cerrar (Esc)").clicked() {
+                        if ui.add(egui::Button::new(RichText::new(icon::X).size(18.0).color(MUTED())).frame(false)).on_hover_text(t!("Cerrar (Esc)")).clicked() {
                             todo = Some(Do::Close);
                         }
                     });
                 });
                 ui.label(
-                    RichText::new("Se guarda una versión cada vez que la nota cambia (como mucho cada 10 minutos, y siempre antes de un cambio grande), también la que llega de otro equipo.")
+                    RichText::new(t!("Se guarda una versión cada vez que la nota cambia (como mucho cada 10 minutos, y siempre antes de un cambio grande), también la que llega de otro equipo."))
                         .size(12.5)
                         .color(MUTED()),
                 );
                 ui.add_space(8.0);
                 if h.versions.is_empty() {
                     ui.add_space(30.0);
-                    ui.label(RichText::new("Todavía no hay versiones anteriores de esta nota.").size(14.0));
-                    ui.label(RichText::new("Aparecen solas a medida que la nota cambia.").size(13.0).color(MUTED()));
+                    ui.label(RichText::new(t!("Todavía no hay versiones anteriores de esta nota.")).size(14.0));
+                    ui.label(RichText::new(t!("Aparecen solas a medida que la nota cambia.")).size(13.0).color(MUTED()));
                     return;
                 }
                 ui.separator();
@@ -166,10 +166,10 @@ impl NotesApp {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(format!("{}, {}", day_label(v.when), v.when.format("%H:%M"))).font(theme::bold(14.5)));
                             ui.add_space(12.0);
-                            if ui.selectable_label(!h.full, "Qué cambió").on_hover_text("Comparada con la nota de ahora").clicked() {
+                            if ui.selectable_label(!h.full, t!("Qué cambió")).on_hover_text(t!("Comparada con la nota de ahora")).clicked() {
                                 todo = Some(Do::Full(false));
                             }
-                            if ui.selectable_label(h.full, "Texto completo").clicked() {
+                            if ui.selectable_label(h.full, t!("Texto completo")).clicked() {
                                 todo = Some(Do::Full(true));
                             }
                         });
@@ -186,11 +186,11 @@ impl NotesApp {
                 });
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    let b = egui::Button::new(RichText::new(format!("{}  Restaurar esta versión", icon::ARROW_COUNTER_CLOCKWISE)).color(theme::c(Color32::WHITE))).fill(ACCENT());
-                    if ui.add(b).on_hover_text("La nota vuelve a como estaba; la de ahora queda en el historial").clicked() {
+                    let b = egui::Button::new(RichText::new(format!("{}  {}", icon::ARROW_COUNTER_CLOCKWISE, t!("Restaurar esta versión"))).color(theme::c(Color32::WHITE))).fill(ACCENT());
+                    if ui.add(b).on_hover_text(t!("La nota vuelve a como estaba; la de ahora queda en el historial")).clicked() {
                         todo = Some(Do::Restore);
                     }
-                    if ui.button("Cerrar").clicked() {
+                    if ui.button(t!("Cerrar")).clicked() {
                         todo = Some(Do::Close);
                     }
                 });
@@ -207,7 +207,7 @@ impl NotesApp {
                 self.note.dirty = true;
                 self.note.last_edit = Instant::now();
                 self.save();
-                self.msg("Línea recuperada");
+                self.msg(t!("Línea recuperada"));
             }
             Some(Do::Restore) => {
                 let (root, rel) = (self.vault.root.clone(), history::rel_of(&self.vault.root, &self.note.path));
@@ -218,7 +218,7 @@ impl NotesApp {
                 self.note.dirty = true;
                 self.note.last_edit = Instant::now();
                 self.save();
-                self.msg(format!("Se restauró la versión de {} a las {}; la que había quedó en el historial", day_label(when).to_lowercase(), when.format("%H:%M")));
+                self.msg(tf!("Se restauró la versión de {day} a las {time}; la que había quedó en el historial", day = day_label(when).to_lowercase(), time = when.format("%H:%M")));
                 h.versions = history::list(&root, &rel);
                 h.sel = 0;
                 h.diff_of = None;
@@ -232,7 +232,7 @@ impl NotesApp {
 
 /// «… 3 líneas iguales»
 fn same_lines(ui: &mut Ui, n: usize) {
-    let text = if n == 1 { "1 línea igual".to_string() } else { format!("{n} líneas iguales") };
+    let text = if n == 1 { t!("1 línea igual").to_string() } else { tf!("{n} líneas iguales", n = n) };
     ui.label(RichText::new(format!("   … {text}")).size(12.0).color(MUTED()));
 }
 
@@ -240,7 +240,7 @@ fn same_lines(ui: &mut Ui, n: usize) {
 fn diff_ui(ui: &mut Ui, diff: &[Diff], todo: &mut Option<Do>) {
     const AROUND: usize = 2;
     if diff.iter().all(|d| matches!(d, Diff::Same(_))) {
-        ui.label(RichText::new("Es igual a la nota de ahora.").size(13.5).color(MUTED()));
+        ui.label(RichText::new(t!("Es igual a la nota de ahora.")).size(13.5).color(MUTED()));
         return;
     }
     let near: Vec<bool> = (0..diff.len())
@@ -272,7 +272,7 @@ fn diff_ui(ui: &mut Ui, diff: &[Diff], todo: &mut Option<Do>) {
                         ui.add(egui::Label::new(RichText::new(line).size(13.5)).wrap());
                         if !line.trim().is_empty() {
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                if ui.small_button("Recuperar").on_hover_text("Volver a ponerla en la nota, donde estaba").clicked() {
+                                if ui.small_button(t!("Recuperar")).on_hover_text(t!("Volver a ponerla en la nota, donde estaba")).clicked() {
                                     *todo = Some(Do::Recover(line.clone(), *after));
                                 }
                             });
@@ -295,7 +295,7 @@ fn diff_ui(ui: &mut Ui, diff: &[Diff], todo: &mut Option<Do>) {
         same_lines(ui, skipped);
     }
     ui.add_space(6.0);
-    ui.label(RichText::new("En rojo, lo que había en esta versión y ya no está; en verde, lo que se agregó después.").size(12.0).color(MUTED()));
+    ui.label(RichText::new(t!("En rojo, lo que había en esta versión y ya no está; en verde, lo que se agregó después.")).size(12.0).color(MUTED()));
 }
 
 #[cfg(test)]

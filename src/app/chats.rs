@@ -106,7 +106,7 @@ impl NotesApp {
         let _ = fs::create_dir_all(self.chats_dir());
         if let Ok(json) = serde_json::to_string_pretty(&chat) {
             if let Err(e) = fs::write(self.chat_file(&id), json) {
-                self.msg(format!("No se pudo guardar la conversación: {e}"));
+                self.msg(tf!("No se pudo guardar la conversación: {e}", e = e));
             }
         }
         self.ask.list = None;
@@ -137,7 +137,7 @@ impl NotesApp {
             return;
         }
         let Some(chat) = vault::read_text(&self.chat_file(id)).ok().and_then(|t| serde_json::from_str::<Chat>(&t).ok()) else {
-            self.msg("No se pudo abrir esa conversación");
+            self.msg(t!("No se pudo abrir esa conversación"));
             self.ask.list = None;
             return;
         };
@@ -198,7 +198,7 @@ impl NotesApp {
             relinks: Vec::new(),
         });
         self.undo_entry = None;
-        self.msg("Conversación borrada");
+        self.msg(t!("Conversación borrada"));
     }
 
     /// La lista de conversaciones (a la izquierda de Conversar).
@@ -206,14 +206,14 @@ impl NotesApp {
         let list = self.chat_list();
         let busy = self.ask.busy();
         ui.add_space(12.0);
-        let b = egui::Button::new(RichText::new(format!("{}  Nueva conversación", icon::PLUS)).size(13.0)).min_size(egui::vec2(ui.available_width(), 30.0));
+        let b = egui::Button::new(RichText::new(format!("{}  {}", icon::PLUS, t!("Nueva conversación"))).size(13.0)).min_size(egui::vec2(ui.available_width(), 30.0));
         if ui.add_enabled(!busy, b).clicked() {
             self.new_chat();
         }
         ui.add_space(10.0);
-        section(ui, "Conversaciones", None);
+        section(ui, t!("Conversaciones"), None);
         if list.is_empty() {
-            ui.label(RichText::new("Aquí quedan tus conversaciones con la IA, para retomarlas.").size(12.5).color(MUTED()));
+            ui.label(RichText::new(t!("Aquí quedan tus conversaciones con la IA, para retomarlas.")).size(12.5).color(MUTED()));
         }
         let mut open = None;
         let mut delete = None;
@@ -224,7 +224,7 @@ impl NotesApp {
                 if day != last_day {
                     ui.add_space(6.0);
                     let label = match display_title(&day).as_str() {
-                        t @ ("Hoy" | "Ayer") => t.to_string(),
+                        t @ ("Hoy" | "Ayer") => crate::i18n::tr_owned(t),
                         _ => long_date(&day),
                     };
                     ui.label(RichText::new(label).size(12.0).color(MUTED()));
@@ -232,7 +232,7 @@ impl NotesApp {
                 }
                 let selected = self.ask.chat_id.as_deref() == Some(c.id.as_str());
                 let r = list_row(ui, icon::CHAT_CIRCLE_TEXT, &c.title, "", selected).on_hover_text(format!("{}\n{}", c.title, plural(c.turns, "pregunta")));
-                if row_trash_button(ui, &r, "Borrar la conversación (se puede deshacer)") {
+                if row_trash_button(ui, &r, t!("Borrar la conversación (se puede deshacer)")) {
                     delete = Some(c.id.clone());
                 } else if r.clicked() && !busy {
                     open = Some(c.id.clone());

@@ -1,0 +1,523 @@
+# Traducciones al inglés (ver src/i18n.rs).
+
+Hoy
+= Today
+
+Ayer
+= Yesterday
+
+Mañana
+= Tomorrow
+
+No se pudo crear {path}: {e}
+= Couldn't create {path}: {e}
+
+No se pudo guardar la configuración: {e}
+= Couldn't save settings: {e}
+
+No se pudo usar {path}: {e}
+= Couldn't use {path}: {e}
+
+Carpeta de notas: {path}
+= Notes folder: {path}
+
+No se pudo guardar: {e}
+= Couldn't save: {e}
+
+Se juntaron tus cambios con los que llegaron de otro equipo
+= Your changes were merged with the ones from another device
+
+Se juntaron tus cambios con los de otro equipo; una parte cambió en los dos: quedaron las dos versiones, revísala
+= Your changes were merged with another device's; one part changed on both, so both versions were kept. Please review it
+
+Se juntaron tus cambios con los de otro equipo; {n} partes cambiaron en los dos: quedaron las dos versiones, revísalas
+= Your changes were merged with another device's; {n} parts changed on both, so both versions were kept. Please review them
+
+No se pudo guardar estado.toml: {e}
+= Couldn't save estado.toml: {e}
+
+No se pudo renombrar: {e}
+= Couldn't rename: {e}
+
+Se actualizaron los enlaces a «{title}» en {notes}
+= Updated links to “{title}” in {notes}
+
+«{name}» movida a la papelera
+= “{name}” moved to Trash
+
+No se pudo eliminar: {e}
+= Couldn't delete: {e}
+
+Espacio «{ws}» movido a la papelera
+= Space “{ws}” moved to Trash
+
+No se pudo mover el espacio: {e}
+= Couldn't move the space: {e}
+
+¿Mover el espacio «{ws}» a la papelera?
+= Move the space “{ws}” to Trash?
+
+Está vacío.
+= It's empty.
+
+Se va con sus {notes}.
+= Its {notes} go with it.
+
+{what} Queda en la carpeta .papelera y se puede deshacer.
+= {what} It stays in the .papelera folder and can be undone.
+
+Mover a la papelera
+= Move to Trash
+
+Cancelar
+= Cancel
+
+Nota actualizada con cambios de otro equipo
+= Note updated with changes from another device
+
+Reunión iniciada: cada línea lleva su hora. Esc la cierra.
+= Meeting started: each line gets its time. Esc ends it.
+
+Reunión iniciada: escribe su nombre y Enter; cada línea lleva su hora. Esc la cierra.
+= Meeting started: type its name and press Enter; each line gets its time. Esc ends it.
+
+Reunión «{title}» cerrada a las {time}
+= Meeting “{title}” ended at {time}
+
+IA no disponible: {e}
+= AI unavailable: {e}
+
+Todo está organizado
+= Everything is organized
+
+IA: {e}
+= AI: {e}
+
+No pudo organizar «{name}»: {e}
+= Couldn't organize “{name}”: {e}
+
+IA: no se pudo escribir {path}: {e}
+= AI: couldn't write {path}: {e}
+
+{n} con su nota
+= {n} joined to their note
+
+IA: no se pudo guardar la nota: {e}
+= AI: couldn't save the note: {e}
+
+IA: no se pudo mover la nota: {e}
+= AI: couldn't move the note: {e}
+
+IA: no se pudo escribir tareas/agenda: {e}
+= AI: couldn't write tasks/calendar: {e}
+
+{n} en agenda
+= {n} on the calendar
+
+sugerencia: espacio «{name}»
+= suggestion: space “{name}”
+
+1 posible duplicado
+= 1 possible duplicate
+
+{n} posibles duplicados
+= {n} possible duplicates
+
+Título: «{title}»
+= Title: “{title}”
+
+Movida al espacio {ws}
+= Moved to the space {ws}
+
+Etiquetas: {tags}
+= Tags: {tags}
+
+Acuerdo: {who}{what}{when}
+= Agreement: {who}{what}{when}
+
+Tarea: {task}{when}
+= Task: {task}{when}
+
+Evento: {title}{when}{hour}
+= Event: {title}{when}{hour}
+
+Pregunta: {q}
+= Question: {q}
+
+IA ·{name} {done}
+= AI ·{name} {done}
+
+Organizó «{name}»: {done}
+= Organized “{name}”: {done}
+
+No se pudo actualizar tareas.txt: {e}
+= Couldn't update tareas.txt: {e}
+
+Deshecho
+= Undone
+
+No se pudo crear el espacio: {e}
+= Couldn't create the space: {e}
+
+Se abrió el navegador: elige tu cuenta y permite el acceso al calendario
+= Your browser opened: pick your account and allow access to the calendar
+
+Falta google_client_id en config.toml (pasos en el README)
+= google_client_id is missing in config.toml (steps in the README)
+
+Se abrió el navegador: entra con tu cuenta Microsoft y acepta el permiso
+= Your browser opened: sign in with your Microsoft account and accept the permission
+
+No se pudo escribir tareas.txt: {e}
+= Couldn't write tareas.txt: {e}
+
+Correo {email} agregado; probando la conexión…
+= Mail {email} added; testing the connection…
+
+Correo {email} quitado
+= Mail {email} removed
+
+Correo {email} actualizado; probando la conexión…
+= Mail {email} updated; testing the connection…
+
+Inicio
+= Home
+
+Inicio: tu día y un resumen de todo (Ctrl+H)
+= Home: your day and an overview of everything (Ctrl+H)
+
+Cerrar reunión «{title}» (Esc)
+= End meeting “{title}” (Esc)
+
+Nueva reunión (Ctrl+R)
+= New meeting (Ctrl+R)
+
+Reunión
+= Meeting
+
+Notas
+= Notes
+
+Todas tus notas, la más reciente primero
+= All your notes, most recent first
+
+Tareas
+= Tasks
+
+Todas las tareas
+= All tasks
+
+Agenda
+= Calendar
+
+Tus calendarios, eventos y tareas con fecha
+= Your calendars, events and tasks with a date
+
+Correo
+= Mail
+
+Compromisos y fechas de tu correo
+= Commitments and dates from your mail
+
+IA: tiene {n} para ti · conversar y lo que hizo (Ctrl+K)
+= AI: has {n} for you · chat and activity (Ctrl+K)
+
+IA: conversar con tus notas, sus preguntas y lo que hizo (Ctrl+K)
+= AI: chat with your notes, its questions and activity (Ctrl+K)
+
+IA
+= AI
+
+Bloc
+= Scratchpad
+
+Bloc: pega o escribe lo que sea, tal cual (Ctrl+B)
+= Scratchpad: paste or write anything, as is (Ctrl+B)
+
+Ajustes
+= Settings
+
+Configuración (Ctrl+,)
+= Settings (Ctrl+,)
+
+Papelera
+= Trash
+
+Lo que borraste: restaurar o borrar para siempre
+= What you deleted: restore or delete forever
+
+Archivo
+= Archive
+
+Notas archivadas: fuera de la vista, sin borrarlas
+= Archived notes: out of sight, without deleting them
+
+Carpeta
+= Folder
+
+Abrir la carpeta de notas
+= Open the notes folder
+
+Buscar en todas las notas
+= Search all notes
+
+Mover a la papelera (se puede deshacer)
+= Move to Trash (can be undone)
+
+Mover a
+= Move to
+
+Convertir en tarea
+= Turn into a task
+
+Archivar
+= Archive
+
+Sale de la vista sin borrarse (queda en Archivadas)
+= Leaves the view without being deleted (stays in Archive)
+
+vacía
+= empty
+
+La nota de hoy: escribe aquí lo que vaya surgiendo; la IA reparte cada cosa a su espacio (Ctrl+D)
+= Today's note: write whatever comes up here; the AI sends each thing to its space (Ctrl+D)
+
+Diario
+= Journal
+
+Las notas de días anteriores
+= Notes from previous days
+
+Espacios
+= Spaces
+
+Nuevo espacio
+= New space
+
+Nombre del espacio
+= Space name
+
+Mover el espacio a la papelera
+= Move the space to Trash
+
+Cambiar nombre
+= Rename
+
+Archivar el espacio
+= Archive the space
+
+Sus notas salen de la vista sin borrarse (quedan en Archivo)
+= Its notes leave the view without being deleted (they stay in Archive)
+
+Nueva nota en {ws} (Ctrl+N)
+= New note in {ws} (Ctrl+N)
+
+nueva
+= new
+
+Descartar la nota nueva
+= Discard the new note
+
+en curso
+= in progress
+
+Etiquetas
+= Tags
+
+Escribe #palabra en una nota.
+= Type #word in a note.
+
+Ver las líneas con #{tag} (clic derecho: cambiar nombre)
+= See the lines with #{tag} (right-click: rename)
+
+→ suéltala en un espacio
+= → drop it on a space
+
+{title} · {mins} min · Esc para cerrar
+= {title} · {mins} min · Esc to end
+
+Ir a la reunión
+= Go to the meeting
+
+Dropbox no está abierto
+= Dropbox isn't running
+
+Tus notas están en una carpeta de Dropbox, pero la app de Dropbox no está abierta. Puedes seguir trabajando: los cambios quedan en este equipo y se sincronizarán cuando la abras.
+= Your notes are in a Dropbox folder, but the Dropbox app isn't running. You can keep working: changes stay on this device and will sync when you open it.
+
+Juntando {n}
+= Merging {n}
+
+Dropbox dejó dos versiones de un archivo; en unos segundos se juntan solas, sin perder nada
+= Dropbox left two versions of a file; they'll merge on their own in a few seconds, without losing anything
+
+Guardando…
+= Saving…
+
+Nota nueva — se guarda al escribir
+= New note — saved as you type
+
+Guardado
+= Saved
+
+{n} palabras
+= {n} words
+
+Analizando «{name}»{progress}
+= Analyzing “{name}”{progress}
+
+Deshacer
+= Undo
+
+Buscar «{q}»
+= Search “{q}”
+
+en {ws}
+= in {ws}
+
+en todos los espacios
+= in all spaces
+
+{lines} en {notes}, {scope}
+= {lines} in {notes}, {scope}
+
+Sin resultados.
+= No results.
+
+Mostrar más ({n})
+= Show more ({n})
+
+{n} · marca la casilla cuando la termines
+= {n} · check the box when you finish it
+
+Nueva tarea en {ws}: «Enviar planos el viernes», «Llamar a Pedro mañana»…
+= New task in {ws}: “Send the drawings on Friday”, “Call Pedro tomorrow”…
+
+Recientes primero
+= Recent first
+
+Por fecha
+= By date
+
+No hay tareas pendientes. La IA las encuentra en tus notas, o agrégalas arriba.
+= No pending tasks. The AI finds them in your notes, or add them above.
+
+Hechas ({n})
+= Done ({n})
+
+Si quieres, tus tareas y eventos también pueden aparecer en Google Calendar.
+= If you want, your tasks and events can also show up in Google Calendar.
+
+Cómo activarlo
+= How to turn it on
+
+Esperando tu permiso en el navegador…
+= Waiting for your permission in the browser…
+
+Conectar Google Calendar
+= Connect Google Calendar
+
+sincronizando…
+= syncing…
+
+error: {e}
+= error: {e}
+
+sincronizado a las {time}
+= synced at {time}
+
+conectado
+= connected
+
+calendario «Notas» · {status}
+= calendar “Notas” · {status}
+
+Sincronizar ahora
+= Sync now
+
+Desconectar
+= Disconnect
+
+Tus calendarios, los eventos de tus notas y las tareas con fecha
+= Your calendars, the events in your notes and tasks with a date
+
+Reuniones y notas que se repiten…
+= Recurring meetings and notes…
+
+Reuniones y notas que se repiten ({n})
+= Recurring meetings and notes ({n})
+
+Mes
+= Month
+
+Lista
+= List
+
+Atrasadas
+= Overdue
+
+Nada agendado. La IA agrega aquí las fechas que menciones en tus notas.
+= Nothing scheduled. The AI adds the dates you mention in your notes here.
+
+Hoy · {date}
+= Today · {date}
+
+Mañana · {date}
+= Tomorrow · {date}
+
+Marcar hecha
+= Mark as done
+
+Tomar notas
+= Take notes
+
+{title} — Notas
+= {title} — Notes
+
+Marcar pendiente
+= Mark as not done
+
+hoy
+= today
+
+Ir a donde está escrita («{n}»)
+= Go to where it's written (“{n}”)
+
+Salió de un correo: verlo
+= Came from an email: view it
+
+Llegó de Microsoft To Do (se agregó allá)
+= Came from Microsoft To Do (added there)
+
+Anotar un seguimiento: qué se hizo (la IA lo tiene en cuenta)
+= Add a follow-up: what was done (the AI takes it into account)
+
+Más: cambiar fecha, convertir en nota, borrar…
+= More: change date, turn into a note, delete…
+
+plural:nota
+= note|notes
+
+plural:etiqueta
+= tag|tags
+
+plural:detalle
+= detail|details
+
+plural:tarea
+= task|tasks
+
+plural:evento
+= event|events
+
+plural:pregunta
+= question|questions
+
+plural:línea
+= line|lines
+
+plural:pendiente
+= pending|pending
+
+plural:copia en conflicto
+= conflicted copy|conflicted copies

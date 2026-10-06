@@ -194,7 +194,7 @@ impl NotesApp {
         };
         let path = self.vault.note_path(&ws, title);
         self.open_in_tab(path, None);
-        self.msg(format!("Nota nueva «{}» en {ws}: se guarda al escribir", vault::sanitize(title)));
+        self.msg(tf!("Nota nueva «{name}» en {ws}: se guarda al escribir", name = vault::sanitize(title), ws = ws));
     }
 
     /// Las notas que enlazan a la nota abierta.
@@ -341,12 +341,12 @@ impl NotesApp {
         let area = egui::Area::new(Id::new("enlace-notas")).order(egui::Order::Foreground).fixed_pos(p.at).show(ctx, |ui| {
             Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(260.0);
-                ui.label(RichText::new("Enlazar a una nota  ·  ↑ ↓ y Enter").size(11.5).color(MUTED()));
+                ui.label(RichText::new(t!("Enlazar a una nota  ·  ↑ ↓ y Enter")).size(11.5).color(MUTED()));
                 for (i, (_, title, ws)) in p.items.iter().enumerate() {
                     let mut label = egui::text::LayoutJob::default();
                     let font = FontId::proportional(13.5);
                     if ws.is_empty() {
-                        label.append(&format!("{}  Nota nueva «{title}»", icon::FILE_PLUS), 0.0, egui::TextFormat::simple(font, TEXT()));
+                        label.append(&format!("{}  {}", icon::FILE_PLUS, tf!("Nota nueva «{title}»", title = title)), 0.0, egui::TextFormat::simple(font, TEXT()));
                     } else {
                         label.append(&format!("{}  {}", icon::FILE_TEXT, display_title(title)), 0.0, egui::TextFormat::simple(font.clone(), TEXT()));
                         label.append(&format!("   {ws}"), 0.0, egui::TextFormat::simple(FontId::proportional(12.0), MUTED()));

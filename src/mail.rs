@@ -285,8 +285,8 @@ impl imap::extensions::idle::SetReadTimeout for Tls {
 /// Conecta (IMAP sobre TLS) e inicia sesión.
 fn connect(account: &Account) -> Result<imap::Session<Tls>, String> {
     let (host, port) = server_for(account);
-    let addr = (host.as_str(), port).to_socket_addrs().map_err(|e| format!("no se encontró {host}: {e}"))?.next().ok_or(format!("no se encontró {host}"))?;
-    let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(20)).map_err(|e| format!("no se pudo conectar a {host}: {e}"))?;
+    let addr = (host.as_str(), port).to_socket_addrs().map_err(|e| tf!("no se encontró {host}: {e}", host = host, e = e))?.next().ok_or(tf!("no se encontró {host}", host = host))?;
+    let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(20)).map_err(|e| tf!("no se pudo conectar a {host}: {e}", host = host, e = e))?;
     tcp.set_read_timeout(Some(Duration::from_secs(60))).ok();
     let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
     let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
@@ -303,7 +303,7 @@ fn connect(account: &Account) -> Result<imap::Session<Tls>, String> {
     client.login(account.correo.trim(), account.clave.trim()).map_err(|(e, _)| {
         let e = e.to_string();
         if e.to_lowercase().contains("auth") || e.to_lowercase().contains("credential") || e.to_lowercase().contains("login") {
-            format!("el correo o la contraseña de aplicación no son correctos ({e})")
+            tf!("el correo o la contraseña de aplicación no son correctos ({e})", e = e)
         } else {
             e
         }

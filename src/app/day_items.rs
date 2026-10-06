@@ -71,25 +71,25 @@ pub(super) fn task_menu(ui: &mut Ui, t: &agenda::Task) -> Option<Action> {
     };
     let mut follow = false;
     if t.note.as_deref().is_some_and(|n| !n.is_empty()) {
-        item(ui, format!("{}  Ir a donde está escrita", icon::ARROW_SQUARE_OUT), ItemDo::OpenTask(raw.clone()));
+        item(ui, format!("{}  {}", icon::ARROW_SQUARE_OUT, t!("Ir a donde está escrita")), ItemDo::OpenTask(raw.clone()));
     }
     if !t.done {
-        ui.menu_button(format!("{}  Cambiar fecha", icon::CALENDAR_BLANK), |ui| {
-            item(ui, "Hoy".into(), ItemDo::TaskDue(raw.clone(), Some(today())));
-            item(ui, "Mañana".into(), ItemDo::TaskDue(raw.clone(), Some(day_plus(1))));
-            item(ui, "El lunes".into(), ItemDo::TaskDue(raw.clone(), Some(next_monday())));
-            item(ui, "En una semana".into(), ItemDo::TaskDue(raw.clone(), Some(day_plus(7))));
+        ui.menu_button(format!("{}  {}", icon::CALENDAR_BLANK, t!("Cambiar fecha")), |ui| {
+            item(ui, t!("Hoy").into(), ItemDo::TaskDue(raw.clone(), Some(today())));
+            item(ui, t!("Mañana").into(), ItemDo::TaskDue(raw.clone(), Some(day_plus(1))));
+            item(ui, t!("El lunes").into(), ItemDo::TaskDue(raw.clone(), Some(next_monday())));
+            item(ui, t!("En una semana").into(), ItemDo::TaskDue(raw.clone(), Some(day_plus(7))));
             if t.due.is_some() {
-                item(ui, "Sin fecha".into(), ItemDo::TaskDue(raw.clone(), None));
+                item(ui, t!("Sin fecha").into(), ItemDo::TaskDue(raw.clone(), None));
             }
         });
     }
-    if ui.button(format!("{}  Seguimiento", icon::ARROW_ELBOW_DOWN_RIGHT)).clicked() {
+    if ui.button(format!("{}  {}", icon::ARROW_ELBOW_DOWN_RIGHT, t!("Seguimiento"))).clicked() {
         follow = true;
         ui.close();
     }
-    item(ui, format!("{}  Convertir en nota", icon::FILE_TEXT), ItemDo::TaskToNote(raw.clone()));
-    item(ui, format!("{}  Borrar la tarea", icon::TRASH), ItemDo::TaskDelete(raw.clone()));
+    item(ui, format!("{}  {}", icon::FILE_TEXT, t!("Convertir en nota")), ItemDo::TaskToNote(raw.clone()));
+    item(ui, format!("{}  {}", icon::TRASH, t!("Borrar la tarea")), ItemDo::TaskDelete(raw.clone()));
     if follow {
         action = Some(Action::FollowUp(raw.clone()));
     }
@@ -111,7 +111,7 @@ fn event_row_inner(ui: &mut Ui, e: &agenda::Event, done: bool, follows: &trackin
     ui.horizontal(|ui| {
         let (glyph, color) = if done { (icon::CHECK_SQUARE, ACCENT()) } else { (icon::SQUARE, MUTED()) };
         let check = egui::Button::new(RichText::new(glyph).size(18.0).color(color)).frame(false);
-        if ui.add(check).on_hover_text(if done { "Marcar pendiente" } else { "Marcar hecho" }).clicked() {
+        if ui.add(check).on_hover_text(if done { t!("Marcar pendiente") } else { t!("Marcar hecho") }).clicked() {
             action = Some(Action::Item(ItemDo::EventDone(e.clone(), !done)));
         }
         let mut job = LayoutJob::default();
@@ -144,12 +144,12 @@ fn event_row_inner(ui: &mut Ui, e: &agenda::Event, done: bool, follows: &trackin
                 }
             };
             if e.note.is_some() {
-                item(ui, format!("{}  Ir a donde está escrito", icon::ARROW_SQUARE_OUT), Action::Item(ItemDo::OpenEvent(e.clone())));
+                item(ui, format!("{}  {}", icon::ARROW_SQUARE_OUT, t!("Ir a donde está escrito")), Action::Item(ItemDo::OpenEvent(e.clone())));
             }
-            item(ui, format!("{}  Tomar notas", icon::NOTE_PENCIL), Action::StartMeetingNamed(e.title.clone()));
-            item(ui, format!("{}  Seguimiento", icon::ARROW_ELBOW_DOWN_RIGHT), Action::Item(ItemDo::EventFollowUp(e.clone())));
-            item(ui, format!("{}  Convertir en tarea", icon::CHECK_SQUARE), Action::Item(ItemDo::EventToTask(e.clone())));
-            let label = if done { format!("{}  Marcar pendiente", icon::SQUARE) } else { format!("{}  Marcar hecho", icon::CHECK_SQUARE) };
+            item(ui, format!("{}  {}", icon::NOTE_PENCIL, t!("Tomar notas")), Action::StartMeetingNamed(e.title.clone()));
+            item(ui, format!("{}  {}", icon::ARROW_ELBOW_DOWN_RIGHT, t!("Seguimiento")), Action::Item(ItemDo::EventFollowUp(e.clone())));
+            item(ui, format!("{}  {}", icon::CHECK_SQUARE, t!("Convertir en tarea")), Action::Item(ItemDo::EventToTask(e.clone())));
+            let label = if done { format!("{}  {}", icon::SQUARE, t!("Marcar pendiente")) } else { format!("{}  {}", icon::CHECK_SQUARE, t!("Marcar hecho")) };
             item(ui, label, Action::Item(ItemDo::EventDone(e.clone(), !done)));
             a
         };
@@ -160,16 +160,16 @@ fn event_row_inner(ui: &mut Ui, e: &agenda::Event, done: bool, follows: &trackin
         });
         if e.note.is_some() {
             let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(MUTED())).frame(false);
-            if ui.add(b).on_hover_text("Ir a donde está escrito").clicked() {
+            if ui.add(b).on_hover_text(t!("Ir a donde está escrito")).clicked() {
                 action = Some(Action::Item(ItemDo::OpenEvent(e.clone())));
             }
         }
         let b = egui::Button::new(RichText::new(icon::ARROW_ELBOW_DOWN_RIGHT).size(14.0).color(MUTED())).frame(false);
-        if ui.add(b).on_hover_text("Anotar un seguimiento: qué se hizo").clicked() {
+        if ui.add(b).on_hover_text(t!("Anotar un seguimiento: qué se hizo")).clicked() {
             action = Some(Action::Item(ItemDo::EventFollowUp(e.clone())));
         }
         let b = egui::Button::new(RichText::new(icon::DOTS_THREE).size(16.0).color(MUTED())).frame(false);
-        let r = ui.add(b).on_hover_text("Más: tomar notas, convertir en tarea…");
+        let r = ui.add(b).on_hover_text(t!("Más: tomar notas, convertir en tarea…"));
         egui::Popup::menu(&r).show(|ui| {
             if let Some(a) = menu(ui) {
                 action = Some(a);
@@ -233,12 +233,12 @@ impl NotesApp {
     fn open_task_line(&mut self, raw: &str) {
         let Some(t) = agenda::parse_task(raw) else { return };
         let Some(note) = t.note.filter(|n| !n.is_empty()) else {
-            self.msg("Esta tarea no está escrita en ninguna nota");
+            self.msg(t!("Esta tarea no está escrita en ninguna nota"));
             return;
         };
         let path = self.vault.root.join(format!("{note}.md"));
         if !path.is_file() {
-            self.msg(format!("La nota «{note}» ya no está (¿se movió o se archivó?)"));
+            self.msg(tf!("La nota «{note}» ya no está (¿se movió o se archivó?)", note = note));
             return;
         }
         let text = vault::read_text(&path).unwrap_or_default();
@@ -251,7 +251,7 @@ impl NotesApp {
         let Some(note) = &e.note else { return };
         let path = self.vault.root.join(format!("{note}.md"));
         if !path.is_file() {
-            self.msg(format!("La nota «{note}» ya no está (¿se movió o se archivó?)"));
+            self.msg(tf!("La nota «{note}» ya no está (¿se movió o se archivó?)", note = note));
             return;
         }
         let text = vault::read_text(&path).unwrap_or_default();
@@ -280,7 +280,7 @@ impl NotesApp {
             new += &format!(" due:{d}");
         }
         if let Err(e) = self.agenda.replace_task(raw, Some(new)) {
-            self.msg(format!("No se pudo escribir tareas.txt: {e}"));
+            self.msg(tf!("No se pudo escribir tareas.txt: {e}", e = e));
             return;
         }
         if let (Some(note), Some(id)) = (t.note.as_deref().filter(|n| !n.is_empty()), t.id.as_deref()) {
@@ -297,8 +297,8 @@ impl NotesApp {
         self.gcal_dirty = true;
         let what = agenda::display_text(&t.text);
         self.msg(match &due {
-            Some(d) => format!("«{what}» para el {}", long_date(d)),
-            None => format!("«{what}» quedó sin fecha"),
+            Some(d) => tf!("«{what}» para el {date}", what = what, date = long_date(d)),
+            None => tf!("«{what}» quedó sin fecha", what = what),
         });
     }
 
@@ -340,7 +340,7 @@ impl NotesApp {
         }
         let snapshot = self.agenda.snapshot();
         if let Err(e) = fs::write(&path, &body) {
-            self.msg(format!("No se pudo crear la nota: {e}"));
+            self.msg(tf!("No se pudo crear la nota: {e}", e = e));
             return;
         }
         let mut files = vec![(path.clone(), None)];
@@ -360,7 +360,7 @@ impl NotesApp {
             relinks: Vec::new(),
         });
         self.undo_entry = None;
-        self.msg(format!("«{}» ahora es una nota en {ws} (Deshacer, abajo)", vault::stem(&path)));
+        self.msg(tf!("«{name}» ahora es una nota en {ws} (Deshacer, abajo)", name = vault::stem(&path), ws = ws));
         self.open_in_tab(path, None);
     }
 
@@ -370,7 +370,7 @@ impl NotesApp {
         let snapshot = self.agenda.snapshot();
         let files: Vec<(PathBuf, Option<String>)> = self.unlink_task_line(&t).map(|(p, b)| (p, Some(b))).into_iter().collect();
         if let Err(e) = self.agenda.replace_task(raw, None) {
-            self.msg(format!("No se pudo escribir tareas.txt: {e}"));
+            self.msg(tf!("No se pudo escribir tareas.txt: {e}", e = e));
             return;
         }
         self.gcal_dirty = true;
@@ -386,7 +386,7 @@ impl NotesApp {
             relinks: Vec::new(),
         });
         self.undo_entry = None;
-        self.msg(format!("Tarea «{}» borrada (Deshacer, abajo)", agenda::display_text(&t.text)));
+        self.msg(tf!("Tarea «{name}» borrada (Deshacer, abajo)", name = agenda::display_text(&t.text)));
     }
 
     /// El evento pasa a ser una tarea para ese día (y deja de verse como evento). Con Deshacer.
@@ -407,7 +407,7 @@ impl NotesApp {
         let marks = self.vault.root.join(".nodex").join(EVENTS_FILE);
         let marks_before = vault::read_text(&marks).ok();
         if let Err(err) = self.agenda.add_task(line) {
-            self.msg(format!("No se pudo escribir tareas.txt: {err}"));
+            self.msg(tf!("No se pudo escribir tareas.txt: {e}", e = err));
             return;
         }
         // Un evento de las notas se quita de la agenda; uno de un calendario se anota.
@@ -429,7 +429,7 @@ impl NotesApp {
             relinks: Vec::new(),
         });
         self.undo_entry = None;
-        self.msg(format!("«{}» ahora es una tarea para el {} (Deshacer, abajo)", e.title.trim(), long_date(&e.date)));
+        self.msg(tf!("«{name}» ahora es una tarea para el {date} (Deshacer, abajo)", name = e.title.trim(), date = long_date(&e.date)));
     }
 }
 

@@ -62,26 +62,26 @@ impl Recurring {
         let mut d = self.dias.clone();
         d.sort();
         d.dedup();
-        let names: Vec<String> = d.iter().filter_map(|i| DIAS.get(*i as usize)).map(|n| if n.ends_with('s') { n.to_string() } else { format!("{n}s") }).collect();
+        let names: Vec<String> = d.iter().filter_map(|i| crate::i18n::dias().get(*i as usize)).map(|n| if n.ends_with('s') { n.to_string() } else { format!("{n}s") }).collect();
         let listed = match names.split_last() {
-            Some((last, rest)) if !rest.is_empty() => format!("los {} y {last}", rest.join(", ")),
-            Some((last, _)) => format!("los {last}"),
-            None => "ningún día".to_string(),
+            Some((last, rest)) if !rest.is_empty() => tf!("los {list} y {last}", list = rest.join(", "), last = last),
+            Some((last, _)) => tf!("los {last}", last = last),
+            None => t!("ningún día").to_string(),
         };
         let days = match self.frecuencia.as_str() {
-            "quincenal" => format!("cada dos semanas, {listed}"),
-            "mensual-dia" => format!("el día {} de cada mes", self.dia_mes),
+            "quincenal" => tf!("cada dos semanas, {listed}", listed = listed),
+            "mensual-dia" => tf!("el día {n} de cada mes", n = self.dia_mes),
             "mensual-semana" => {
-                let which = ORDINALES[(self.semana_mes.clamp(1, 5) - 1) as usize];
-                format!("el {which} {} de cada mes", d.first().and_then(|i| DIAS.get(*i as usize)).unwrap_or(&"lunes"))
+                let which = crate::i18n::tr(ORDINALES[(self.semana_mes.clamp(1, 5) - 1) as usize]);
+                tf!("el {which} {day} de cada mes", which = which, day = d.first().and_then(|i| crate::i18n::dias().get(*i as usize)).unwrap_or(&"lunes"))
             }
             _ => match d.len() {
-                7 => "todos los días".to_string(),
-                5 if d == [0, 1, 2, 3, 4] => "de lunes a viernes".to_string(),
-                _ => format!("todos {listed}"),
+                7 => t!("todos los días").to_string(),
+                5 if d == [0, 1, 2, 3, 4] => t!("de lunes a viernes").to_string(),
+                _ => tf!("todos {listed}", listed = listed),
             },
         };
-        format!("{days} a las {}", self.hora)
+        tf!("{days} a las {time}", days = days, time = self.hora)
     }
 
     /// ¿Toca este día?
@@ -154,7 +154,7 @@ impl NotesApp {
         let _ = fs::create_dir_all(self.vault.root.join(".nodex"));
         if let Ok(json) = serde_json::to_string_pretty(s) {
             if let Err(e) = fs::write(self.recurring_file(), json) {
-                self.msg(format!("No se pudo guardar recurrentes.json: {e}"));
+                self.msg(tf!("No se pudo guardar recurrentes.json: {e}", e = e));
             }
         }
     }
@@ -164,7 +164,7 @@ impl NotesApp {
         let mut dias: Vec<u32> = (0..7).filter(|i| f.dias[*i as usize]).collect();
         let hora = f.hora.trim().to_string();
         if !f.complete() {
-            self.msg("Falta el nombre, el día o la hora (HH:MM)");
+            self.msg(t!("Falta el nombre, el día o la hora (HH:MM)"));
             return;
         }
         let frecuencia = match f.freq {
@@ -192,14 +192,14 @@ impl NotesApp {
         let what = r.describe();
         s.insert(new_task_id(), r);
         self.save_recurring(&s);
-        self.msg(format!("«{titulo}», {what}"));
+        self.msg(tf!("«{title}», {what}", title = titulo, what = what));
     }
 
     pub(super) fn remove_recurring(&mut self, id: &str) {
         let mut s = self.recurring();
         if let Some(r) = s.remove(id) {
             self.save_recurring(&s);
-            self.msg(format!("«{}» ya no se repite (sus notas quedan)", r.titulo));
+            self.msg(tf!("«{title}» ya no se repite (sus notas quedan)", title = r.titulo));
         }
     }
 
@@ -271,7 +271,7 @@ impl NotesApp {
             let written = fs::write(&path, &text);
             crate::claims::release_note(&self.vault.root, &rel, &self.machine);
             if let Err(e) = written {
-                self.msg(format!("No se pudo crear «{}»: {e}", r.titulo));
+                self.msg(tf!("No se pudo crear «{title}»: {e}", title = r.titulo, e = e));
                 return None;
             }
             // Lo que ya trae no es nuevo: la IA la organiza cuando se escriba en ella.
@@ -304,8 +304,8 @@ impl NotesApp {
             self.recurring().into_iter().filter(|(_, r)| r.on(now.date_naive()) && r.ultima != day && time >= r.hora).collect();
         for (id, r) in due {
             if self.create_occurrence(&id).is_some() {
-                let how = if r.reunion { "en Inicio, «Tomar notas» la empieza" } else { "ya está en su espacio" };
-                self.msg(format!("«{}» de hoy está lista: {how}", r.titulo));
+                let how = if r.reunion { t!("en Inicio, «Tomar notas» la empieza") } else { t!("ya está en su espacio") };
+                self.msg(tf!("«{title}» de hoy está lista: {how}", title = r.titulo, how = how));
             }
         }
     }
@@ -335,7 +335,7 @@ impl NotesApp {
         self.meeting = Some(Meeting { path, title: r.titulo.clone(), started: now, last_activity: Instant::now(), last_time: now });
         self.pending_cursor = Some(usize::MAX);
         self.focus_editor = true;
-        self.msg("Reunión iniciada: cada línea lleva su hora. Esc la cierra.");
+        self.msg(t!("Reunión iniciada: cada línea lleva su hora. Esc la cierra."));
         true
     }
 
@@ -356,9 +356,9 @@ impl NotesApp {
         let (mut add, mut remove, mut close) = (false, None, false);
         let modal = egui::Modal::new(Id::new("recurrentes")).show(ctx, |ui| {
             ui.set_width(440.0);
-            ui.label(RichText::new(format!("{} Reuniones y notas que se repiten", icon::ARROWS_CLOCKWISE)).font(theme::bold(16.0)));
+            ui.label(RichText::new(format!("{} {}", icon::ARROWS_CLOCKWISE, t!("Reuniones y notas que se repiten"))).font(theme::bold(16.0)));
             ui.add_space(4.0);
-            ui.label(RichText::new("A esa hora se crea sola su nota del día, con los acuerdos que quedaron pendientes de la anterior.").size(12.5).color(MUTED()));
+            ui.label(RichText::new(t!("A esa hora se crea sola su nota del día, con los acuerdos que quedaron pendientes de la anterior.")).size(12.5).color(MUTED()));
             ui.add_space(8.0);
             for (id, r) in &list {
                 ui.horizontal(|ui| {
@@ -366,7 +366,7 @@ impl NotesApp {
                     ui.label(RichText::new(format!("{glyph}  {}", r.titulo)).size(13.5));
                     ui.label(RichText::new(format!("{} · {}", r.describe(), r.espacio)).size(12.0).color(MUTED()));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.small_button(icon::TRASH).on_hover_text("Que ya no se repita (sus notas quedan)").clicked() {
+                        if ui.small_button(icon::TRASH).on_hover_text(t!("Que ya no se repita (sus notas quedan)")).clicked() {
                             remove = Some(id.clone());
                         }
                     });
@@ -375,13 +375,13 @@ impl NotesApp {
             if !list.is_empty() {
                 ui.separator();
             }
-            ui.label(RichText::new("Nueva").font(theme::bold(13.5)));
-            ui.add(egui::TextEdit::singleline(&mut form.titulo).hint_text("Nombre: Reunión de equipo").desired_width(f32::INFINITY));
+            ui.label(RichText::new(t!("Nueva")).font(theme::bold(13.5)));
+            ui.add(egui::TextEdit::singleline(&mut form.titulo).hint_text(t!("Nombre: Reunión de equipo")).desired_width(f32::INFINITY));
             ui.horizontal(|ui| {
-                ui.radio_value(&mut form.reunion, true, "Reunión");
-                ui.radio_value(&mut form.reunion, false, "Nota");
+                ui.radio_value(&mut form.reunion, true, t!("Reunión"));
+                ui.radio_value(&mut form.reunion, false, t!("Nota"));
                 ui.add_space(12.0);
-                ui.label("en");
+                ui.label(t!("en"));
                 egui::ComboBox::from_id_salt("recurrente-espacio").selected_text(form.espacio.clone()).show_ui(ui, |ui| {
                     for w in &spaces {
                         ui.selectable_value(&mut form.espacio, w.clone(), w);
@@ -389,12 +389,12 @@ impl NotesApp {
                 });
             });
             ui.horizontal(|ui| {
-                ui.label("Cada");
+                ui.label(t!("Cada"));
                 let label = |f: Freq| match f {
-                    Freq::Weekly => "semana",
-                    Freq::Biweekly => "dos semanas",
-                    Freq::MonthDay => "mes (un día del mes)",
-                    Freq::MonthWeekday => "mes (un día de la semana)",
+                    Freq::Weekly => t!("semana"),
+                    Freq::Biweekly => t!("dos semanas"),
+                    Freq::MonthDay => t!("mes (un día del mes)"),
+                    Freq::MonthWeekday => t!("mes (un día de la semana)"),
                 };
                 egui::ComboBox::from_id_salt("recurrente-cada").selected_text(label(form.freq)).show_ui(ui, |ui| {
                     for f in [Freq::Weekly, Freq::Biweekly, Freq::MonthDay, Freq::MonthWeekday] {
@@ -405,18 +405,18 @@ impl NotesApp {
             ui.horizontal(|ui| {
                 match form.freq {
                     Freq::MonthDay => {
-                        ui.label("el día");
+                        ui.label(t!("el día"));
                         ui.add(egui::TextEdit::singleline(&mut form.month_day).hint_text("5").desired_width(32.0));
                     }
                     Freq::MonthWeekday => {
-                        ui.label("el");
-                        egui::ComboBox::from_id_salt("recurrente-semana").selected_text(ORDINALES[(form.nth.clamp(1, 5) - 1) as usize]).width(80.0).show_ui(ui, |ui| {
+                        ui.label(t!("el"));
+                        egui::ComboBox::from_id_salt("recurrente-semana").selected_text(crate::i18n::tr(ORDINALES[(form.nth.clamp(1, 5) - 1) as usize])).width(80.0).show_ui(ui, |ui| {
                             for (i, o) in ORDINALES.iter().enumerate() {
-                                ui.selectable_value(&mut form.nth, i as u32 + 1, *o);
+                                ui.selectable_value(&mut form.nth, i as u32 + 1, crate::i18n::tr(*o));
                             }
                         });
                         // Un solo día de la semana.
-                        for (i, d) in DIAS_CORTOS.iter().enumerate() {
+                        for (i, d) in crate::i18n::dias_cortos().iter().enumerate() {
                             if ui.selectable_label(form.dias[i], *d).clicked() {
                                 form.dias = [false; 7];
                                 form.dias[i] = true;
@@ -424,22 +424,22 @@ impl NotesApp {
                         }
                     }
                     _ => {
-                        for (i, d) in DIAS_CORTOS.iter().enumerate() {
+                        for (i, d) in crate::i18n::dias_cortos().iter().enumerate() {
                             ui.toggle_value(&mut form.dias[i], *d);
                         }
                     }
                 }
                 ui.add_space(8.0);
-                ui.label("a las");
+                ui.label(t!("a las"));
                 ui.add(egui::TextEdit::singleline(&mut form.hora).hint_text("09:00").desired_width(48.0));
             });
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 let ok = form.complete();
-                if ui.add_enabled(ok, egui::Button::new(RichText::new("Agregar").color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
+                if ui.add_enabled(ok, egui::Button::new(RichText::new(t!("Agregar")).color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                     add = true;
                 }
-                if ui.button("Cerrar").clicked() {
+                if ui.button(t!("Cerrar")).clicked() {
                     close = true;
                 }
             });

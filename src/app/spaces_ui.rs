@@ -47,12 +47,12 @@ impl NotesApp {
             SpaceReply::Later(name) => {
                 self.ideas.snooze(&name);
                 let _ = self.ideas.save(&root);
-                self.msg(format!("Te vuelvo a sugerir «{name}» cuando haya más notas"));
+                self.msg(tf!("Te vuelvo a sugerir «{name}» cuando haya más notas", name = name));
             }
             SpaceReply::Never(name) => {
                 self.ideas.reject(&name);
                 let _ = self.ideas.save(&root);
-                self.msg(format!("No volveré a sugerir el espacio «{name}»"));
+                self.msg(tf!("No volveré a sugerir el espacio «{name}»", name = name));
             }
         }
     }
@@ -65,7 +65,7 @@ impl NotesApp {
         let ws = match self.vault.create_workspace(name) {
             Ok(ws) => ws,
             Err(e) => {
-                self.msg(format!("No se pudo crear el espacio: {e}"));
+                self.msg(tf!("No se pudo crear el espacio: {e}", e = e));
                 return;
             }
         };
@@ -162,10 +162,10 @@ impl NotesApp {
         }
         self.prune_doubts();
         self.prune_ideas();
-        let what = if count > 0 { format!(" con {}", plural(count, "nota")) } else { String::new() };
+        let what = if count > 0 { tf!(" con {notes}", notes = plural(count, "nota")) } else { String::new() };
         self.select_workspace(ws.clone());
-        self.msg(format!("Espacio «{ws}» creado{what}"));
-        self.log_ai(crate::activity::Kind::Espacio, "", format!("Creaste el espacio «{ws}» que sugirió{what}"), details, undoable);
+        self.msg(tf!("Espacio «{ws}» creado{what}", ws = ws, what = what));
+        self.log_ai(crate::activity::Kind::Espacio, "", tf!("Creaste el espacio «{ws}» que sugirió{what}", ws = ws, what = what), details, undoable);
     }
 
     /// La tarjeta de una sugerencia de espacio.
@@ -179,35 +179,35 @@ impl NotesApp {
             .inner_margin(Margin::symmetric(14, 10))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.label(RichText::new(format!("{} ¿Crear el espacio «{}»?", icon::FOLDER_PLUS, idea.name)).size(14.5).color(TEXT()));
-                ui.label(RichText::new(format!("Tienes {} sobre {} y no tiene espacio propio:", plural(n, "nota"), idea.name)).size(12.5).color(MUTED()));
+                ui.label(RichText::new(format!("{} {}", icon::FOLDER_PLUS, tf!("¿Crear el espacio «{name}»?", name = idea.name))).size(14.5).color(TEXT()));
+                ui.label(RichText::new(tf!("Tienes {notes} sobre {name} y no tiene espacio propio:", notes = plural(n, "nota"), name = idea.name)).size(12.5).color(MUTED()));
                 for r in idea.refs.iter().take(5) {
                     let text = if r.unit.is_empty() {
-                        format!("•  nota «{}»", r.note.replace('/', " / "))
+                        tf!("•  nota «{note}»", note = r.note.replace('/', " / "))
                     } else {
                         format!("•  «{}»  ·  {}", r.unit, r.note.replace('/', " / "))
                     };
                     ui.add(egui::Label::new(RichText::new(text).size(12.5).color(MUTED()).italics()).truncate());
                 }
                 if n > 5 {
-                    ui.label(RichText::new(format!("   y {} más", n - 5)).size(12.5).color(MUTED()));
+                    ui.label(RichText::new(tf!("   y {n} más", n = n - 5)).size(12.5).color(MUTED()));
                 }
                 ui.add_space(4.0);
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-                    let main = egui::Button::new(RichText::new(format!("Crear y mover {}", plural(n, "nota"))).size(13.0).color(theme::c(Color32::WHITE)))
+                    let main = egui::Button::new(RichText::new(tf!("Crear y mover {notes}", notes = plural(n, "nota"))).size(13.0).color(theme::c(Color32::WHITE)))
                         .fill(SUCCESS())
                         .corner_radius(8);
-                    if ui.add(main).on_hover_text("Se puede deshacer").clicked() {
+                    if ui.add(main).on_hover_text(t!("Se puede deshacer")).clicked() {
                         reply = Some(SpaceReply::Create(idea.name.clone(), true));
                     }
-                    if ui.add(egui::Button::new(RichText::new("Solo crear").size(13.0)).fill(theme::c(Color32::WHITE)).corner_radius(8)).clicked() {
+                    if ui.add(egui::Button::new(RichText::new(t!("Solo crear")).size(13.0)).fill(theme::c(Color32::WHITE)).corner_radius(8)).clicked() {
                         reply = Some(SpaceReply::Create(idea.name.clone(), false));
                     }
-                    if ui.add(egui::Button::new(RichText::new("Ahora no").size(13.0)).fill(theme::c(Color32::WHITE)).corner_radius(8)).clicked() {
+                    if ui.add(egui::Button::new(RichText::new(t!("Ahora no")).size(13.0)).fill(theme::c(Color32::WHITE)).corner_radius(8)).clicked() {
                         reply = Some(SpaceReply::Later(idea.name.clone()));
                     }
-                    if ui.link(RichText::new("No, gracias").size(12.5).color(MUTED())).on_hover_text("No volver a sugerirlo").clicked() {
+                    if ui.link(RichText::new(t!("No, gracias")).size(12.5).color(MUTED())).on_hover_text(t!("No volver a sugerirlo")).clicked() {
                         reply = Some(SpaceReply::Never(idea.name.clone()));
                     }
                 });

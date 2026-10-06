@@ -25,11 +25,11 @@ impl NotesApp {
         let items = self.vault.trashed();
         Self::column(ui, "papelera", |ui, _| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("{} Papelera", icon::TRASH)).font(theme::bold(24.0)));
+                ui.label(RichText::new(format!("{} {}", icon::TRASH, t!("Papelera"))).font(theme::bold(24.0)));
                 if !items.is_empty() {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let b = egui::Button::new(RichText::new(format!("{} Vaciar la papelera", icon::TRASH)).color(RED())).stroke(Stroke::new(1.0, RED()));
-                        if ui.add(b).on_hover_text("Borra para siempre todo lo que hay aquí").clicked() {
+                        let b = egui::Button::new(RichText::new(format!("{} {}", icon::TRASH, t!("Vaciar la papelera"))).color(RED())).stroke(Stroke::new(1.0, RED()));
+                        if ui.add(b).on_hover_text(t!("Borra para siempre todo lo que hay aquí")).clicked() {
                             self.forever = Some((Forever::All, false));
                         }
                     });
@@ -37,13 +37,13 @@ impl NotesApp {
             });
             ui.add_space(4.0);
             ui.label(
-                RichText::new("Lo que borras queda aquí (en la carpeta .papelera). «Restaurar» lo devuelve a su lugar; «Borrar para siempre» no se puede deshacer.")
+                RichText::new(t!("Lo que borras queda aquí (en la carpeta .papelera). «Restaurar» lo devuelve a su lugar; «Borrar para siempre» no se puede deshacer."))
                     .size(13.0)
                     .color(MUTED()),
             );
             ui.add_space(14.0);
             if items.is_empty() {
-                ui.label(RichText::new("La papelera está vacía.").color(MUTED()));
+                ui.label(RichText::new(t!("La papelera está vacía.")).color(MUTED()));
                 return;
             }
             for t in &items {
@@ -54,31 +54,31 @@ impl NotesApp {
                         let stem = vault::stem(&t.path);
                         let title = match day_of(&stem) {
                             _ if t.is_dir => t.name.clone(),
-                            Some(d) => format!("Nota del día · {}", long_date(d)),
+                            Some(d) => tf!("Nota del día · {date}", date = long_date(d)),
                             None => stem.clone(),
                         };
                         ui.label(RichText::new(format!("{glyph}  {title}")).font(theme::bold(14.5)));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            let b = egui::Button::new(RichText::new("Borrar para siempre").size(12.5).color(RED()));
+                            let b = egui::Button::new(RichText::new(t!("Borrar para siempre")).size(12.5).color(RED()));
                             if ui.add(b).clicked() {
                                 self.forever = Some((Forever::One(t.clone()), false));
                             }
-                            if ui.button(RichText::new(format!("{} Restaurar", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5)).clicked() {
+                            if ui.button(RichText::new(format!("{} {}", icon::ARROW_COUNTER_CLOCKWISE, t!("Restaurar"))).size(12.5)).clicked() {
                                 action = Some(Action::Restore(t.clone()));
                             }
                         });
                     });
                     let from = match (&t.from, t.is_dir) {
-                        (_, true) => "Un espacio con sus notas".to_string(),
+                        (_, true) => t!("Un espacio con sus notas").to_string(),
                         (Some(f), false) => match f.rsplit_once('/') {
-                            Some((dir, _)) if vault::is_diary_dir(dir) => "Era una nota del Diario".to_string(),
-                            Some((dir, _)) => format!("Estaba en {dir}"),
-                            None => "Estaba en la carpeta de notas".to_string(),
+                            Some((dir, _)) if vault::is_diary_dir(dir) => t!("Era una nota del Diario").to_string(),
+                            Some((dir, _)) => tf!("Estaba en {dir}", dir = dir),
+                            None => t!("Estaba en la carpeta de notas").to_string(),
                         },
-                        (None, false) if day_of(&vault::stem(&t.path)).is_some() => "Vuelve al Diario".to_string(),
-                        (None, false) => "No se sabe de qué espacio era: vuelve al espacio actual".to_string(),
+                        (None, false) if day_of(&vault::stem(&t.path)).is_some() => t!("Vuelve al Diario").to_string(),
+                        (None, false) => t!("No se sabe de qué espacio era: vuelve al espacio actual").to_string(),
                     };
-                    let when = if t.when.is_empty() { String::new() } else { format!(" · borrada el {}", long_date(&t.when[..10.min(t.when.len())])) };
+                    let when = if t.when.is_empty() { String::new() } else { tf!(" · borrada el {date}", date = long_date(&t.when[..10.min(t.when.len())])) };
                     ui.label(RichText::new(format!("{from}{when}")).size(12.5).color(MUTED()));
                     // El comienzo de la nota, para reconocerla.
                     if !t.is_dir && t.path.extension().is_some_and(|e| e.eq_ignore_ascii_case("md")) {
@@ -101,13 +101,13 @@ impl NotesApp {
         let ws = self.ws.clone();
         match self.vault.restore(&t, &ws) {
             Ok(to) => {
-                let place = if t.is_dir { "como espacio".to_string() } else { format!("en {}", self.rel(to.parent().unwrap_or(&to))) };
-                self.msg(format!("«{}» restaurada {place}", if t.is_dir { t.name.clone() } else { vault::stem(&to) }));
+                let place = if t.is_dir { t!("como espacio").to_string() } else { tf!("en {dir}", dir = self.rel(to.parent().unwrap_or(&to))) };
+                self.msg(tf!("«{name}» restaurada {place}", name = if t.is_dir { t.name.clone() } else { vault::stem(&to) }, place = place));
                 if !t.is_dir && self.vault.get(&to).is_some() {
                     self.open_in_tab(to, None);
                 }
             }
-            Err(e) => self.msg(format!("No se pudo restaurar: {e}")),
+            Err(e) => self.msg(tf!("No se pudo restaurar: {e}", e = e)),
         }
     }
 
@@ -115,8 +115,8 @@ impl NotesApp {
     pub(super) fn forever_window(&mut self, ctx: &egui::Context) {
         let Some((what, sure)) = self.forever.as_mut() else { return };
         let (title, detail) = match what {
-            Forever::One(t) => (format!("¿Borrar para siempre «{}»?", if t.is_dir { t.name.clone() } else { vault::stem(&t.path) }), if t.is_dir { "Se borra el espacio con todas sus notas.".to_string() } else { String::new() }),
-            Forever::All => ("¿Vaciar la papelera?".to_string(), format!("Se borra para siempre todo lo que hay en ella ({}).", plural(self.vault.trashed().len(), "elemento"))),
+            Forever::One(t) => (tf!("¿Borrar para siempre «{name}»?", name = if t.is_dir { t.name.clone() } else { vault::stem(&t.path) }), if t.is_dir { t!("Se borra el espacio con todas sus notas.").to_string() } else { String::new() }),
+            Forever::All => (t!("¿Vaciar la papelera?").to_string(), tf!("Se borra para siempre todo lo que hay en ella ({n}).", n = plural(self.vault.trashed().len(), "elemento"))),
         };
         let mut go = false;
         let mut close = false;
@@ -124,16 +124,16 @@ impl NotesApp {
             ui.set_width(400.0);
             ui.label(RichText::new(title).font(theme::bold(16.0)));
             ui.add_space(4.0);
-            ui.label(RichText::new(format!("{detail} No se puede deshacer, ni desde la app ni desde la carpeta.").trim()).size(13.0).color(MUTED()));
+            ui.label(RichText::new(tf!("{detail} No se puede deshacer, ni desde la app ni desde la carpeta.", detail = detail).trim()).size(13.0).color(MUTED()));
             ui.add_space(8.0);
-            ui.checkbox(sure, "Entiendo que no se puede recuperar");
+            ui.checkbox(sure, t!("Entiendo que no se puede recuperar"));
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                let b = egui::Button::new(RichText::new(format!("{} Borrar para siempre", icon::TRASH)).color(theme::c(Color32::WHITE))).fill(RED());
+                let b = egui::Button::new(RichText::new(format!("{} {}", icon::TRASH, t!("Borrar para siempre"))).color(theme::c(Color32::WHITE))).fill(RED());
                 if ui.add_enabled(*sure, b).clicked() {
                     go = true;
                 }
-                if ui.button("Cancelar").clicked() {
+                if ui.button(t!("Cancelar")).clicked() {
                     close = true;
                 }
             });
@@ -151,11 +151,11 @@ impl NotesApp {
             for t in &items {
                 match self.vault.delete_forever(t) {
                     Ok(()) => gone += 1,
-                    Err(e) => self.msg(format!("No se pudo borrar «{}»: {e}", t.name)),
+                    Err(e) => self.msg(tf!("No se pudo borrar «{name}»: {e}", name = t.name, e = e)),
                 }
             }
             if gone > 0 {
-                self.msg(format!("{} borrado para siempre", plural(gone, "elemento")));
+                self.msg(tf!("{n} borrado para siempre", n = plural(gone, "elemento")));
             }
         } else if close {
             self.forever = None;

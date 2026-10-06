@@ -123,8 +123,8 @@ mod win {
                 let ctx = ctx.clone();
                 listen(l, move || show(hwnd, &ctx));
             }
-            let open = MenuItem::new("Abrir Notas", true, None);
-            let exit = MenuItem::new("Salir de Notas", true, None);
+            let open = MenuItem::new(t!("Abrir Notas"), true, None);
+            let exit = MenuItem::new(t!("Salir de Notas"), true, None);
             let menu = Menu::new();
             let _ = menu.append(&open);
             let _ = menu.append(&PredefinedMenuItem::separator());
@@ -132,7 +132,7 @@ mod win {
             let tray = TrayIconBuilder::new()
                 .with_menu(Box::new(menu))
                 .with_menu_on_left_click(false)
-                .with_tooltip("Notas · sigue sincronizando tus notas")
+                .with_tooltip(t!("Notas · sigue sincronizando tus notas"))
                 .with_icon(icon()?)
                 .build()
                 .ok();
@@ -214,7 +214,7 @@ pub fn set_start_with_windows(on: bool) -> Result<(), String> {
     } else {
         run_key(&["delete", RUN_KEY, "/v", "Notas", "/f"]).is_some() || !starts_with_windows()
     };
-    if ok { Ok(()) } else { Err("Windows no lo permitió".into()) }
+    if ok { Ok(()) } else { Err(t!("Windows no lo permitió").into()) }
 }
 
 #[cfg(windows)]
@@ -235,7 +235,7 @@ pub fn starts_with_windows() -> bool {
 
 #[cfg(not(windows))]
 pub fn set_start_with_windows(_on: bool) -> Result<(), String> {
-    Err("solo en Windows".into())
+    Err(t!("solo en Windows").into())
 }
 
 #[cfg(test)]

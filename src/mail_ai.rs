@@ -45,8 +45,8 @@ struct Reply {
 }
 
 pub fn parse_reply(text: &str) -> Result<Vec<MailResult>, String> {
-    let (Some(a), Some(b)) = (text.find('{'), text.rfind('}')) else { return Err("la IA no devolvió JSON".into()) };
-    serde_json::from_str::<Reply>(&text[a..=b]).map(|r| r.correos).map_err(|e| format!("JSON inválido de la IA: {e}"))
+    let (Some(a), Some(b)) = (text.find('{'), text.rfind('}')) else { return Err(t!("la IA no devolvió JSON").into()) };
+    serde_json::from_str::<Reply>(&text[a..=b]).map(|r| r.correos).map_err(|e| tf!("JSON inválido de la IA: {e}", e = e))
 }
 
 pub fn is_me(who: &str) -> bool {

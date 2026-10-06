@@ -71,25 +71,25 @@ impl NotesApp {
         let modal = egui::Modal::new(Id::new("seguimiento")).show(ctx, |ui| {
             ui.set_width(560.0_f32.min(ctx.content_rect().width() - 80.0));
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("{} Correo de seguimiento", icon::ENVELOPE_SIMPLE)).font(theme::bold(17.0)));
+                ui.label(RichText::new(format!("{} {}", icon::ENVELOPE_SIMPLE, t!("Correo de seguimiento"))).font(theme::bold(17.0)));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.add(egui::Button::new(RichText::new(icon::X).size(16.0)).frame(false)).on_hover_text("Cerrar (Esc)").clicked() {
+                    if ui.add(egui::Button::new(RichText::new(icon::X).size(16.0)).frame(false)).on_hover_text(t!("Cerrar (Esc)")).clicked() {
                         close = true;
                     }
                 });
             });
-            ui.label(RichText::new(format!("Borrador para «{}». Puedes editarlo antes de enviarlo.", self.followup.title)).size(12.5).color(MUTED()));
+            ui.label(RichText::new(tf!("Borrador para «{title}». Puedes editarlo antes de enviarlo.", title = self.followup.title)).size(12.5).color(MUTED()));
             ui.add_space(8.0);
             if self.followup.rx.is_some() {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label(RichText::new("Redactando…").color(MUTED()));
+                    ui.label(RichText::new(t!("Redactando…")).color(MUTED()));
                 });
                 return;
             }
             if let Some(e) = &self.followup.error {
-                ui.label(RichText::new(format!("No se pudo redactar: {e}")).color(RED()));
-                if ui.button("Intentar de nuevo").clicked() {
+                ui.label(RichText::new(tf!("No se pudo redactar: {e}", e = e)).color(RED()));
+                if ui.button(t!("Intentar de nuevo")).clicked() {
                     retry = true;
                 }
                 return;
@@ -99,16 +99,16 @@ impl NotesApp {
             });
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.button(format!("{} Copiar", icon::COPY)).clicked() {
+                if ui.button(format!("{} {}", icon::COPY, t!("Copiar"))).clicked() {
                     ui.ctx().copy_text(self.followup.text.clone());
-                    self.msg("Correo copiado");
+                    self.msg(t!("Correo copiado"));
                 }
-                if ui.button(format!("{} Abrir en el correo", icon::PAPER_PLANE_RIGHT)).on_hover_text("Abre tu programa de correo con el asunto y el texto").clicked() {
+                if ui.button(format!("{} {}", icon::PAPER_PLANE_RIGHT, t!("Abrir en el correo"))).on_hover_text(t!("Abre tu programa de correo con el asunto y el texto")).clicked() {
                     let (subject, body) = split_subject(&self.followup.text);
                     let url = format!("mailto:?subject={}&body={}", url_encode(&subject), url_encode(&body.replace('\n', "\r\n")));
                     gcal::open_browser(&url);
                 }
-                if ui.button(format!("{} Rehacer", icon::ARROW_CLOCKWISE)).clicked() {
+                if ui.button(format!("{} {}", icon::ARROW_CLOCKWISE, t!("Rehacer"))).clicked() {
                     retry = true;
                 }
             });

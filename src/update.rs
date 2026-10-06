@@ -110,12 +110,12 @@ fn client() -> reqwest::Client {
 pub fn fetch_latest() -> Result<Release, String> {
     let url = test_api().unwrap_or_else(|| LATEST.into());
     runtime()?.block_on(async {
-        let r = client().get(&url).send().await.map_err(|e| format!("sin conexión ({e})"))?;
+        let r = client().get(&url).send().await.map_err(|e| tf!("sin conexión ({e})", e = e))?;
         if !r.status().is_success() {
-            return Err(format!("GitHub respondió {}", r.status()));
+            return Err(tf!("GitHub respondió {status}", status = r.status()));
         }
         let v: Value = r.json().await.map_err(|e| e.to_string())?;
-        parse_release(&v).ok_or_else(|| "GitHub no respondió la versión".to_string())
+        parse_release(&v).ok_or_else(|| t!("GitHub no respondió la versión").to_string())
     })
 }
 
@@ -155,10 +155,10 @@ impl Install {
     /// Lo que hay que saber, para Configuración → Acerca de (nada, si se actualiza sola).
     pub fn describe(&self) -> Option<String> {
         match self {
-            Install::Msi { .. } => Some("Windows te pedirá permiso para instalarla.".into()),
-            Install::Deb { .. } => Some("Se te pedirá tu contraseña para instalarla.".into()),
-            Install::Store => Some("La actualiza la Microsoft Store.".into()),
-            Install::Manual(why) => Some(format!("Esta copia no se puede actualizar sola ({why}): baja la nueva desde GitHub.")),
+            Install::Msi { .. } => Some(t!("Windows te pedirá permiso para instalarla.").into()),
+            Install::Deb { .. } => Some(t!("Se te pedirá tu contraseña para instalarla.").into()),
+            Install::Store => Some(t!("La actualiza la Microsoft Store.").into()),
+            Install::Manual(why) => Some(tf!("Esta copia no se puede actualizar sola ({why}): baja la nueva desde GitHub.", why = why)),
             Install::Binary { .. } | Install::MacApp { .. } => None,
         }
     }
@@ -166,7 +166,7 @@ impl Install {
 
 /// Cómo está instalada esta copia (mira dónde está el ejecutable y si se puede escribir ahí).
 pub fn detect() -> Install {
-    let Ok(exe) = std::env::current_exe() else { return Install::Manual("no se sabe dónde está".into()) };
+    let Ok(exe) = std::env::current_exe() else { return Install::Manual(t!("no se sabe dónde está").into()) };
     #[cfg(unix)]
     let exe = exe.canonicalize().unwrap_or(exe);
     // Una copia compilada en el equipo (cargo build) no se reemplaza, salvo en las pruebas.
@@ -174,10 +174,10 @@ pub fn detect() -> Install {
     let dev = comps.windows(2).any(|w| w[0] == "target" && (w[1] == "debug" || w[1] == "release"))
         || comps.windows(3).any(|w| w[0] == "target" && (w[2] == "debug" || w[2] == "release"));
     if dev && test_api().is_none() {
-        return Install::Manual("es una copia de desarrollo".into());
+        return Install::Manual(t!("es una copia de desarrollo").into());
     }
     if !cfg!(target_arch = "x86_64") && !cfg!(target_os = "macos") {
-        return Install::Manual("no hay versión para este procesador".into());
+        return Install::Manual(t!("no hay versión para este procesador").into());
     }
     let from_deb = cfg!(target_os = "linux")
         && exe.starts_with("/usr")
@@ -188,7 +188,7 @@ pub fn detect() -> Install {
 /// La parte de `detect` que no mira el equipo (para probarla).
 pub fn classify(exe: &Path, os: &str, writable: impl Fn(&Path) -> bool, from_deb: bool) -> Install {
     let dir = exe.parent().unwrap_or(Path::new("."));
-    let not_writable = || Install::Manual("está en una carpeta donde no se puede escribir".into());
+    let not_writable = || Install::Manual(t!("está en una carpeta donde no se puede escribir").into());
     match os {
         "windows" => {
             let lower = exe.to_string_lossy().to_lowercase();
@@ -207,7 +207,7 @@ pub fn classify(exe: &Path, os: &str, writable: impl Fn(&Path) -> bool, from_deb
             match bundle {
                 Some(b) if writable(b.parent().unwrap_or(Path::new("/"))) => Install::MacApp { bundle: b.to_path_buf() },
                 Some(_) => not_writable(),
-                None => Install::Manual("no está dentro de Notas.app".into()),
+                None => Install::Manual(t!("no está dentro de Notas.app").into()),
             }
         }
         _ => {
@@ -252,11 +252,11 @@ fn hex(bytes: &[u8]) -> String {
 fn verify(path: &Path, asset: &Asset) -> Result<(), String> {
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
     if asset.size > 0 && bytes.len() as u64 != asset.size {
-        return Err("la versión nueva llegó incompleta".into());
+        return Err(t!("la versión nueva llegó incompleta").into());
     }
     if let Some(want) = &asset.sha256 {
         if hex(&Sha256::digest(&bytes)) != *want {
-            return Err("la versión nueva llegó dañada (su huella no coincide)".into());
+            return Err(t!("la versión nueva llegó dañada (su huella no coincide)").into());
         }
     }
     Ok(())
@@ -273,13 +273,13 @@ pub fn download(asset: &Asset, dir: &Path, progress: &AtomicU64) -> Result<PathB
     }
     let part = dir.join(format!("{}.part", asset.name));
     runtime()?.block_on(async {
-        let mut r = client().get(&asset.url).send().await.map_err(|e| format!("sin conexión ({e})"))?;
+        let mut r = client().get(&asset.url).send().await.map_err(|e| tf!("sin conexión ({e})", e = e))?;
         if !r.status().is_success() {
-            return Err(format!("GitHub respondió {}", r.status()));
+            return Err(tf!("GitHub respondió {status}", status = r.status()));
         }
         let mut f = fs::File::create(&part).map_err(|e| e.to_string())?;
         let mut n = 0u64;
-        while let Some(chunk) = r.chunk().await.map_err(|e| format!("se cortó la descarga ({e})"))? {
+        while let Some(chunk) = r.chunk().await.map_err(|e| tf!("se cortó la descarga ({e})", e = e))? {
             f.write_all(&chunk).map_err(|e| e.to_string())?;
             n += chunk.len() as u64;
             progress.store(n, Ordering::Relaxed);
@@ -306,24 +306,24 @@ fn mac_staging(bundle: &Path) -> PathBuf {
 pub fn prepare(install: &Install, file: &Path) -> Result<PathBuf, String> {
     let run = |c: &mut Command, what: &str| -> Result<(), String> {
         let ok = c.stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success());
-        if ok { Ok(()) } else { Err(format!("no se pudo {what}")) }
+        if ok { Ok(()) } else { Err(tf!("no se pudo {what}", what = what)) }
     };
     match install {
         Install::Binary { .. } if file.to_string_lossy().ends_with(".tar.gz") => {
             let dir = file.with_file_name("nueva");
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-            run(Command::new("tar").arg("-xzf").arg(file).arg("-C").arg(&dir), "descomprimir la versión nueva")?;
+            run(Command::new("tar").arg("-xzf").arg(file).arg("-C").arg(&dir), t!("descomprimir la versión nueva"))?;
             let bin = dir.join("nodex-notes");
-            if bin.is_file() { Ok(bin) } else { Err("la versión nueva no trae el programa".into()) }
+            if bin.is_file() { Ok(bin) } else { Err(t!("la versión nueva no trae el programa").into()) }
         }
         Install::MacApp { bundle } => {
             let staging = mac_staging(bundle);
             let _ = fs::remove_dir_all(&staging);
             fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
-            run(Command::new("ditto").args(["-x", "-k"]).arg(file).arg(&staging), "descomprimir la versión nueva")?;
+            run(Command::new("ditto").args(["-x", "-k"]).arg(file).arg(&staging), t!("descomprimir la versión nueva"))?;
             let app = staging.join("Notas.app");
-            if app.is_dir() { Ok(app) } else { Err("la versión nueva no trae Notas.app".into()) }
+            if app.is_dir() { Ok(app) } else { Err(t!("la versión nueva no trae Notas.app").into()) }
         }
         _ => Ok(file.to_path_buf()),
     }
@@ -341,11 +341,11 @@ fn old_path(exe: &Path) -> PathBuf {
 pub fn replace_file(exe: &Path, new: &Path) -> Result<(), String> {
     let old = old_path(exe);
     let _ = fs::remove_file(&old);
-    fs::rename(exe, &old).map_err(|e| format!("no se pudo reemplazar la app ({e})"))?;
+    fs::rename(exe, &old).map_err(|e| tf!("no se pudo reemplazar la app ({e})", e = e))?;
     if let Err(e) = fs::copy(new, exe) {
         let _ = fs::remove_file(exe);
         let _ = fs::rename(&old, exe);
-        return Err(format!("no se pudo copiar la versión nueva ({e})"));
+        return Err(tf!("no se pudo copiar la versión nueva ({e})", e = e));
     }
     #[cfg(unix)]
     {
@@ -416,7 +416,7 @@ fn cleanup() {
 /// Abre un programa que sigue vivo cuando esta app se cierra.
 fn spawn(c: &mut Command) -> Result<(), String> {
     c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-    c.spawn().map(|_| ()).map_err(|e| format!("no se pudo abrir la versión nueva ({e})"))
+    c.spawn().map(|_| ()).map_err(|e| tf!("no se pudo abrir la versión nueva ({e})", e = e))
 }
 
 /// Instala la versión nueva (ya preparada) y abre la nueva, que espera a que esta se cierre.
@@ -436,20 +436,20 @@ fn install_new(install: &Install, new: &Path) -> Result<(), String> {
         Install::MacApp { bundle } => {
             let old = mac_staging(bundle).join("anterior.app");
             let _ = fs::remove_dir_all(&old);
-            fs::rename(bundle, &old).map_err(|e| format!("no se pudo reemplazar la app ({e})"))?;
+            fs::rename(bundle, &old).map_err(|e| tf!("no se pudo reemplazar la app ({e})", e = e))?;
             if let Err(e) = fs::rename(new, bundle) {
                 let _ = fs::rename(&old, bundle);
-                return Err(format!("no se pudo poner la versión nueva ({e})"));
+                return Err(tf!("no se pudo poner la versión nueva ({e})", e = e));
             }
             spawn(Command::new("open").arg("-n").arg(bundle))
         }
         Install::Deb { exe } => {
             // Pide la contraseña con la ventana del sistema; si se cancela, no se cierra nada.
             let ok = Command::new("pkexec").args(["dpkg", "-i"]).arg(new).status().is_ok_and(|s| s.success());
-            if ok { spawn(&mut Command::new(exe)) } else { Err("no se instaló (¿se canceló la contraseña?)".into()) }
+            if ok { spawn(&mut Command::new(exe)) } else { Err(t!("no se instaló (¿se canceló la contraseña?)").into()) }
         }
         Install::Msi { exe } => run_msi(new, exe),
-        Install::Store | Install::Manual(_) => Err("esta copia no se puede actualizar sola".into()),
+        Install::Store | Install::Manual(_) => Err(t!("esta copia no se puede actualizar sola").into()),
     }
 }
 
@@ -482,7 +482,7 @@ fn run_msi(msi: &Path, exe: &Path) -> Result<(), String> {
 
 #[cfg(not(windows))]
 fn run_msi(_msi: &Path, _exe: &Path) -> Result<(), String> {
-    Err("el instalador .msi es solo para Windows".into())
+    Err(t!("el instalador .msi es solo para Windows").into())
 }
 
 // ---------- Qué hay de nuevo ----------

@@ -39,6 +39,8 @@ pub struct Config {
     pub segundo_plano: bool,
     /// Tema: "claro", "oscuro" o "sistema" (el de Windows / Mac).
     pub tema: String,
+    /// Idioma de la interfaz: "es", "en" o "" (el del sistema).
+    pub idioma: String,
     /// Abrir Notas al iniciar Windows, ya en segundo plano.
     pub iniciar_con_windows: bool,
     /// No sincronizar la carpeta de notas con la cuenta (se sincroniza sola al entrar, salvo que
@@ -95,6 +97,7 @@ impl Default for Config {
             actualizar_sola: true,
             segundo_plano: true,
             tema: "sistema".into(),
+            idioma: String::new(),
             iniciar_con_windows: false,
             sin_sincronizar: false,
             first_run: false,
@@ -121,7 +124,7 @@ pub fn load() -> (Config, Option<String>) {
             Ok(c) => (c, None),
             Err(e) => (
                 Config::default(),
-                Some(format!("Error en {}: {}", path.display(), e.message())),
+                Some(tf!("Error en {file}: {e}", file = path.display(), e = e.message())),
             ),
         },
         Err(_) => {
@@ -132,8 +135,8 @@ pub fn load() -> (Config, Option<String>) {
                 c.modelo = "incluida".into();
             }
             let msg = match save(&c) {
-                Ok(()) => format!("Configuración creada en {}", path.display()),
-                Err(e) => format!("No se pudo crear {}: {e}", path.display()),
+                Ok(()) => tf!("Configuración creada en {file}", file = path.display()),
+                Err(e) => tf!("No se pudo crear {file}: {e}", file = path.display(), e = e),
             };
             (c, Some(msg))
         }
@@ -201,6 +204,9 @@ fn render(c: &Config) -> String {
          # Tema: claro, oscuro o sistema (el mismo de Windows)\n\
          tema = {}\n\
          \n\
+         # Idioma: es, en o vacío (el del sistema)\n\
+         idioma = {}\n\
+         \n\
          # Abrir Notas al iniciar Windows, ya en segundo plano\n\
          iniciar_con_windows = {}\n\
          \n\
@@ -222,6 +228,7 @@ fn render(c: &Config) -> String {
         c.actualizar_sola,
         c.segundo_plano,
         q(&c.tema),
+        q(&c.idioma),
         c.iniciar_con_windows,
         c.sin_sincronizar,
     );

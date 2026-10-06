@@ -91,7 +91,7 @@ pub(super) struct Ask {
 
 /// «1 oct» de «2026-10-01».
 pub(super) fn short_day(date: &str) -> String {
-    NaiveDate::parse_from_str(date, "%Y-%m-%d").map(|d| format!("{} {}", d.day(), MESES[d.month0() as usize])).unwrap_or_else(|_| date.to_string())
+    NaiveDate::parse_from_str(date, "%Y-%m-%d").map(|d| format!("{} {}", d.day(), crate::i18n::meses()[d.month0() as usize])).unwrap_or_else(|_| date.to_string())
 }
 
 /// El comienzo de una nota para mostrarla en una lista: sus primeras líneas, sin títulos de
@@ -261,21 +261,21 @@ impl NotesApp {
                 .show(ui, |ui| {
                     ui.set_width(480.0);
                     ui.horizontal(|ui| {
-                        let (glyph, color, head) = if a.done { (icon::CHECK_CIRCLE, SUCCESS(), "Hecha") } else { (icon::ARROW_ELBOW_DOWN_RIGHT, ACCENT(), "Seguimiento") };
+                        let (glyph, color, head) = if a.done { (icon::CHECK_CIRCLE, SUCCESS(), t!("Hecha")) } else { (icon::ARROW_ELBOW_DOWN_RIGHT, ACCENT(), t!("Seguimiento")) };
                         ui.label(RichText::new(glyph).size(16.0).color(color));
                         let title: String = a.title.chars().take(60).collect();
-                        ui.add(egui::Label::new(RichText::new(format!("{head}: «{title}»")).font(theme::bold(14.0))).truncate());
+                        ui.add(egui::Label::new(RichText::new(tf!("{head}: «{title}»", head = head, title = title)).font(theme::bold(14.0))).truncate());
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui.add(egui::Button::new(RichText::new(icon::X).size(13.0).color(MUTED())).frame(false)).on_hover_text("Omitir (Esc)").clicked() {
+                            if ui.add(egui::Button::new(RichText::new(icon::X).size(13.0).color(MUTED())).frame(false)).on_hover_text(t!("Omitir (Esc)")).clicked() {
                                 close = true;
                             }
                         });
                     });
-                    ui.label(RichText::new("¿Qué se hizo? Queda anotado debajo, con la fecha, y la IA lo tiene en cuenta.").size(12.5).color(MUTED()));
+                    ui.label(RichText::new(t!("¿Qué se hizo? Queda anotado debajo, con la fecha, y la IA lo tiene en cuenta.")).size(12.5).color(MUTED()));
                     ui.add_space(4.0);
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut a.text)
-                            .hint_text("Por ejemplo: se pidió a Gerdau, llega el lunes")
+                            .hint_text(t!("Por ejemplo: se pidió a Gerdau, llega el lunes"))
                             .desired_width(f32::INFINITY)
                             .margin(Margin::symmetric(8, 5)),
                     );
@@ -287,11 +287,11 @@ impl NotesApp {
                     }
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        let b = egui::Button::new(RichText::new("Anotar").color(theme::c(Color32::WHITE))).fill(ACCENT());
+                        let b = egui::Button::new(RichText::new(t!("Anotar")).color(theme::c(Color32::WHITE))).fill(ACCENT());
                         if ui.add_enabled(!a.text.trim().is_empty(), b).clicked() {
                             save = true;
                         }
-                        if ui.button(if a.done { "Omitir" } else { "Cancelar" }).clicked() {
+                        if ui.button(if a.done { t!("Omitir") } else { t!("Cancelar") }).clicked() {
                             close = true;
                         }
                     });
@@ -310,13 +310,13 @@ impl NotesApp {
         if save {
             let Some(a) = self.follow_ask.take() else { return };
             if self.add_follow_up(a.target.clone(), &a.text) {
-                self.msg(format!("Seguimiento anotado en «{}»", a.title.chars().take(50).collect::<String>()));
+                self.msg(tf!("Seguimiento anotado en «{title}»", title = a.title.chars().take(50).collect::<String>()));
                 // En una tarea pendiente: ¿dice que ya se terminó?
                 if !a.done {
                     self.check_done(a.target, a.title, a.text);
                 }
             } else {
-                self.msg("No se pudo anotar el seguimiento");
+                self.msg(t!("No se pudo anotar el seguimiento"));
             }
         } else if close {
             self.follow_ask = None;
@@ -356,7 +356,11 @@ impl NotesApp {
                 std::thread::spawn(move || {
                     let user = format!("Tarea: «{title}»\nSeguimiento: «{follow}»\n¿El seguimiento dice que la tarea ya está terminada?");
                     let yes = match ai::complete(&cfg, DONE_SYSTEM, &user) {
-                        Ok(a) => vault::fold(a.trim()).trim_start_matches(['«', '"', '*']).starts_with('s'),
+                        Ok(a) => {
+                            let a = vault::fold(a.trim());
+                            let a = a.trim_start_matches(['«', '"', '*']);
+                            a.starts_with('s') || a.starts_with("yes")
+                        }
                         // Sin conexión: las palabras claras.
                         Err(_) => looks_done(&follow) == Some(true),
                     };
@@ -440,7 +444,7 @@ impl NotesApp {
         match target {
             Target::Line { id: Some(id), note, .. } => {
                 if let Err(e) = self.agenda.set_done_by_id(id, true, &today()) {
-                    self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
+                    self.msg(tf!("No se pudo actualizar tareas.txt: {e}", e = e));
                 }
                 let rel = crate::history::rel_of(&self.vault.root, note);
                 self.sync_task_line(&rel, id, true);
@@ -464,7 +468,7 @@ impl NotesApp {
             Target::Task(k) => {
                 if let Some(t) = self.agenda.tasks().into_iter().find(|t| !t.done && task_key(t) == *k) {
                     if let Err(e) = self.agenda.toggle_task(&t.raw, &today()) {
-                        self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
+                        self.msg(tf!("No se pudo actualizar tareas.txt: {e}", e = e));
                     }
                 }
             }
@@ -494,17 +498,17 @@ impl NotesApp {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(icon::SPARKLE).size(16.0).color(ACCENT()));
                         let title: String = s.title.chars().take(60).collect();
-                        ui.add(egui::Label::new(RichText::new(format!("¿Marco «{title}» como hecha?")).font(theme::bold(14.0))).truncate());
+                        ui.add(egui::Label::new(RichText::new(tf!("¿Marco «{title}» como hecha?", title = title)).font(theme::bold(14.0))).truncate());
                     });
                     let quote: String = s.quote.chars().take(160).collect();
-                    ui.label(RichText::new(format!("El seguimiento dice: «{quote}»")).size(13.0).color(MUTED()));
+                    ui.label(RichText::new(tf!("El seguimiento dice: «{quote}»", quote = quote)).size(13.0).color(MUTED()));
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        let b = egui::Button::new(RichText::new(format!("{}  Marcar hecha", icon::CHECK)).color(theme::c(Color32::WHITE))).fill(ACCENT());
+                        let b = egui::Button::new(RichText::new(format!("{}  {}", icon::CHECK, t!("Marcar hecha"))).color(theme::c(Color32::WHITE))).fill(ACCENT());
                         if ui.add(b).clicked() {
                             yes = true;
                         }
-                        if ui.button("No, sigue pendiente").clicked() {
+                        if ui.button(t!("No, sigue pendiente")).clicked() {
                             no = true;
                         }
                     });
@@ -522,7 +526,7 @@ impl NotesApp {
         if yes {
             if let Some(s) = self.done_suggest.take() {
                 self.mark_done(&s.target);
-                self.msg(format!("«{}» marcada como hecha", s.title.chars().take(50).collect::<String>()));
+                self.msg(tf!("«{title}» marcada como hecha", title = s.title.chars().take(50).collect::<String>()));
             }
         } else if no {
             self.done_suggest = None;

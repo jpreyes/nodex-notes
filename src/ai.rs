@@ -159,7 +159,7 @@ pub fn fetch_usage(cfg: &Config, ctx: eframe::egui::Context) -> Receiver<Result<
     let code = cfg.codigo_ia.trim().to_string();
     std::thread::spawn(move || {
         let result = (|| -> Result<Usage, String> {
-            let base = base.ok_or("Falta la dirección del servidor")?;
+            let base = base.ok_or(t!("Falta la dirección del servidor"))?;
             let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
             rt.block_on(async {
                 let r = reqwest::Client::new()
@@ -168,14 +168,14 @@ pub fn fetch_usage(cfg: &Config, ctx: eframe::egui::Context) -> Receiver<Result<
                     .header("User-Agent", format!("nodex-notes/{}", env!("CARGO_PKG_VERSION")))
                     .send()
                     .await
-                    .map_err(|e| format!("sin conexión con el servidor ({e})"))?;
+                    .map_err(|e| tf!("sin conexión con el servidor ({e})", e = e))?;
                 let status = r.status();
                 let text = r.text().await.map_err(|e| e.to_string())?;
                 if !status.is_success() {
                     let msg = serde_json::from_str::<serde_json::Value>(&text)
                         .ok()
                         .and_then(|v| v.pointer("/error/message").and_then(|m| m.as_str()).map(str::to_string));
-                    return Err(msg.unwrap_or_else(|| format!("el servidor respondió {status}")));
+                    return Err(msg.unwrap_or_else(|| tf!("el servidor respondió {status}", status = status)));
                 }
                 serde_json::from_str(&text).map_err(|e| e.to_string())
             })
@@ -201,8 +201,9 @@ fn provider(proveedor: &str) -> Result<Provider, String> {
         "openai" | "gpt" => p(AdapterKind::OpenAI, None, Some("OPENAI_API_KEY")),
         "gemini" | "google" => p(AdapterKind::Gemini, None, Some("GEMINI_API_KEY")),
         "ollama" => p(AdapterKind::Ollama, None, None),
-        other => Err(format!(
-            "Proveedor desconocido «{other}» (usa notas, opencode, opencode-go, anthropic, openai, gemini u ollama)"
+        other => Err(tf!(
+            "Proveedor desconocido «{other}» (usa notas, opencode, opencode-go, anthropic, openai, gemini u ollama)",
+            other = other
         )),
     }
 }
@@ -244,10 +245,10 @@ fn connection(cfg: &Config) -> Result<(Client, ModelSpec), String> {
     let prov = provider(&cfg.proveedor)?;
     // IA incluida: el servidor de Notas con el código de la persona (el modelo lo decide el servidor).
     if is_included(cfg) {
-        let base = included_base(cfg).ok_or("Falta la dirección del servidor de la IA incluida (Configuración → Inteligencia artificial)")?;
+        let base = included_base(cfg).ok_or(t!("Falta la dirección del servidor de la IA incluida (Configuración → Inteligencia artificial)"))?;
         let code = cfg.codigo_ia.trim().to_string();
         if code.is_empty() {
-            return Err("Falta tu código de IA incluida (Configuración → Inteligencia artificial)".into());
+            return Err(t!("Falta tu código de IA incluida (Configuración → Inteligencia artificial)").into());
         }
         let target = ServiceTarget {
             endpoint: Endpoint::from_owned(base),
@@ -260,10 +261,10 @@ fn connection(cfg: &Config) -> Result<(Client, ModelSpec), String> {
         .filter(|k| !k.is_empty())
         .or_else(|| prov.env.and_then(|v| std::env::var(v).ok()).filter(|v| !v.is_empty()));
     if key.is_none() && prov.kind != AdapterKind::Ollama {
-        return Err("Falta la clave API (Configuración → Inteligencia artificial)".into());
+        return Err(t!("Falta la clave API (Configuración → Inteligencia artificial)").into());
     }
     if cfg.modelo.trim().is_empty() {
-        return Err("Falta elegir el modelo".into());
+        return Err(t!("Falta elegir el modelo").into());
     }
     let iden = ModelIden::new(prov.kind, cfg.modelo.trim().to_string());
     // Con URL propia se usa un destino fijo (URL + clave + modelo); si no, genai resuelve el proveedor.
@@ -350,13 +351,15 @@ pub fn complete(cfg: &Config, system: &str, user: &str) -> Result<String, String
         .with_temperature(0.2)
         .with_normalize_reasoning_content(true)
         .with_extra_headers(request_headers(cfg));
+    // En inglés, lo que escriba la IA para mostrar va en inglés.
+    let system = format!("{system}{}", crate::i18n::ai_language_rule());
     let req = ChatRequest::default().with_system(system).append_message(ChatMessage::user(user));
     let r = exec_with_retry(&rt, &client, &model, &req, &options).map_err(|e| friendly_error(&e))?;
     let text = r.first_text().unwrap_or("").trim().to_string();
     if text.is_empty() {
         let stop = r.stop_reason.as_ref().map(|s| format!("{s:?}")).unwrap_or_else(|| "?".into());
-        let why = if stop.contains("MaxTokens") { "se cortó por el límite de tokens del modelo".to_string() } else { format!("motivo: {stop}") };
-        return Err(format!("el modelo devolvió una respuesta vacía ({why})"));
+        let why = if stop.contains("MaxTokens") { t!("se cortó por el límite de tokens del modelo").to_string() } else { tf!("motivo: {stop}", stop = stop) };
+        return Err(tf!("el modelo devolvió una respuesta vacía ({why})", why = why));
     }
     Ok(text)
 }
@@ -365,7 +368,7 @@ impl Ai {
     /// Inicia el hilo de IA. Devuelve un error legible si falta configuración.
     pub fn start(cfg: &Config, ctx: eframe::egui::Context) -> Result<Ai, String> {
         let (client, model) = connection(cfg)?;
-        let label = if is_included(cfg) { "IA incluida".to_string() } else { format!("{} · {}", cfg.proveedor, cfg.modelo) };
+        let label = if is_included(cfg) { t!("IA incluida").to_string() } else { format!("{} · {}", cfg.proveedor, cfg.modelo) };
         let headers = request_headers(cfg);
         let (tx, job_rx) = mpsc::channel::<Job>();
         let (res_tx, rx) = mpsc::channel::<JobResult>();
@@ -384,7 +387,8 @@ impl Ai {
                     .with_normalize_reasoning_content(true)
                     .with_extra_headers(headers);
                 for job in job_rx {
-                    let req = ChatRequest::default().with_system(&job.system).append_message(ChatMessage::user(&job.user));
+                    let system = format!("{}{}", job.system, crate::i18n::ai_language_rule());
+                    let req = ChatRequest::default().with_system(system).append_message(ChatMessage::user(&job.user));
                     let result = match exec_with_retry(&rt, &client, &model, &req, &options) {
                         Ok(r) => {
                             let text = r.first_text().unwrap_or("").trim().to_string();
@@ -431,7 +435,7 @@ pub fn friendly_error(e: &str) -> String {
         _ if is_transport(e) => {
             let cause = e.rsplit("Cause:").next().unwrap_or(e).trim();
             let cause: String = cause.lines().last().unwrap_or(cause).trim().chars().take(140).collect();
-            format!("No se pudo conectar con la IA ({cause}). Revisa tu conexión a internet; si sigue, inténtalo en un rato")
+            tf!("No se pudo conectar con la IA ({cause}). Revisa tu conexión a internet; si sigue, inténtalo en un rato", cause = cause)
         }
         _ => e.lines().next().unwrap_or(e).to_string(),
     }
@@ -446,13 +450,13 @@ pub fn interpret(text: &str, reasoning: &str, stop: &str) -> Result<Analysis, St
         return Ok(a);
     }
     let why = if stop.contains("MaxTokens") {
-        "se cortó por el límite de tokens del modelo".to_string()
+        t!("se cortó por el límite de tokens del modelo").to_string()
     } else if !reasoning.is_empty() {
-        format!("solo razonó ({} caracteres) y no respondió", reasoning.chars().count())
+        tf!("solo razonó ({n} caracteres) y no respondió", n = reasoning.chars().count())
     } else {
-        format!("motivo: {stop}")
+        tf!("motivo: {stop}", stop = stop)
     };
-    Err(format!("el modelo devolvió una respuesta vacía ({why}). Detalle en ia-ultima.txt"))
+    Err(tf!("el modelo devolvió una respuesta vacía ({why}). Detalle en ia-ultima.txt", why = why))
 }
 
 /// Guarda el último intercambio con la IA (junto a config.toml, solo en este equipo) para diagnosticar.
@@ -484,9 +488,9 @@ fn log_exchange(
 /// Extrae el objeto JSON aunque venga con texto o ``` alrededor.
 pub fn parse_analysis(text: &str) -> Result<Analysis, String> {
     let (Some(a), Some(b)) = (text.find('{'), text.rfind('}')) else {
-        return Err("La IA no devolvió JSON".into());
+        return Err(t!("La IA no devolvió JSON").into());
     };
-    serde_json::from_str(&text[a..=b]).map_err(|e| format!("JSON inválido de la IA: {e}"))
+    serde_json::from_str(&text[a..=b]).map_err(|e| tf!("JSON inválido de la IA: {e}", e = e))
 }
 
 pub struct WorkspaceInfo {

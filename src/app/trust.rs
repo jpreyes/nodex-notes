@@ -67,30 +67,30 @@ pub(super) fn describe(a: &ai::Analysis, text: &str, is_capture: bool) -> Vec<St
         }
     } else {
         if a.confianza.trim().eq_ignore_ascii_case("alta") && !a.espacio.trim().is_empty() {
-            out.push(format!("Mover la nota a {}", a.espacio.trim()));
+            out.push(tf!("Mover la nota a {space}", space = a.espacio.trim()));
         }
         if !a.titulo.trim().is_empty() {
-            out.push(format!("Título: «{}»", a.titulo.trim()));
+            out.push(tf!("Título: «{title}»", title = a.titulo.trim()));
         }
     }
     let mut tags: Vec<String> = a.unidades.iter().flat_map(|u| u.etiquetas.iter()).map(|t| organize::clean_tag(t)).filter(|t| !t.is_empty()).collect();
     tags.sort();
     tags.dedup();
     if !tags.is_empty() {
-        out.push(format!("Etiquetas: {}", tags.join(", ")));
+        out.push(tf!("Etiquetas: {tags}", tags = tags.join(", ")));
     }
     for t in a.tareas.iter().filter(|t| !t.texto.trim().is_empty()) {
         let when = Some(t.fecha.trim()).filter(|d| agenda::is_date(d)).map(|d| format!(" · {}", long_date(d))).unwrap_or_default();
-        out.push(format!("Tarea: {}{when}", t.texto.trim()));
+        out.push(tf!("Tarea: {task}{when}", task = t.texto.trim(), when = when));
     }
     for e in a.eventos.iter().filter(|e| agenda::is_date(e.fecha.trim()) && !e.titulo.trim().is_empty()) {
-        out.push(format!("Evento: {} · {} {}", e.titulo.trim(), long_date(e.fecha.trim()), e.hora.trim()).trim_end().to_string());
+        out.push(tf!("Evento: {title} · {date} {time}", title = e.titulo.trim(), date = long_date(e.fecha.trim()), time = e.hora.trim()).trim_end().to_string());
     }
     if a.es_reunion || a.unidades.iter().any(|u| u.es_reunion) {
-        out.push("Resumen de la reunión, con decisiones y acuerdos".into());
+        out.push(t!("Resumen de la reunión, con decisiones y acuerdos").into());
     }
     if out.is_empty() {
-        out.push("Ordenar la nota (sin cambios que mostrar)".into());
+        out.push(t!("Ordenar la nota (sin cambios que mostrar)").into());
     }
     out
 }
@@ -107,7 +107,7 @@ impl NotesApp {
     fn save_suggestions(&mut self, s: &BTreeMap<String, Suggestion>) {
         let _ = fs::create_dir_all(self.vault.root.join(".nodex"));
         if let Err(e) = fs::write(self.suggestions_file(), serde_json::to_string_pretty(s).unwrap_or_default()) {
-            self.msg(format!("No se pudo guardar la sugerencia: {e}"));
+            self.msg(tf!("No se pudo guardar la sugerencia: {e}", e = e));
         }
         self.suggestion_count = s.len();
     }
@@ -128,7 +128,7 @@ impl NotesApp {
         self.analyzed.insert(hash);
         self.save_analyzed();
         self.touched.remove(&path);
-        self.msg(format!("La IA tiene una sugerencia para «{}» (en la ventana de la IA → Preguntas)", vault::stem(&path)));
+        self.msg(tf!("La IA tiene una sugerencia para «{note}» (en la ventana de la IA → Preguntas)", note = vault::stem(&path)));
     }
 
     /// Aplica una sugerencia (si la nota no cambió desde entonces).
@@ -140,7 +140,7 @@ impl NotesApp {
         self.save();
         let current = if path == self.note.path { self.note.text.clone() } else { vault::read_text(&path).unwrap_or_default() };
         if ai::fnv(&current) != s.hash {
-            self.msg("La nota cambió desde la sugerencia: la IA la vuelve a mirar");
+            self.msg(t!("La nota cambió desde la sugerencia: la IA la vuelve a mirar"));
             self.touched.insert(path);
             return;
         }
@@ -189,11 +189,11 @@ impl NotesApp {
                 let _ = self.activity.save(&root);
                 self.toast = None;
                 self.msg(if can_undo {
-                    "Deshecho. La IA lo tendrá en cuenta la próxima vez".to_string()
+                    t!("Deshecho. La IA lo tendrá en cuenta la próxima vez").to_string()
                 } else if removed > 0 {
-                    format!("Se quitó {} de tus notas, con sus tareas. La IA lo tendrá en cuenta la próxima vez", plural(removed, "correo"))
+                    tf!("Se quitó {mails} de tus notas, con sus tareas. La IA lo tendrá en cuenta la próxima vez", mails = plural(removed, "correo"))
                 } else {
-                    "Ya no se puede deshacer solo (hubo otros cambios después), pero la IA lo tendrá en cuenta la próxima vez".to_string()
+                    t!("Ya no se puede deshacer solo (hubo otros cambios después), pero la IA lo tendrá en cuenta la próxima vez").to_string()
                 });
             }
             Rejected::Suggested(id) => {
@@ -208,14 +208,14 @@ impl NotesApp {
                     at: Local::now().format("%Y-%m-%d %H:%M").to_string(),
                     kind: Kind::Organizar,
                     note: s.note.clone(),
-                    text: format!("No quisiste lo que sugirió para «{}»", vault::stem(Path::new(&s.note))),
+                    text: tf!("No quisiste lo que sugirió para «{note}»", note = vault::stem(Path::new(&s.note))),
                     details: s.resumen.clone(),
                     undone: false,
                     rechazado: true,
                 };
                 self.activity.add(entry);
                 let _ = self.activity.save(&root);
-                self.msg("Sugerencia descartada");
+                self.msg(t!("Sugerencia descartada"));
             }
         }
     }
@@ -298,27 +298,27 @@ impl NotesApp {
         let (mut go, mut close) = (false, false);
         let modal = egui::Modal::new(Id::new("no-gracias")).show(ctx, |ui| {
             ui.set_width(420.0);
-            ui.label(RichText::new("No, gracias").font(theme::bold(16.0)));
+            ui.label(RichText::new(t!("No, gracias")).font(theme::bold(16.0)));
             ui.add_space(4.0);
             let explain = if is_suggestion {
-                "La sugerencia se descarta y la nota queda como está."
+                t!("La sugerencia se descarta y la nota queda como está.")
             } else {
-                "La IA deshace esto (si todavía se puede) y lo recuerda para no repetirlo."
+                t!("La IA deshace esto (si todavía se puede) y lo recuerda para no repetirlo.")
             };
             ui.label(RichText::new(explain).size(13.0).color(MUTED()));
             ui.add_space(8.0);
-            ui.label(RichText::new("¿Qué debería hacer la próxima vez? (opcional)").size(13.0));
-            let r = ui.add(egui::TextEdit::multiline(why).hint_text("Por ejemplo: «los correos del banco no son importantes» o «lo de LaVet va en Docencia»").desired_rows(2).desired_width(f32::INFINITY));
+            ui.label(RichText::new(t!("¿Qué debería hacer la próxima vez? (opcional)")).size(13.0));
+            let r = ui.add(egui::TextEdit::multiline(why).hint_text(t!("Por ejemplo: «los correos del banco no son importantes» o «lo de LaVet va en Docencia»")).desired_rows(2).desired_width(f32::INFINITY));
             if !r.has_focus() && why.is_empty() {
                 r.request_focus();
             }
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                let label = if is_suggestion { "Descartar" } else { "Deshacer y enseñar" };
+                let label = if is_suggestion { t!("Descartar") } else { t!("Deshacer y enseñar") };
                 if ui.add(egui::Button::new(RichText::new(label).color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                     go = true;
                 }
-                if ui.button("Cancelar").clicked() {
+                if ui.button(t!("Cancelar")).clicked() {
                     close = true;
                 }
             });
@@ -343,8 +343,8 @@ impl NotesApp {
         }
         let mut action = None;
         let mut accept = None;
-        ui.label(RichText::new(format!("{} Lo que propone la IA", icon::SPARKLE)).font(theme::bold(15.0)).color(ACCENT()));
-        ui.label(RichText::new("Estás en «sugerir antes de aplicar»: nada cambia hasta que lo apruebes.").size(12.5).color(MUTED()));
+        ui.label(RichText::new(format!("{} {}", icon::SPARKLE, t!("Lo que propone la IA"))).font(theme::bold(15.0)).color(ACCENT()));
+        ui.label(RichText::new(t!("Estás en «sugerir antes de aplicar»: nada cambia hasta que lo apruebes.")).size(12.5).color(MUTED()));
         ui.add_space(6.0);
         for (id, s) in &all {
             Frame::new().stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
@@ -359,10 +359,10 @@ impl NotesApp {
                 }
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    if ui.add(egui::Button::new(RichText::new(format!("{} Aplicar", icon::CHECK)).color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
+                    if ui.add(egui::Button::new(RichText::new(format!("{} {}", icon::CHECK, t!("Aplicar"))).color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                         accept = Some(id.clone());
                     }
-                    if ui.button("No, gracias").clicked() {
+                    if ui.button(t!("No, gracias")).clicked() {
                         self.rejecting = Some((Rejected::Suggested(id.clone()), String::new()));
                     }
                 });

@@ -626,7 +626,7 @@ impl Vault {
     pub fn create_workspace(&mut self, name: &str) -> io::Result<String> {
         let name = sanitize(name);
         if is_reserved_dir(&name) {
-            return Err(io::Error::other(format!("«{name}» es una carpeta reservada (Diario, Adjuntos, Plantillas, Bloc o Archivo)")));
+            return Err(io::Error::other(tf!("«{name}» es una carpeta reservada (Diario, Adjuntos, Plantillas, Bloc o Archivo)", name = name)));
         }
         fs::create_dir_all(self.root.join(&name))?;
         self.scan();
@@ -736,7 +736,7 @@ impl Vault {
     /// Borra para siempre algo de la papelera (no se puede deshacer).
     pub fn delete_forever(&mut self, t: &Trashed) -> io::Result<()> {
         if !t.path.starts_with(self.root.join(TRASH)) {
-            return Err(io::Error::other("solo se borra lo que está en la papelera"));
+            return Err(io::Error::other(t!("solo se borra lo que está en la papelera")));
         }
         // En Windows, el antivirus o el indexador pueden tener el archivo abierto un momento.
         let mut tries = 0;

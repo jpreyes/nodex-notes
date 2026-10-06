@@ -1,0 +1,448 @@
+# Traducciones al inglés (ver src/i18n.rs).
+
+Quitar
+= Remove
+
+Editar
+= Edit
+
+Cambiar el correo, la contraseña de aplicación o el servidor
+= Change the email, app password, or server
+
+Probar
+= Test
+
+Conexión correcta
+= Connected successfully
+
+Agregar correo
+= Add email
+
+Cambiar la conexión
+= Change connection
+
+tu@gmail.com
+= you@gmail.com
+
+Contraseña de aplicación (vacía = se mantiene la actual)
+= App password (leave empty to keep the current one)
+
+Contraseña de aplicación (no la de siempre)
+= App password (not your usual password)
+
+Servidor IMAP (opcional: se deduce del correo)
+= IMAP server (optional: inferred from the email)
+
+Guardar
+= Save
+
+Agregar
+= Add
+
+Cancelar
+= Cancel
+
+¿Qué es la contraseña de aplicación? Una contraseña especial que se crea en tu cuenta y sirve solo para esta app; se puede borrar cuando quieras.
+= What's an app password? A special password you create in your account that works only for this app; you can delete it anytime.
+
+Activa la verificación en dos pasos y crea una contraseña de aplicación (16 letras) en tu cuenta de Google.
+= Turn on 2-Step Verification and create an app password (16 letters) in your Google account.
+
+Activa la verificación en dos pasos y crea una contraseña de aplicación en la seguridad de tu cuenta Microsoft.
+= Turn on two-step verification and create an app password in your Microsoft account's security settings.
+
+En tu cuenta de Apple → Inicio de sesión y seguridad → Contraseñas específicas de apps.
+= In your Apple Account → Sign-In and Security → App-Specific Passwords.
+
+Abrir
+= Open
+
+aviso de correo nuevo: {e}
+= new mail alert: {e}
+
+No se pudo anotar el correo: {e}
+= Couldn't note the email: {e}
+
+{n} como seguimiento del correo original
+= {n} as a follow-up to the original email
+
+{n} en la nota de hoy; la IA los ordena
+= {n} in Today; the AI will organize them
+
+Correo · {what}
+= Mail · {what}
+
+Hecho: {task}
+= Done: {task}
+
+Se quitó lo que la IA sacó de ese correo
+= Removed what the AI took from that email
+
+El correo se está revisando; prueba en un momento
+= Mail is being checked; try again in a moment
+
+Correos
+= Mail
+
+Lo que la IA encontró en tu bandeja de entrada y en tus enviados
+= What the AI found in your inbox and sent mail
+
+Agrega tu correo y la IA revisará tus correos para no perder compromisos ni fechas.
+= Add your email and the AI will check your mail so you don't miss commitments or dates.
+
+revisando…
+= checking…
+
+la IA está leyendo…
+= the AI is reading…
+
+revisado a las {time}
+= checked at {time}
+
+sin revisar todavía
+= not checked yet
+
+al llegar un correo
+= when mail arrives
+
+a diario a las {time}
+= daily at {time}
+
+{status} · revisa {when}
+= {status} · checks {when}
+
+y
+= and
+
+Revisar ahora
+= Check now
+
+La IA no pudo leer los correos: {e}
+= The AI couldn't read the emails: {e}
+
+Verificar un compromiso
+= Check a commitment
+
+¿Se cumplió «{task}»?
+= Was “{task}” done?
+
+Llegó «{subject}» de {from} · {date}
+= “{subject}” arrived from {from} · {date}
+
+Sí, marcar hecho
+= Yes, mark done
+
+Todavía no
+= Not yet
+
+Hoy · {date}
+= Today · {date}
+
+Tú → {to}
+= You → {to}
+
+{time} · enviado
+= {time} · sent
+
+La IA todavía no lo lee…
+= The AI hasn't read it yet…
+
+→ anotado en {note}
+= → noted in {note}
+
+otro equipo
+= another device
+
+De: {from}\nPara: {to}
+= From: {from}\nTo: {to}
+
+Guardar como nota
+= Save as note
+
+Quitar lo que sacó la IA
+= Remove what the AI extracted
+
+Abrir en Gmail
+= Open in Gmail
+
+Todavía no hay correos: la primera revisión trae los de la última semana.
+= No emails yet: the first check brings in the past week's mail.
+
+Ocultar boletines y correos sin compromisos
+= Hide newsletters and emails without commitments
+
+{n} sin compromisos (boletines, avisos…): ver
+= {n} without commitments (newsletters, notices…): show
+
+plural:respuesta
+= reply|replies
+
+plural:correo anotado
+= email noted|emails noted
+
+plural:correo
+= email|emails
+
+En calendar.google.com: ⚙ Configuración → en «Configuración de mis calendarios» elige el calendario → «Integrar el calendario» → copia la «Dirección secreta en formato iCal».
+= On calendar.google.com: ⚙ Settings → under “Settings for my calendars” pick the calendar → “Integrate calendar” → copy the “Secret address in iCal format”.
+
+En outlook.com: ⚙ Configuración → Calendario → Calendarios compartidos → «Publicar un calendario»: elige el calendario y «Puede ver todos los detalles», Publicar, y copia el enlace ICS.
+= On outlook.com: ⚙ Settings → Calendar → Shared calendars → “Publish a calendar”: pick the calendar and “Can view all details”, Publish, and copy the ICS link.
+
+En la app Calendario: comparte el calendario, activa «Calendario público» y copia el enlace (webcal://…).
+= In the Calendar app: share the calendar, turn on “Public Calendar” and copy the link (webcal://…).
+
+No se pudo leer: {e}
+= Couldn't read: {e}
+
+Al día
+= Up to date
+
+Descargando…
+= Downloading…
+
+Clic: cambiar nombre o enlace · Clic derecho: más
+= Click: change name or link · Right-click: more
+
+Cambiar nombre o enlace
+= Change name or link
+
+Quitar este calendario
+= Remove this calendar
+
+Actualizar ahora
+= Refresh now
+
+Agregar calendario
+= Add calendar
+
+Pega el enlace ICS de Google Calendar, Outlook, iCloud…
+= Paste the ICS link from Google Calendar, Outlook, iCloud…
+
+Cambiar el calendario
+= Edit calendar
+
+Agregar un calendario
+= Add a calendar
+
+Nombre (por ejemplo: Trabajo)
+= Name (for example: Work)
+
+Enlace ICS: https://…/basic.ics  o  webcal://…
+= ICS link: https://…/basic.ics  or  webcal://…
+
+El enlace debe empezar con https:// o webcal://
+= The link must start with https:// or webcal://
+
+¿Dónde saco el enlace?
+= Where do I get the link?
+
+Solo se lee: la app no cambia esos calendarios. Se actualizan al abrir la app y cada 15 minutos.
+= Read-only: the app doesn't change those calendars. They refresh when the app opens and every 15 minutes.
+
+Ese calendario ya está agregado
+= That calendar is already added
+
+Calendario «{name}» agregado; descargando…
+= Calendar “{name}” added; downloading…
+
+Ese enlace ya es de otro calendario
+= That link already belongs to another calendar
+
+El calendario «{old}» ahora se llama «{name}»
+= Calendar “{old}” is now called “{name}”
+
+Calendario «{name}» actualizado
+= Calendar “{name}” updated
+
+Calendario «{name}» quitado
+= Calendar “{name}” removed
+
+No se pudo actualizar tareas.txt: {e}
+= Couldn't update tareas.txt: {e}
+
+Esperando tu permiso en el navegador…
+= Waiting for your permission in the browser…
+
+Tus tareas también en To Do, en una lista «Notas», en los dos sentidos.
+= Your tasks in To Do too, in a “Notas” list, synced both ways.
+
+Conectar
+= Connect
+
+Más detalles
+= More details
+
+sincronizando…
+= syncing…
+
+sincronizado a las {time}
+= synced at {time}
+
+conectado
+= connected
+
+lista «Notas» · {status}
+= “Notas” list · {status}
+
+Sincronizar ahora
+= Sync now
+
+Desconectar
+= Disconnect
+
+Correo de seguimiento
+= Follow-up email
+
+Cerrar (Esc)
+= Close (Esc)
+
+Borrador para «{title}». Puedes editarlo antes de enviarlo.
+= Draft for “{title}”. You can edit it before sending.
+
+Redactando…
+= Drafting…
+
+No se pudo redactar: {e}
+= Couldn't write the draft: {e}
+
+Intentar de nuevo
+= Try again
+
+Copiar
+= Copy
+
+Correo copiado
+= Email copied
+
+Abrir en el correo
+= Open in mail app
+
+Abre tu programa de correo con el asunto y el texto
+= Opens your mail app with the subject and text
+
+Rehacer
+= Regenerate
+
+los {list} y {last}
+= {list} and {last}
+
+los {last}
+= {last}
+
+ningún día
+= no day
+
+cada dos semanas, {listed}
+= every two weeks, on {listed}
+
+el día {n} de cada mes
+= on day {n} of every month
+
+el {which} {day} de cada mes
+= on the {which} {day} of every month
+
+todos los días
+= every day
+
+de lunes a viernes
+= Monday to Friday
+
+todos {listed}
+= on {listed}
+
+{days} a las {time}
+= {days} at {time}
+
+primer
+= first
+
+segundo
+= second
+
+tercer
+= third
+
+cuarto
+= fourth
+
+último
+= last
+
+No se pudo guardar recurrentes.json: {e}
+= Couldn't save recurrentes.json: {e}
+
+Falta el nombre, el día o la hora (HH:MM)
+= Missing the name, day, or time (HH:MM)
+
+«{title}», {what}
+= “{title}”, {what}
+
+«{title}» ya no se repite (sus notas quedan)
+= “{title}” no longer repeats (its notes stay)
+
+No se pudo crear «{title}»: {e}
+= Couldn't create “{title}”: {e}
+
+en Inicio, «Tomar notas» la empieza
+= in Home, “Take notes” starts it
+
+ya está en su espacio
+= it's already in its Space
+
+«{title}» de hoy está lista: {how}
+= Today's “{title}” is ready: {how}
+
+Reunión iniciada: cada línea lleva su hora. Esc la cierra.
+= Meeting started: each line gets its time. Esc ends it.
+
+Reuniones y notas que se repiten
+= Recurring meetings and notes
+
+A esa hora se crea sola su nota del día, con los acuerdos que quedaron pendientes de la anterior.
+= At that time its note for the day is created automatically, with the action items left pending from the last one.
+
+Que ya no se repita (sus notas quedan)
+= Stop repeating (its notes stay)
+
+Nueva
+= New
+
+Nombre: Reunión de equipo
+= Name: Team meeting
+
+Reunión
+= Meeting
+
+Nota
+= Note
+
+en
+= in
+
+Cada
+= Every
+
+semana
+= week
+
+dos semanas
+= two weeks
+
+mes (un día del mes)
+= month (a day of the month)
+
+mes (un día de la semana)
+= month (a day of the week)
+
+el día
+= on day
+
+el
+= on the
+
+a las
+= at
+
+Cerrar
+= Close

@@ -254,7 +254,7 @@ impl NotesApp {
             return;
         }
         if self.bloc_pages().iter().any(|p| p.eq_ignore_ascii_case(&new)) {
-            self.msg(format!("Ya hay una página «{new}»"));
+            self.msg(tf!("Ya hay una página «{new}»", new = new));
             return;
         }
         if old == self.bloc_page() {
@@ -264,7 +264,7 @@ impl NotesApp {
         let _ = fs::create_dir_all(self.bloc_dir());
         if from.exists() {
             if let Err(e) = fs::rename(&from, &to) {
-                self.msg(format!("No se pudo cambiar el nombre: {e}"));
+                self.msg(tf!("No se pudo cambiar el nombre: {e}", e = e));
                 return;
             }
         } else {
@@ -279,7 +279,7 @@ impl NotesApp {
 
     fn delete_bloc_page(&mut self, name: &str) {
         if self.bloc_pages().len() <= 1 {
-            self.msg("El Bloc necesita al menos una página");
+            self.msg(t!("El Bloc necesita al menos una página"));
             return;
         }
         if name == self.bloc_page() {
@@ -288,11 +288,11 @@ impl NotesApp {
         let path = self.bloc_dir().join(format!("{name}.md"));
         if path.exists() {
             if let Err(e) = self.vault.trash(&path) {
-                self.msg(format!("No se pudo borrar la página: {e}"));
+                self.msg(tf!("No se pudo borrar la página: {e}", e = e));
                 return;
             }
         }
-        self.msg(format!("Página «{name}» a la papelera"));
+        self.msg(tf!("Página «{name}» a la papelera", name = name));
         if name == self.bloc_page() {
             let first = self.bloc_pages().into_iter().next().unwrap_or_else(|| FIRST.into());
             self.bloc.dirty = false;
@@ -348,7 +348,7 @@ impl NotesApp {
                 self.bloc.base = self.bloc.text.clone();
                 self.bloc.disk = self.bloc_disk();
             }
-            Err(e) => self.msg(format!("No se pudo guardar el Bloc: {e}")),
+            Err(e) => self.msg(tf!("No se pudo guardar el Bloc: {e}", e = e)),
         }
     }
 
@@ -389,7 +389,7 @@ impl NotesApp {
         let text = self.bloc.text.clone();
         let items: Vec<String> = blocks(&text).into_iter().map(|(.., b)| b).filter(|b| !is_heading_block(b)).collect();
         if items.len() < 2 {
-            self.msg("Hay poco que ordenar todavía");
+            self.msg(t!("Hay poco que ordenar todavía"));
             return;
         }
         let mut known = Vec::new();
@@ -402,8 +402,8 @@ impl NotesApp {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let r = ai::complete(&cfg, ORDER_SYSTEM, &user).and_then(|reply| {
-                let groups = parse_groups(&reply).ok_or("la IA no respondió con los grupos")?;
-                arrange(&text, &groups).ok_or_else(|| "la respuesta de la IA no calzaba con el Bloc; no se cambió nada".to_string())
+                let groups = parse_groups(&reply).ok_or(t!("la IA no respondió con los grupos"))?;
+                arrange(&text, &groups).ok_or_else(|| t!("la respuesta de la IA no calzaba con el Bloc; no se cambió nada").to_string())
             });
             let _ = tx.send(r);
             ctx.request_repaint();
@@ -423,9 +423,9 @@ impl NotesApp {
                     self.bloc.dirty = true;
                     self.bloc.last_edit = Some(Instant::now() - Duration::from_secs(5));
                     self.save_bloc();
-                    self.msg("Bloc ordenado (no cambió ninguna letra)");
+                    self.msg(t!("Bloc ordenado (no cambió ninguna letra)"));
                 }
-                Ok(_) => self.msg("El Bloc ya estaba ordenado"),
+                Ok(_) => self.msg(t!("El Bloc ya estaba ordenado")),
                 Err(e) => self.bloc.error = Some(e),
             }
         }
@@ -437,23 +437,23 @@ impl NotesApp {
         let mut page_do: Option<PageDo> = None;
         Self::column(ui, "bloc-vista", |ui, col_w| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Bloc").font(theme::bold(26.0)));
+                ui.label(RichText::new(t!("Bloc")).font(theme::bold(26.0)));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let busy = self.bloc.ordering.is_some();
                     if busy {
                         ui.add(egui::Spinner::new().size(16.0));
                     }
-                    let b = egui::Button::new(RichText::new(format!("{}  Ordenar", icon::SPARKLE)));
+                    let b = egui::Button::new(RichText::new(format!("{}  {}", icon::SPARKLE, t!("Ordenar"))));
                     let tip = if self.ai.is_ok() {
-                        "La IA agrupa los bloques por tipo, con títulos, sin cambiar una letra (las claves no las ve)"
+                        t!("La IA agrupa los bloques por tipo, con títulos, sin cambiar una letra (las claves no las ve)")
                     } else {
-                        "Configura la IA para ordenar el Bloc"
+                        t!("Configura la IA para ordenar el Bloc")
                     };
                     if ui.add_enabled(!busy && self.ai.is_ok(), b).on_hover_text(tip).on_disabled_hover_text(tip).clicked() {
                         self.order_bloc();
                     }
                     if self.bloc.undo.is_some() {
-                        let u = egui::Button::new(RichText::new(format!("{}  Deshacer el orden", icon::ARROW_COUNTER_CLOCKWISE)));
+                        let u = egui::Button::new(RichText::new(format!("{}  {}", icon::ARROW_COUNTER_CLOCKWISE, t!("Deshacer el orden"))));
                         if ui.add(u).clicked() {
                             if let Some(old) = self.bloc.undo.take() {
                                 self.bloc.text = old;
@@ -465,7 +465,7 @@ impl NotesApp {
                 });
             });
             ui.label(
-                RichText::new("Pega o escribe lo que sea: código, ideas, claves. Se guarda solo y queda tal cual; la IA no lo toca salvo que aprietes «Ordenar». Separa las cosas con una línea en blanco.")
+                RichText::new(t!("Pega o escribe lo que sea: código, ideas, claves. Se guarda solo y queda tal cual; la IA no lo toca salvo que aprietes «Ordenar». Separa las cosas con una línea en blanco."))
                     .size(12.5)
                     .color(MUTED()),
             );
@@ -496,17 +496,17 @@ impl NotesApp {
                         page_do = Some(PageDo::StartRename(p.clone()));
                     }
                     r.context_menu(|ui| {
-                        if ui.button(format!("{}  Cambiar nombre", icon::PENCIL_SIMPLE)).clicked() {
+                        if ui.button(format!("{}  {}", icon::PENCIL_SIMPLE, t!("Cambiar nombre"))).clicked() {
                             page_do = Some(PageDo::StartRename(p.clone()));
                             ui.close();
                         }
-                        if ui.button(format!("{}  Borrar página", icon::TRASH)).clicked() {
+                        if ui.button(format!("{}  {}", icon::TRASH, t!("Borrar página"))).clicked() {
                             page_do = Some(PageDo::Delete(p.clone()));
                             ui.close();
                         }
                     });
                 }
-                if ui.add_enabled(!busy, egui::Button::new(RichText::new(icon::PLUS).size(14.0)).frame(false)).on_hover_text("Página nueva").clicked() {
+                if ui.add_enabled(!busy, egui::Button::new(RichText::new(icon::PLUS).size(14.0)).frame(false)).on_hover_text(t!("Página nueva")).clicked() {
                     page_do = Some(PageDo::New);
                 }
             });
@@ -516,7 +516,7 @@ impl NotesApp {
                 .font(FontId::monospace(14.0))
                 .code_editor()
                 .frame(Frame::NONE)
-                .hint_text("Pega aquí…")
+                .hint_text(t!("Pega aquí…"))
                 .desired_width(f32::INFINITY)
                 .min_size(egui::vec2(col_w, (ui.available_height() - 40.0).max(200.0)))
                 .lock_focus(true)
@@ -543,10 +543,10 @@ impl NotesApp {
                     continue;
                 }
                 let just = self.bloc.copied.is_some_and(|(b, t)| b == k && t.elapsed() < Duration::from_millis(1500));
-                let label = if just { format!("{} Copiado", icon::CHECK) } else { format!("{} Copiar", icon::COPY) };
+                let label = if just { format!("{} {}", icon::CHECK, t!("Copiado")) } else { format!("{} {}", icon::COPY, t!("Copiar")) };
                 let rect = egui::Rect::from_min_size(egui::pos2(out.response.rect.right() - 88.0, top), egui::vec2(84.0, 22.0));
                 let b = egui::Button::new(RichText::new(label).size(12.5)).fill(theme::c(Color32::WHITE)).stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(6);
-                if ui.put(rect, b).on_hover_text("Copiar este bloque").clicked() {
+                if ui.put(rect, b).on_hover_text(t!("Copiar este bloque")).clicked() {
                     copy = Some((k, text));
                 }
                 ui.painter().vline(out.response.rect.left() - 10.0, top..=bottom, Stroke::new(2.0, ACCENT_BG()));

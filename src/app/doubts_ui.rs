@@ -112,7 +112,7 @@ impl NotesApp {
             Reply::Ignore(id) => {
                 self.doubts.resolve(&id);
                 let _ = self.doubts.save(&self.vault.root);
-                self.msg("Pregunta descartada; no se volverá a preguntar");
+                self.msg(t!("Pregunta descartada; no se volverá a preguntar"));
             }
             Reply::Open(p) => self.open(p, None),
             Reply::OpenLine(p, line) => {
@@ -150,9 +150,9 @@ impl NotesApp {
             self.touched.insert(path.clone());
             self.doubts.resolve(id);
             let _ = self.doubts.save(&root);
-            self.msg("Anotado en aprendido.txt; la IA vuelve a revisar la nota");
-            let details = vec![format!("«{}»", d.unit), format!("Respondiste: {}", answer.trim())];
-            self.log_ai(crate::activity::Kind::Respuesta, &d.note, format!("{} → aprendido; vuelve a revisar la nota", d.question), details, false);
+            self.msg(t!("Anotado en aprendido.txt; la IA vuelve a revisar la nota"));
+            let details = vec![format!("«{}»", d.unit), tf!("Respondiste: {answer}", answer = answer.trim())];
+            self.log_ai(crate::activity::Kind::Respuesta, &d.note, tf!("{question} → aprendido; vuelve a revisar la nota", question = d.question), details, false);
             return;
         }
         let Some(c) = choice else { return };
@@ -163,7 +163,7 @@ impl NotesApp {
         if doubts::find_unit(&text, &d.unit).is_none() {
             self.doubts.resolve(id);
             let _ = self.doubts.save(&root);
-            self.msg("Esa línea cambió; la pregunta se descartó");
+            self.msg(t!("Esa línea cambió; la pregunta se descartó"));
             return;
         }
         let ws_of_note = self.space_of(&path);
@@ -188,7 +188,7 @@ impl NotesApp {
                     let _ = self.agenda.add_task(line);
                 }
                 self.gcal_dirty = true;
-                done.push(format!("fecha {}", long_date(&c.fecha)));
+                done.push(tf!("fecha {date}", date = long_date(&c.fecha)));
             }
             t = join_lines(&ls, trailing);
         }
@@ -205,7 +205,7 @@ impl NotesApp {
                     let at = if u.first > p.last { p.last + 1 } else { p.last + 1 - moved.len() };
                     ls.splice(at..at, moved);
                     t = join_lines(&ls, trailing);
-                    done.push(format!("unida a «{}»", c.de));
+                    done.push(tf!("unida a «{line}»", line = c.de));
                 }
             }
         }
@@ -255,7 +255,7 @@ impl NotesApp {
 
         if !c.dato.trim().is_empty() {
             let _ = doubts::learn(&root, &c.dato);
-            done.push("aprendido".into());
+            done.push(t!("aprendido").into());
         }
 
         // Escribir la nota (o mandarla a la papelera si quedó vacía) y moverla si corresponde.
@@ -281,7 +281,7 @@ impl NotesApp {
                 }
                 Err(e) => {
                     renamed = None;
-                    self.msg(format!("No se pudo mover la nota: {e}"));
+                    self.msg(tf!("No se pudo mover la nota: {e}", e = e));
                 }
             }
         }
@@ -302,13 +302,13 @@ impl NotesApp {
             }
         }
         self.undo = Some(Undo { files, renamed: renamed.clone(), agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), keep_tasks: Vec::new(), relinks: Vec::new() });
-        let what = if done.is_empty() { "listo".to_string() } else { done.join(" · ") };
-        self.msg(format!("Respuesta aplicada: {what}"));
+        let what = if done.is_empty() { t!("listo").to_string() } else { done.join(" · ") };
+        self.msg(tf!("Respuesta aplicada: {what}", what = what));
         let note = match &renamed {
             Some((_, to)) => self.rel(to),
             None => d.note.clone(),
         };
-        let details = vec![format!("«{}»", d.unit), format!("Elegiste: {}", c.label)];
+        let details = vec![format!("«{}»", d.unit), tf!("Elegiste: {choice}", choice = c.label)];
         self.log_ai(crate::activity::Kind::Respuesta, &note, format!("{} → {what}", d.question), details, true);
     }
 
@@ -333,7 +333,7 @@ impl NotesApp {
         // Primero las notas de captura: lo de la nota del día se ofrece unir a la nota con título, no al revés.
         all.sort_by_key(|(rel, _)| !capture::is_capture(rel.rsplit('/').next().unwrap_or(rel)));
         let n = self.detect_duplicates(all);
-        self.msg(if n == 0 { "No encontré duplicados".to_string() } else { format!("Encontré {} posibles duplicados: revísalos en la IA (✦)", n) });
+        self.msg(if n == 0 { t!("No encontré duplicados").to_string() } else { tf!("Encontré {n} posibles duplicados: revísalos en la IA (✦)", n = n) });
     }
 
     /// Unir dos notas duplicadas (o anotar que son distintas).
@@ -343,7 +343,7 @@ impl NotesApp {
             self.doubts.not_dups.push(crate::dups::pair(&d.unit, &c.unir));
             self.doubts.resolve(&d.id);
             let _ = self.doubts.save(&root);
-            self.msg("Anotado: son distintas");
+            self.msg(t!("Anotado: son distintas"));
             return;
         }
         let a = root.join(format!("{}.md", d.note));
@@ -356,7 +356,7 @@ impl NotesApp {
         let Some(m) = crate::dups::merge(&keep_text, &keep_unit, &drop_text, &drop_unit, same) else {
             self.doubts.resolve(&d.id);
             let _ = self.doubts.save(&root);
-            self.msg("Esas líneas cambiaron; la pregunta se descartó");
+            self.msg(t!("Esas líneas cambiaron; la pregunta se descartó"));
             return;
         };
         let snapshot = self.agenda.snapshot();
@@ -392,10 +392,10 @@ impl NotesApp {
         }
         self.prune_doubts();
         self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), keep_tasks: Vec::new(), relinks: Vec::new() });
-        self.msg(format!("Unidas en «{}»", vault::stem(&keep_path)));
+        self.msg(tf!("Unidas en «{note}»", note = vault::stem(&keep_path)));
         let note = self.rel(&keep_path);
         let details = vec![format!("«{keep_unit}»"), format!("«{drop_unit}» ({})", self.rel(&drop_path))];
-        self.log_ai(crate::activity::Kind::Duplicado, &note, format!("Unió dos notas repetidas en «{}»", vault::stem(&keep_path)), details, true);
+        self.log_ai(crate::activity::Kind::Duplicado, &note, tf!("Unió dos notas repetidas en «{note}»", note = vault::stem(&keep_path)), details, true);
     }
 
     /// La tarjeta de una pregunta. `note_label` = mostrar de qué nota es (en la ventana de la IA).
@@ -410,12 +410,12 @@ impl NotesApp {
                 ui.set_width(ui.available_width());
                 ui.horizontal_wrapped(|ui| {
                     if note_label.is_none() {
-                        ui.label(RichText::new(format!("{} La IA pregunta ·", icon::SPARKLE)).size(12.5).color(ACCENT()));
+                        ui.label(RichText::new(format!("{} {}", icon::SPARKLE, t!("La IA pregunta ·"))).size(12.5).color(ACCENT()));
                     }
-                    ui.label(RichText::new(format!("Nota {number}")).size(12.5).color(MUTED()));
+                    ui.label(RichText::new(tf!("Nota {number}", number = number)).size(12.5).color(MUTED()));
                     if let Some(label) = &note_label {
                         let r = ui.add(egui::Label::new(RichText::new(format!("· {label}")).size(12.5).color(MUTED())).sense(Sense::click()));
-                        if r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Abrir la nota").clicked() {
+                        if r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(t!("Abrir la nota")).clicked() {
                             reply = Some(Reply::Open(self.vault.root.join(format!("{}.md", d.note))));
                         }
                     }
@@ -426,15 +426,15 @@ impl NotesApp {
                 match &places {
                     Some((a, other, b)) => {
                         let same = *other == d.note;
-                        let title = if same { "Estas dos líneas de la nota parecen decir lo mismo:".to_string() } else { format!("Esta línea se parece a una de «{}»:", other.replace('/', " / ")) };
+                        let title = if same { t!("Estas dos líneas de la nota parecen decir lo mismo:").to_string() } else { tf!("Esta línea se parece a una de «{note}»:", note = other.replace('/', " / ")) };
                         ui.label(RichText::new(title).size(14.5).color(TEXT()));
                         ui.add_space(2.0);
                         let rows = if same && b < a { [(*b, other.clone(), d.choices.iter().find(|c| !c.unir.is_empty()).map(|c| c.unir.clone()).unwrap_or_default()), (*a, d.note.clone(), d.unit.clone())] } else { [(*a, d.note.clone(), d.unit.clone()), (*b, other.clone(), d.choices.iter().find(|c| !c.unir.is_empty()).map(|c| c.unir.clone()).unwrap_or_default())] };
                         for (line, rel, text) in rows {
                             ui.horizontal_wrapped(|ui| {
-                                let where_ = if same { format!("Línea {}", line + 1) } else { format!("{} · línea {}", rel.replace('/', " / "), line + 1) };
+                                let where_ = if same { tf!("Línea {n}", n = line + 1) } else { tf!("{note} · línea {n}", note = rel.replace('/', " / "), n = line + 1) };
                                 let r = ui.add(egui::Label::new(RichText::new(where_).size(12.5).color(ACCENT())).sense(Sense::click()));
-                                if r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Ver esa línea").clicked() {
+                                if r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(t!("Ver esa línea")).clicked() {
                                     reply = Some(Reply::OpenLine(self.vault.root.join(format!("{rel}.md")), line));
                                 }
                                 ui.label(RichText::new(format!("«{text}»")).size(13.0).color(MUTED()).italics());
@@ -445,7 +445,7 @@ impl NotesApp {
                             for (i, c) in d.choices.iter().enumerate() {
                                 if !c.distintas && !c.unir.is_empty() {
                                     let keep = if c.al_reves { a } else { b };
-                                    labels[i] = format!("Dejar una sola (en la línea {})", keep + 1);
+                                    labels[i] = tf!("Dejar una sola (en la línea {n})", n = keep + 1);
                                 }
                             }
                             if d.unit == d.choices.iter().find(|c| !c.unir.is_empty()).map(|c| c.unir.clone()).unwrap_or_default() {
@@ -453,8 +453,8 @@ impl NotesApp {
                                 if let Some(i) = d.choices.iter().position(|c| c.al_reves) {
                                     labels[i].clear();
                                 }
-                                if let Some(l) = labels.iter_mut().find(|l| l.starts_with("Dejar una sola")) {
-                                    *l = "Dejar una sola".into();
+                                if let Some(l) = labels.iter_mut().find(|l| l.starts_with(t!("Dejar una sola"))) {
+                                    *l = t!("Dejar una sola").into();
                                 }
                             }
                         }
@@ -474,19 +474,19 @@ impl NotesApp {
                         let b = egui::Button::new(RichText::new(&labels[i]).size(13.0)).fill(theme::c(Color32::WHITE)).corner_radius(8);
                         let mut tip = Vec::new();
                         if !c.espacio.is_empty() {
-                            tip.push(if c.nota.is_empty() { format!("mover a {}", c.espacio) } else { format!("mover a {}/{}", c.espacio, c.nota) });
+                            tip.push(if c.nota.is_empty() { tf!("mover a {space}", space = c.espacio) } else { tf!("mover a {space}/{note}", space = c.espacio, note = c.nota) });
                         }
                         if !c.de.is_empty() {
-                            tip.push(format!("unir a «{}»", c.de));
+                            tip.push(tf!("unir a «{line}»", line = c.de));
                         }
                         if !c.fecha.is_empty() {
-                            tip.push(format!("fecha {}", long_date(&c.fecha)));
+                            tip.push(tf!("fecha {date}", date = long_date(&c.fecha)));
                         }
                         if !c.etiquetas.is_empty() {
                             tip.push(c.etiquetas.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" "));
                         }
                         if !c.dato.is_empty() {
-                            tip.push(format!("recordar: {}", c.dato));
+                            tip.push(tf!("recordar: {fact}", fact = c.dato));
                         }
                         let r = ui.add(b);
                         let r = if tip.is_empty() { r } else { r.on_hover_text(tip.join(" · ")) };
@@ -495,10 +495,10 @@ impl NotesApp {
                         }
                     }
                     ui.add_space(6.0);
-                    if ui.link(RichText::new("Otra respuesta…").size(12.5)).clicked() {
+                    if ui.link(RichText::new(t!("Otra respuesta…")).size(12.5)).clicked() {
                         self.doubt_reply = Some((d.id.clone(), String::new()));
                     }
-                    if ui.link(RichText::new("Ignorar").size(12.5).color(MUTED())).on_hover_text("Descarta la pregunta: no se aplica nada y no se vuelve a preguntar").clicked() {
+                    if ui.link(RichText::new(t!("Ignorar")).size(12.5).color(MUTED())).on_hover_text(t!("Descarta la pregunta: no se aplica nada y no se vuelve a preguntar")).clicked() {
                         reply = Some(Reply::Ignore(d.id.clone()));
                     }
                 });
@@ -508,14 +508,14 @@ impl NotesApp {
                         ui.horizontal(|ui| {
                             let r = ui.add(
                                 egui::TextEdit::singleline(text)
-                                    .hint_text("Escribe la respuesta (la IA la recordará)")
+                                    .hint_text(t!("Escribe la respuesta (la IA la recordará)"))
                                     .desired_width(ui.available_width() - 80.0),
                             );
                             if !r.has_focus() && !r.lost_focus() && text.is_empty() {
                                 r.request_focus();
                             }
                             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                            if (ui.button("Enviar").clicked() || enter) && !text.trim().is_empty() {
+                            if (ui.button(t!("Enviar")).clicked() || enter) && !text.trim().is_empty() {
                                 reply = Some(Reply::Text(d.id.clone(), text.clone()));
                             }
                         });

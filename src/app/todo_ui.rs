@@ -108,7 +108,7 @@ impl NotesApp {
                 }
             };
             if let Err(e) = result {
-                self.msg(format!("No se pudo actualizar tareas.txt: {e}"));
+                self.msg(tf!("No se pudo actualizar tareas.txt: {e}", e = e));
             }
         }
         self.gcal_dirty = true;
@@ -127,13 +127,13 @@ impl NotesApp {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(format!("{} Microsoft To Do", icon::CHECK_SQUARE_OFFSET)).font(theme::bold(13.5)));
             if t.connecting {
-                ui.label(RichText::new("Esperando tu permiso en el navegador…").size(13.0).color(ACCENT()));
+                ui.label(RichText::new(t!("Esperando tu permiso en el navegador…")).size(13.0).color(ACCENT()));
             } else if !t.connected {
-                ui.label(RichText::new("Tus tareas también en To Do, en una lista «Notas», en los dos sentidos.").size(13.0).color(MUTED()));
-                if ui.link(RichText::new("Conectar").size(13.0)).clicked() {
+                ui.label(RichText::new(t!("Tus tareas también en To Do, en una lista «Notas», en los dos sentidos.")).size(13.0).color(MUTED()));
+                if ui.link(RichText::new(t!("Conectar")).size(13.0)).clicked() {
                     action = Some(Action::TodoConnect);
                 }
-                if ui.link(RichText::new("Más detalles").size(13.0)).clicked() {
+                if ui.link(RichText::new(t!("Más detalles")).size(13.0)).clicked() {
                     action = Some(Action::OpenSettings(Section::Tasks));
                 }
                 if let Some(e) = &t.last_error {
@@ -141,20 +141,20 @@ impl NotesApp {
                 }
             } else {
                 let status = if t.busy {
-                    "sincronizando…".to_string()
+                    t!("sincronizando…").to_string()
                 } else if let Some(e) = &t.last_error {
                     e.clone()
                 } else if let Some(s) = t.last_sync {
-                    format!("sincronizado a las {}", s.format("%H:%M"))
+                    tf!("sincronizado a las {time}", time = s.format("%H:%M"))
                 } else {
-                    "conectado".to_string()
+                    t!("conectado").to_string()
                 };
                 let color = if t.last_error.is_some() { RED() } else { SUCCESS() };
-                ui.label(RichText::new(format!("lista «Notas» · {status}")).size(13.0).color(color));
-                if ui.link(RichText::new("Sincronizar ahora").size(13.0)).clicked() {
+                ui.label(RichText::new(tf!("lista «Notas» · {status}", status = status)).size(13.0).color(color));
+                if ui.link(RichText::new(t!("Sincronizar ahora")).size(13.0)).clicked() {
                     action = Some(Action::TodoSync);
                 }
-                if ui.link(RichText::new("Desconectar").size(13.0)).clicked() {
+                if ui.link(RichText::new(t!("Desconectar")).size(13.0)).clicked() {
                     action = Some(Action::TodoDisconnect);
                 }
             }

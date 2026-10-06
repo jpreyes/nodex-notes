@@ -88,16 +88,16 @@ pub(super) fn decode(s: &str, root: &Path) -> Option<Tab> {
 
 fn view_label(v: &View) -> (&'static str, String) {
     match v {
-        View::Home | View::Editor => (icon::HOUSE, "Inicio".into()),
-        View::Mail => (icon::ENVELOPE_SIMPLE, "Correos".into()),
-        View::Ai => (icon::SPARKLE, "IA".into()),
-        View::Week => (icon::CALENDAR_CHECK, "Semana".into()),
-        View::Tasks => (icon::CHECK_SQUARE, "Tareas".into()),
-        View::Agenda => (icon::CALENDAR_BLANK, "Agenda".into()),
-        View::Trash => (icon::TRASH, "Papelera".into()),
-        View::Bloc => (icon::NOTEPAD, "Bloc".into()),
-        View::Archive => (icon::ARCHIVE, "Archivadas".into()),
-        View::Notes => (icon::FILE_TEXT, "Notas".into()),
+        View::Home | View::Editor => (icon::HOUSE, t!("Inicio").into()),
+        View::Mail => (icon::ENVELOPE_SIMPLE, t!("Correos").into()),
+        View::Ai => (icon::SPARKLE, t!("IA").into()),
+        View::Week => (icon::CALENDAR_CHECK, t!("Semana").into()),
+        View::Tasks => (icon::CHECK_SQUARE, t!("Tareas").into()),
+        View::Agenda => (icon::CALENDAR_BLANK, t!("Agenda").into()),
+        View::Trash => (icon::TRASH, t!("Papelera").into()),
+        View::Bloc => (icon::NOTEPAD, t!("Bloc").into()),
+        View::Archive => (icon::ARCHIVE, t!("Archivadas").into()),
+        View::Notes => (icon::FILE_TEXT, t!("Notas").into()),
         View::Tag(t) => (icon::HASH, t.clone()),
     }
 }
@@ -319,11 +319,11 @@ impl NotesApp {
                         todo = Some(Do::Close(i));
                     }
                     resp.context_menu(|ui| {
-                        if ui.button("Cerrar pestaña").clicked() {
+                        if ui.button(t!("Cerrar pestaña")).clicked() {
                             todo = Some(Do::Close(i));
                             ui.close();
                         }
-                        if ui.button("Cerrar las demás").clicked() {
+                        if ui.button(t!("Cerrar las demás")).clicked() {
                             todo = Some(Do::CloseOthers(i));
                             ui.close();
                         }
@@ -344,26 +344,26 @@ impl NotesApp {
                 }
                 let ws = self.ws.clone();
                 let plus = ui.menu_button(RichText::new(icon::PLUS).size(15.0).color(MUTED()), |ui| {
-                    if ui.button(format!("{}  Nota nueva en {ws}   Ctrl+N", icon::NOTE_PENCIL)).clicked() {
+                    if ui.button(format!("{}  {}", icon::NOTE_PENCIL, tf!("Nota nueva en {ws}   Ctrl+N", ws = ws))).clicked() {
                         todo = Some(Do::NewNote);
                         ui.close();
                     }
-                    if ui.button(format!("{}  Reunión nueva   Ctrl+R", icon::USERS)).clicked() {
+                    if ui.button(format!("{}  {}", icon::USERS, t!("Reunión nueva   Ctrl+R"))).clicked() {
                         todo = Some(Do::NewMeeting);
                         ui.close();
                     }
-                    if ui.button(format!("{}  Reunión o nota que se repite…", icon::ARROWS_CLOCKWISE)).clicked() {
+                    if ui.button(format!("{}  {}", icon::ARROWS_CLOCKWISE, t!("Reunión o nota que se repite…"))).clicked() {
                         todo = Some(Do::Recurring);
                         ui.close();
                     }
-                    if ui.button(format!("{}  Inicio   Ctrl+T", icon::HOUSE)).clicked() {
+                    if ui.button(format!("{}  {}", icon::HOUSE, t!("Inicio   Ctrl+T"))).clicked() {
                         todo = Some(Do::New);
                         ui.close();
                     }
                     ui.separator();
                     let templates = self.templates();
                     if !templates.is_empty() {
-                        ui.label(RichText::new(format!("Desde una plantilla, en {ws}")).size(12.0).color(MUTED()));
+                        ui.label(RichText::new(tf!("Desde una plantilla, en {ws}", ws = ws)).size(12.0).color(MUTED()));
                         for t in templates {
                             ui.horizontal(|ui| {
                                 if ui.button(format!("{}  {}", icon::FILE_DASHED, vault::stem(&t))).clicked() {
@@ -371,19 +371,19 @@ impl NotesApp {
                                     ui.close();
                                 }
                                 let edit = egui::Button::new(RichText::new(icon::PENCIL_SIMPLE).size(13.0).color(MUTED())).frame(false);
-                                if ui.add(edit).on_hover_text("Editar la plantilla").clicked() {
+                                if ui.add(edit).on_hover_text(t!("Editar la plantilla")).clicked() {
                                     todo = Some(Do::EditTemplate(t.clone()));
                                     ui.close();
                                 }
                             });
                         }
                     }
-                    if ui.button(format!("{}  Plantilla nueva…", icon::FILE_PLUS)).on_hover_text("Una nota que sirve de punto de partida para otras (visita a obra, acta…)").clicked() {
+                    if ui.button(format!("{}  {}", icon::FILE_PLUS, t!("Plantilla nueva…"))).on_hover_text(t!("Una nota que sirve de punto de partida para otras (visita a obra, acta…)")).clicked() {
                         todo = Some(Do::NewTemplate);
                         ui.close();
                     }
                 });
-                plus.response.on_hover_text("Nueva pestaña");
+                plus.response.on_hover_text(t!("Nueva pestaña"));
             });
         });
         match todo {

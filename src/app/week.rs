@@ -26,8 +26,8 @@ fn day(offset: i64) -> String {
 fn range_label(from: &str, to: &str) -> String {
     let parse = |d: &str| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok();
     match (parse(from), parse(to)) {
-        (Some(a), Some(b)) if a.month() == b.month() => format!("{} – {} {}", a.day(), b.day(), MESES[b.month0() as usize]),
-        (Some(a), Some(b)) => format!("{} {} – {} {}", a.day(), MESES[a.month0() as usize], b.day(), MESES[b.month0() as usize]),
+        (Some(a), Some(b)) if a.month() == b.month() => format!("{} – {} {}", a.day(), b.day(), crate::i18n::meses()[b.month0() as usize]),
+        (Some(a), Some(b)) => format!("{} {} – {} {}", a.day(), crate::i18n::meses()[a.month0() as usize], b.day(), crate::i18n::meses()[b.month0() as usize]),
         _ => format!("{from} – {to}"),
     }
 }
@@ -59,11 +59,11 @@ impl NotesApp {
         );
         let (input, mut turn) = self.build_request(question, Vec::new(), Some(&from));
         if input.docs.is_empty() && input.tasks.is_empty() {
-            turn.answer = Some(Err("no hay notas ni tareas de esta semana para resumir".into()));
+            turn.answer = Some(Err(t!("no hay notas ni tareas de esta semana para resumir").into()));
             self.week.turn = Some(turn);
             return;
         }
-        turn.progress = format!("Leyendo {} de la semana…", plural(input.docs.len(), "nota"));
+        turn.progress = tf!("Leyendo {n} de la semana…", n = plural(input.docs.len(), "nota"));
         self.week.rx = Some(ask::start(&self.cfg, input, self.ctx.clone()));
         self.week.turn = Some(turn);
     }
@@ -103,25 +103,25 @@ impl NotesApp {
         let mut save = false;
 
         Self::column(ui, "week", |ui, _| {
-            view_header(ui, "Revisión semanal", &format!("Últimos 7 días ({}) y los próximos 7", range_label(&from, &to)));
+            view_header(ui, t!("Revisión semanal"), &tf!("Últimos 7 días ({range}) y los próximos 7", range = range_label(&from, &to)));
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-                metric(ui, notes.len(), "notas escritas", TEXT());
-                metric(ui, done.len(), "tareas hechas", SUCCESS());
-                metric(ui, meetings, "reuniones", TEXT());
-                metric(ui, overdue.len(), "atrasadas", if overdue.is_empty() { TEXT() } else { RED() });
-                metric(ui, undated.len(), "sin fecha", TEXT());
+                metric(ui, notes.len(), t!("notas escritas"), TEXT());
+                metric(ui, done.len(), t!("tareas hechas"), SUCCESS());
+                metric(ui, meetings, t!("reuniones"), TEXT());
+                metric(ui, overdue.len(), t!("atrasadas"), if overdue.is_empty() { TEXT() } else { RED() });
+                metric(ui, undated.len(), t!("sin fecha"), TEXT());
             });
             ui.add_space(16.0);
 
             // Resumen de la IA (a pedido).
-            ui.label(RichText::new(format!("{} Resumen de la semana", icon::SPARKLE)).font(theme::bold(15.0)).color(ACCENT()));
+            ui.label(RichText::new(format!("{} {}", icon::SPARKLE, t!("Resumen de la semana"))).font(theme::bold(15.0)).color(ACCENT()));
             ui.add_space(4.0);
             match &self.week.turn {
                 None => {
-                    ui.label(RichText::new("La IA lee las notas de la semana y arma un resumen por proyecto, con lo pendiente y 3 prioridades para la próxima.").size(13.0).color(MUTED()));
+                    ui.label(RichText::new(t!("La IA lee las notas de la semana y arma un resumen por proyecto, con lo pendiente y 3 prioridades para la próxima.")).size(13.0).color(MUTED()));
                     ui.add_space(4.0);
-                    if ui.add_enabled(self.ai.is_ok(), egui::Button::new(format!("{} Hacer el resumen", icon::SPARKLE))).clicked() {
+                    if ui.add_enabled(self.ai.is_ok(), egui::Button::new(format!("{} {}", icon::SPARKLE, t!("Hacer el resumen")))).clicked() {
                         ask_ai = true;
                     }
                 }
@@ -133,8 +133,8 @@ impl NotesApp {
                         });
                     }
                     Some(Err(e)) => {
-                        ui.label(RichText::new(format!("No se pudo hacer el resumen: {e}")).color(RED()));
-                        if ui.button("Intentar de nuevo").clicked() {
+                        ui.label(RichText::new(tf!("No se pudo hacer el resumen: {e}", e = e)).color(RED()));
+                        if ui.button(t!("Intentar de nuevo")).clicked() {
                             ask_ai = true;
                         }
                     }
@@ -145,13 +145,13 @@ impl NotesApp {
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             let small = |t: String| egui::Button::new(RichText::new(t).size(12.5).color(MUTED())).frame(false);
-                            if ui.add(small(format!("{} Guardar como nota", icon::FLOPPY_DISK))).clicked() {
+                            if ui.add(small(format!("{} {}", icon::FLOPPY_DISK, t!("Guardar como nota")))).clicked() {
                                 save = true;
                             }
-                            if ui.add(small(format!("{} Copiar", icon::COPY))).clicked() {
+                            if ui.add(small(format!("{} {}", icon::COPY, t!("Copiar")))).clicked() {
                                 ui.ctx().copy_text(plain(turn));
                             }
-                            if !busy && ui.add(small(format!("{} Rehacer", icon::ARROW_CLOCKWISE))).clicked() {
+                            if !busy && ui.add(small(format!("{} {}", icon::ARROW_CLOCKWISE, t!("Rehacer")))).clicked() {
                                 ask_ai = true;
                             }
                         });
@@ -172,20 +172,20 @@ impl NotesApp {
                         action = Some(a);
                     }
                 }
-                if list.len() > limit && ui.link(RichText::new(format!("y {} más en Tareas", list.len() - limit)).size(12.5)).clicked() {
+                if list.len() > limit && ui.link(RichText::new(tf!("y {n} más en Tareas", n = list.len() - limit)).size(12.5)).clicked() {
                     action = Some(Action::Show(View::Tasks));
                 }
                 ui.add_space(14.0);
                 action
             };
-            if let Some(a) = section(ui, &format!("{} Atrasadas", icon::WARNING_CIRCLE), RED(), &overdue, 20) {
+            if let Some(a) = section(ui, &format!("{} {}", icon::WARNING_CIRCLE, t!("Atrasadas")), RED(), &overdue, 20) {
                 action = Some(a);
             }
-            if let Some(a) = section(ui, "Próximos 7 días", ACCENT(), &coming, 20) {
+            if let Some(a) = section(ui, t!("Próximos 7 días"), ACCENT(), &coming, 20) {
                 action = Some(a);
             }
             if !events.is_empty() {
-                ui.label(RichText::new("Agenda de los próximos 7 días").font(theme::bold(15.0)));
+                ui.label(RichText::new(t!("Agenda de los próximos 7 días")).font(theme::bold(15.0)));
                 ui.add_space(4.0);
                 let marks = self.event_marks();
                 for e in &events {
@@ -199,14 +199,14 @@ impl NotesApp {
                 }
                 ui.add_space(14.0);
             }
-            if let Some(a) = section(ui, "Sin fecha (¿les pones una?)", TEXT(), &undated, 10) {
+            if let Some(a) = section(ui, t!("Sin fecha (¿les pones una?)"), TEXT(), &undated, 10) {
                 action = Some(a);
             }
-            if let Some(a) = section(ui, &format!("{} Hechas esta semana", icon::CHECK_CIRCLE), SUCCESS(), &done, 30) {
+            if let Some(a) = section(ui, &format!("{} {}", icon::CHECK_CIRCLE, t!("Hechas esta semana")), SUCCESS(), &done, 30) {
                 action = Some(a);
             }
             if !notes.is_empty() {
-                ui.label(RichText::new("Notas de la semana").font(theme::bold(15.0)));
+                ui.label(RichText::new(t!("Notas de la semana")).font(theme::bold(15.0)));
                 ui.add_space(4.0);
                 for (path, title, ws, meeting) in notes.iter().take(30) {
                     let glyph = if *meeting { icon::USERS } else { icon::FILE_TEXT };
@@ -220,7 +220,7 @@ impl NotesApp {
                 }
                 ui.add_space(14.0);
             }
-            if asks > 0 && ui.link(RichText::new(format!("{} La IA tiene {}", icon::SPARKLE, plural(asks, "pregunta o sugerencia"))).size(13.0)).clicked() {
+            if asks > 0 && ui.link(RichText::new(format!("{} {}", icon::SPARKLE, tf!("La IA tiene {n}", n = plural(asks, "pregunta o sugerencia")))).size(13.0)).clicked() {
                 action = Some(Action::ShowAi(super::ai_view::AiTab::Asks));
             }
         });

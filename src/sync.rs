@@ -211,7 +211,7 @@ impl Remote {
         serde_json::from_str::<serde_json::Value>(&text)
             .ok()
             .and_then(|v| v.pointer("/error/message").and_then(|m| m.as_str()).map(str::to_string))
-            .unwrap_or_else(|| format!("el servidor respondió {status}"))
+            .unwrap_or_else(|| tf!("el servidor respondió {status}", status = status))
     }
 
     fn changes(&self, since: u64) -> Result<Changes, String> {
@@ -391,7 +391,7 @@ impl Engine {
             }
             if !changed_here || here.as_deref() == Some(c.hash.as_str()) {
                 let bytes = self.remote.blob(&c.hash)?;
-                write_atomic(&path, &bytes).map_err(|e| format!("no se pudo escribir {}: {e}", c.ruta))?;
+                write_atomic(&path, &bytes).map_err(|e| tf!("no se pudo escribir {ruta}: {e}", ruta = c.ruta, e = e))?;
                 self.remember(&c.ruta, c.seq, &c.hash);
                 report.downloaded += 1;
                 continue;
@@ -409,10 +409,10 @@ impl Engine {
                     }
                     None => crate::merge::union(&ours, &theirs),
                 };
-                write_atomic(&path, merged.as_bytes()).map_err(|e| format!("no se pudo escribir {}: {e}", c.ruta))?;
+                write_atomic(&path, merged.as_bytes()).map_err(|e| tf!("no se pudo escribir {ruta}: {e}", ruta = c.ruta, e = e))?;
             } else {
                 // La otra versión queda al lado; la app la junta (o quedan las dos).
-                write_atomic(&copy_name(&path), &remote).map_err(|e| format!("no se pudo escribir {}: {e}", c.ruta))?;
+                write_atomic(&copy_name(&path), &remote).map_err(|e| tf!("no se pudo escribir {ruta}: {e}", ruta = c.ruta, e = e))?;
             }
             // La base pasa a ser la del servidor (lo de aquí, ya juntado, se sube después).
             let tam = c.tam;

@@ -28,34 +28,34 @@ pub(super) fn calendars_panel(ui: &mut Ui, subs: &[Subscription], cals: &Calenda
             let url = crate::calendars::normalize(&s.url);
             let error = cals.errors.get(&url);
             let state = match (error, cals.loaded(&s.url)) {
-                (Some(e), _) => format!("No se pudo leer: {e}"),
-                (None, true) => "Al día".to_string(),
-                (None, false) => "Descargando…".to_string(),
+                (Some(e), _) => tf!("No se pudo leer: {e}", e = e),
+                (None, true) => t!("Al día").to_string(),
+                (None, false) => t!("Descargando…").to_string(),
             };
             let label = if error.is_some() { format!("{}  {}", icon::WARNING_CIRCLE, s.nombre) } else { format!("●  {}", s.nombre) };
             let chip = egui::Button::new(RichText::new(label).size(12.5).color(if error.is_some() { RED() } else { c.text })).fill(c.bg).stroke(Stroke::new(1.0, c.border)).corner_radius(11);
-            let r = ui.add(chip).on_hover_text(format!("{state}\n{url}\nClic: cambiar nombre o enlace · Clic derecho: más"));
+            let r = ui.add(chip).on_hover_text(format!("{state}\n{url}\n{}", t!("Clic: cambiar nombre o enlace · Clic derecho: más")));
             if r.clicked() {
                 *form = Some((s.nombre.clone(), s.url.clone(), Some(i)));
             }
             r.context_menu(|ui| {
-                if ui.button(format!("{}  Cambiar nombre o enlace", icon::PENCIL_SIMPLE)).clicked() {
+                if ui.button(format!("{}  {}", icon::PENCIL_SIMPLE, t!("Cambiar nombre o enlace"))).clicked() {
                     *form = Some((s.nombre.clone(), s.url.clone(), Some(i)));
                     ui.close();
                 }
-                if ui.button(format!("{}  Quitar este calendario", icon::TRASH)).clicked() {
+                if ui.button(format!("{}  {}", icon::TRASH, t!("Quitar este calendario"))).clicked() {
                     action = Some(Action::RemoveCalendar(i));
                     ui.close();
                 }
-                if ui.button(format!("{}  Actualizar ahora", icon::ARROW_CLOCKWISE)).clicked() {
+                if ui.button(format!("{}  {}", icon::ARROW_CLOCKWISE, t!("Actualizar ahora"))).clicked() {
                     action = Some(Action::RefreshCalendars);
                     ui.close();
                 }
             });
         }
         if form.is_none() {
-            let b = egui::Button::new(RichText::new(format!("{}  Agregar calendario", icon::PLUS)).size(12.5)).corner_radius(11);
-            if ui.add(b).on_hover_text("Pega el enlace ICS de Google Calendar, Outlook, iCloud…").clicked() {
+            let b = egui::Button::new(RichText::new(format!("{}  {}", icon::PLUS, t!("Agregar calendario"))).size(12.5)).corner_radius(11);
+            if ui.add(b).on_hover_text(t!("Pega el enlace ICS de Google Calendar, Outlook, iCloud…")).clicked() {
                 *form = Some((String::new(), String::new(), None));
             }
         }
@@ -69,21 +69,21 @@ pub(super) fn calendars_panel(ui: &mut Ui, subs: &[Subscription], cals: &Calenda
         ui.add_space(6.0);
         Frame::new().fill(BG_SIDE()).stroke(Stroke::new(1.0, theme::BORDER())).corner_radius(10).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new(if editing.is_some() { "Cambiar el calendario" } else { "Agregar un calendario" }).font(theme::bold(14.0)));
+            ui.label(RichText::new(if editing.is_some() { t!("Cambiar el calendario") } else { t!("Agregar un calendario") }).font(theme::bold(14.0)));
             ui.add_space(4.0);
-            ui.add(egui::TextEdit::singleline(name).hint_text("Nombre (por ejemplo: Trabajo)").desired_width(f32::INFINITY));
-            let r = ui.add(egui::TextEdit::singleline(url).hint_text("Enlace ICS: https://…/basic.ics  o  webcal://…").desired_width(f32::INFINITY));
+            ui.add(egui::TextEdit::singleline(name).hint_text(t!("Nombre (por ejemplo: Trabajo)")).desired_width(f32::INFINITY));
+            let r = ui.add(egui::TextEdit::singleline(url).hint_text(t!("Enlace ICS: https://…/basic.ics  o  webcal://…")).desired_width(f32::INFINITY));
             let valid = {
                 let u = url.trim().to_lowercase();
                 u.starts_with("https://") || u.starts_with("http://") || u.starts_with("webcal://")
             };
             if !url.trim().is_empty() && !valid {
-                ui.label(RichText::new("El enlace debe empezar con https:// o webcal://").size(12.5).color(RED()));
+                ui.label(RichText::new(t!("El enlace debe empezar con https:// o webcal://")).size(12.5).color(RED()));
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                let label = if editing.is_some() { "Guardar" } else { "Agregar" };
+                let label = if editing.is_some() { t!("Guardar") } else { t!("Agregar") };
                 if (ui.add_enabled(valid, egui::Button::new(label)).clicked() || (enter && valid)) && valid {
                     action = Some(match editing {
                         Some(i) => Action::EditCalendar(i, name.trim().to_string(), url.trim().to_string()),
@@ -91,17 +91,17 @@ pub(super) fn calendars_panel(ui: &mut Ui, subs: &[Subscription], cals: &Calenda
                     });
                     close = true;
                 }
-                if ui.button("Cancelar").clicked() {
+                if ui.button(t!("Cancelar")).clicked() {
                     close = true;
                 }
             });
-            egui::CollapsingHeader::new(RichText::new("¿Dónde saco el enlace?").size(12.5)).default_open(subs.is_empty() && editing.is_none()).show(ui, |ui| {
+            egui::CollapsingHeader::new(RichText::new(t!("¿Dónde saco el enlace?")).size(12.5)).default_open(subs.is_empty() && editing.is_none()).show(ui, |ui| {
                 for (service, steps) in HELP {
                     ui.label(RichText::new(service).size(12.5).strong());
-                    ui.label(RichText::new(steps).size(12.5).color(MUTED()));
+                    ui.label(RichText::new(crate::i18n::tr(steps)).size(12.5).color(MUTED()));
                     ui.add_space(4.0);
                 }
-                ui.label(RichText::new("Solo se lee: la app no cambia esos calendarios. Se actualizan al abrir la app y cada 15 minutos.").size(12.5).color(MUTED()));
+                ui.label(RichText::new(t!("Solo se lee: la app no cambia esos calendarios. Se actualizan al abrir la app y cada 15 minutos.")).size(12.5).color(MUTED()));
             });
         });
     }
@@ -129,13 +129,13 @@ impl NotesApp {
     pub(super) fn add_calendar(&mut self, name: String, url: String) {
         let name = if name.trim().is_empty() { format!("Calendario {}", self.cfg.calendarios.len() + 1) } else { name.trim().to_string() };
         if self.cfg.calendarios.iter().any(|c| crate::calendars::normalize(&c.url) == crate::calendars::normalize(&url)) {
-            self.msg("Ese calendario ya está agregado");
+            self.msg(t!("Ese calendario ya está agregado"));
             return;
         }
         self.cfg.calendarios.push(Subscription { nombre: name.clone(), url });
         self.save_config();
         self.cals.last = None; // se descarga en el próximo ciclo
-        self.msg(format!("Calendario «{name}» agregado; descargando…"));
+        self.msg(tf!("Calendario «{name}» agregado; descargando…", name = name));
     }
 
     /// Cambia el nombre o el enlace de un calendario agregado.
@@ -144,7 +144,7 @@ impl NotesApp {
         let name = if name.trim().is_empty() { old.nombre.clone() } else { name.trim().to_string() };
         let same = |a: &str, b: &str| crate::calendars::normalize(a) == crate::calendars::normalize(b);
         if self.cfg.calendarios.iter().enumerate().any(|(j, c)| j != i && same(&c.url, &url)) {
-            self.msg("Ese enlace ya es de otro calendario");
+            self.msg(t!("Ese enlace ya es de otro calendario"));
             return;
         }
         let new_url = !same(&old.url, &url);
@@ -153,14 +153,14 @@ impl NotesApp {
         if new_url {
             self.cals.last = None; // se descarga en el próximo ciclo
         }
-        self.msg(if old.nombre != name { format!("El calendario «{}» ahora se llama «{name}»", old.nombre) } else { format!("Calendario «{name}» actualizado") });
+        self.msg(if old.nombre != name { tf!("El calendario «{old}» ahora se llama «{name}»", old = old.nombre, name = name) } else { tf!("Calendario «{name}» actualizado", name = name) });
     }
 
     pub(super) fn remove_calendar(&mut self, i: usize) {
         if i < self.cfg.calendarios.len() {
             let c = self.cfg.calendarios.remove(i);
             self.save_config();
-            self.msg(format!("Calendario «{}» quitado", c.nombre));
+            self.msg(tf!("Calendario «{name}» quitado", name = c.nombre));
         }
     }
 

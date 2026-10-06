@@ -202,7 +202,7 @@ pub fn run(src: &Path, root: &Path, mut progress: impl FnMut(usize, usize)) -> R
         progress(done, total);
         let size = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
         if size > MAX_FILE {
-            report.errors.push(format!("{} es muy grande ({} MB): no se copió", p.display(), size / 1024 / 1024));
+            report.errors.push(tf!("{file} es muy grande ({mb} MB): no se copió", file = p.display(), mb = size / 1024 / 1024));
             continue;
         }
         let name = p.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
@@ -233,7 +233,7 @@ pub fn run(src: &Path, root: &Path, mut progress: impl FnMut(usize, usize)) -> R
             _ => space_name(&rel.components().next().map(|c| c.as_os_str().to_string_lossy().into_owned()).unwrap_or_default()),
         };
         let Ok(bytes) = fs::read(p) else {
-            report.errors.push(format!("{}: no se pudo leer", p.display()));
+            report.errors.push(tf!("{file}: no se pudo leer", file = p.display()));
             continue;
         };
         let raw = String::from_utf8_lossy(&bytes).trim_start_matches('\u{feff}').replace("\r\n", "\n");

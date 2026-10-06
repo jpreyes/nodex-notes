@@ -1,0 +1,136 @@
+# Traducciones al inglés (ver src/i18n.rs).
+
+{file} es muy grande ({mb} MB): no se copió
+= {file} is too large ({mb} MB): not copied
+
+{file}: no se pudo leer
+= {file}: couldn't be read
+
+Unir con la de arriba
+= Merge with the one above
+
+Unir en «{note}»
+= Merge into “{note}”
+
+Unir aquí abajo
+= Merge down here
+
+Unir aquí
+= Merge here
+
+Son distintas
+= They're different
+
+más arriba en esta nota
+= further up in this note
+
+en {note}
+= in {note}
+
+¿Es lo mismo que «{line}» ({place})?
+= Is this the same as “{line}” ({place})?
+
+Falta la dirección del servidor
+= The server address is missing
+
+sin conexión con el servidor ({e})
+= no connection to the server ({e})
+
+el servidor respondió {status}
+= the server replied {status}
+
+Proveedor desconocido «{other}» (usa notas, opencode, opencode-go, anthropic, openai, gemini u ollama)
+= Unknown provider “{other}” (use notas, opencode, opencode-go, anthropic, openai, gemini or ollama)
+
+Falta la dirección del servidor de la IA incluida (Configuración → Inteligencia artificial)
+= The Included AI server address is missing (Settings → Artificial intelligence)
+
+Falta tu código de IA incluida (Configuración → Inteligencia artificial)
+= Your Included AI code is missing (Settings → Artificial intelligence)
+
+Falta la clave API (Configuración → Inteligencia artificial)
+= The API key is missing (Settings → Artificial intelligence)
+
+Falta elegir el modelo
+= Choose a model first
+
+se cortó por el límite de tokens del modelo
+= it was cut off by the model's token limit
+
+motivo: {stop}
+= reason: {stop}
+
+el modelo devolvió una respuesta vacía ({why})
+= the model returned an empty response ({why})
+
+IA incluida
+= Included AI
+
+No se pudo conectar con la IA ({cause}). Revisa tu conexión a internet; si sigue, inténtalo en un rato
+= Couldn't connect to the AI ({cause}). Check your internet connection; if it keeps happening, try again in a while
+
+solo razonó ({n} caracteres) y no respondió
+= it only reasoned ({n} characters) and didn't answer
+
+el modelo devolvió una respuesta vacía ({why}). Detalle en ia-ultima.txt
+= the model returned an empty response ({why}). Details in ia-ultima.txt
+
+La IA no devolvió JSON
+= The AI didn't return JSON
+
+JSON inválido de la IA: {e}
+= Invalid JSON from the AI: {e}
+
+IA incluida de Notas (con tu código)
+= Notas Included AI (with your code)
+
+OpenCode Zen (pago por uso)
+= OpenCode Zen (pay as you go)
+
+OpenCode Go (suscripción)
+= OpenCode Go (subscription)
+
+Ollama (en este equipo)
+= Ollama (on this computer)
+
+Buscando entre {n} notas…
+= Searching {n} notes…
+
+Pensando…
+= Thinking…
+
+Leyendo 1 nota…
+= Reading 1 note…
+
+Leyendo {n} notas…
+= Reading {n} notes…
+
+no se encontró {host}: {e}
+= couldn't find {host}: {e}
+
+no se encontró {host}
+= couldn't find {host}
+
+no se pudo conectar a {host}: {e}
+= couldn't connect to {host}: {e}
+
+el correo o la contraseña de aplicación no son correctos ({e})
+= the email or app password is incorrect ({e})
+
+la IA no devolvió JSON
+= the AI didn't return JSON
+
+«{name}» es una carpeta reservada (Diario, Adjuntos, Plantillas, Bloc o Archivo)
+= “{name}” is a reserved folder (Diario, Adjuntos, Plantillas, Bloc or Archivo)
+
+solo se borra lo que está en la papelera
+= only items in the Trash can be deleted
+
+Error en {file}: {e}
+= Error in {file}: {e}
+
+Configuración creada en {file}
+= Settings created at {file}
+
+No se pudo crear {file}: {e}
+= Couldn't create {file}: {e}

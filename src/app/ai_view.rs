@@ -43,9 +43,9 @@ fn kind_icon(k: Kind) -> (&'static str, Color32) {
 fn day_label(day: &str) -> String {
     let yesterday = (Local::now() - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
     if day == today() {
-        "Hoy".into()
+        t!("Hoy").into()
     } else if day == yesterday {
-        "Ayer".into()
+        t!("Ayer").into()
     } else {
         let mut s = long_date(day);
         if let Some(first) = s.get_mut(0..1) {
@@ -99,12 +99,12 @@ impl NotesApp {
         let can_undo = self.undo.as_ref().is_some_and(|u| u.at.elapsed() < UNDO_WINDOW) && self.undo_entry.as_deref() == Some(t.entry.as_str());
         let (glyph, color) = kind_icon(t.kind);
         let title = match t.kind {
-            Kind::Correo => "La IA anotó correos en tu nota de hoy",
-            Kind::Error => "La IA no pudo terminar",
-            Kind::Sincronizar if t.text.contains("«Hoy»") => "Las notas del día, en un solo «Hoy»",
-            Kind::Sincronizar => "Se juntaron dos versiones",
-            Kind::Duplicado => "Quité tareas repetidas",
-            _ => "La IA ordenó tu nota",
+            Kind::Correo => t!("La IA anotó correos en tu nota de hoy"),
+            Kind::Error => t!("La IA no pudo terminar"),
+            Kind::Sincronizar if t.text.contains("«Hoy»") => t!("Las notas del día, en un solo «Hoy»"),
+            Kind::Sincronizar => t!("Se juntaron dos versiones"),
+            Kind::Duplicado => t!("Quité tareas repetidas"),
+            _ => t!("La IA ordenó tu nota"),
         };
         let r = egui::Area::new(Id::new("ia-aviso"))
             .anchor(Align2::RIGHT_TOP, egui::vec2(-18.0, 44.0))
@@ -123,7 +123,7 @@ impl NotesApp {
                             ui.label(RichText::new(title).font(theme::bold(14.0)).color(TEXT()));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 let b = egui::Button::new(RichText::new(icon::X).size(13.0).color(MUTED())).frame(false);
-                                if ui.add(b).on_hover_text("Cerrar el aviso (lo que hizo la IA se queda; se puede deshacer en «Lo que hizo»)").clicked() {
+                                if ui.add(b).on_hover_text(t!("Cerrar el aviso (lo que hizo la IA se queda; se puede deshacer en «Lo que hizo»)")).clicked() {
                                     close = true;
                                 }
                             });
@@ -133,18 +133,18 @@ impl NotesApp {
                             ui.label(RichText::new(format!("·  {d}")).size(12.5).color(MUTED()));
                         }
                         if t.details.len() > 4 {
-                            ui.label(RichText::new(format!("·  y {} más", t.details.len() - 4)).size(12.5).color(MUTED()));
+                            ui.label(RichText::new(tf!("·  y {n} más", n = t.details.len() - 4)).size(12.5).color(MUTED()));
                         }
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            if ui.link(RichText::new("Ver lo que hizo").size(13.0)).clicked() {
+                            if ui.link(RichText::new(t!("Ver lo que hizo")).size(13.0)).clicked() {
                                 action = Some(Action::ShowAi(AiTab::Log));
                                 close = true;
                             }
                             if can_undo {
                                 ui.add_space(8.0);
-                                let b = egui::Button::new(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(13.0));
-                                if ui.add(b).on_hover_text("Vuelve a como estaba. La IA no lo intenta de nuevo con este texto, pero no aprende nada (para que aprenda: «No, gracias»)").clicked() {
+                                let b = egui::Button::new(RichText::new(format!("{} {}", icon::ARROW_COUNTER_CLOCKWISE, t!("Deshacer"))).size(13.0));
+                                if ui.add(b).on_hover_text(t!("Vuelve a como estaba. La IA no lo intenta de nuevo con este texto, pero no aprende nada (para que aprenda: «No, gracias»)")).clicked() {
                                     action = Some(Action::Undo);
                                     close = true;
                                 }
@@ -152,8 +152,8 @@ impl NotesApp {
                             // «No, gracias»: deshace y le enseña a no repetirlo.
                             if matches!(t.kind, Kind::Organizar | Kind::Correo) {
                                 ui.add_space(4.0);
-                                let b = egui::Button::new(RichText::new("No, gracias").size(13.0));
-                                if ui.add(b).on_hover_text("Deshace esto y además la IA aprende a no repetirlo (te pregunta qué debería hacer)").clicked() {
+                                let b = egui::Button::new(RichText::new(t!("No, gracias")).size(13.0));
+                                if ui.add(b).on_hover_text(t!("Deshace esto y además la IA aprende a no repetirlo (te pregunta qué debería hacer)")).clicked() {
                                     action = Some(Action::Reject(t.entry.clone()));
                                     close = true;
                                 }
@@ -218,10 +218,10 @@ impl NotesApp {
                 ui.add_space(22.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(icon::SPARKLE).size(24.0).color(ACCENT()));
-                    ui.label(RichText::new("IA").font(theme::bold(26.0)));
+                    ui.label(RichText::new(t!("IA")).font(theme::bold(26.0)));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let b = egui::Button::new(RichText::new(icon::GEAR).size(16.0).color(MUTED())).frame(false);
-                        if ui.add(b).on_hover_text("Configurar la IA").clicked() {
+                        if ui.add(b).on_hover_text(t!("Configurar la IA")).clicked() {
                             action = Some(Action::OpenSettings(Section::Ai));
                         }
                     });
@@ -237,11 +237,11 @@ impl NotesApp {
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    let asks_label = if asks > 0 { format!("{}  Preguntas  {asks}", icon::QUESTION) } else { format!("{}  Preguntas", icon::QUESTION) };
+                    let asks_label = if asks > 0 { format!("{}  {}  {asks}", icon::QUESTION, t!("Preguntas")) } else { format!("{}  {}", icon::QUESTION, t!("Preguntas")) };
                     for (tab, label) in [
-                        (AiTab::Chat, format!("{}  Conversar", icon::CHAT_CIRCLE_TEXT)),
+                        (AiTab::Chat, format!("{}  {}", icon::CHAT_CIRCLE_TEXT, t!("Conversar"))),
                         (AiTab::Asks, asks_label),
-                        (AiTab::Log, format!("{}  Lo que hizo", icon::CLOCK_COUNTER_CLOCKWISE)),
+                        (AiTab::Log, format!("{}  {}", icon::CLOCK_COUNTER_CLOCKWISE, t!("Lo que hizo"))),
                     ] {
                         let selected = self.ai_tab == tab;
                         let color = if selected { ACCENT() } else if tab == AiTab::Asks && asks > 0 { TEXT() } else { MUTED() };
@@ -290,9 +290,9 @@ impl NotesApp {
                         self.ai_usage_warned = u.mes.clone();
                         let when = long_date(&u.renueva);
                         let text = if u.percent() >= 100 {
-                            format!("Llegaste al límite de IA incluida de este mes; vuelve el {when}. Tus notas se guardan igual.")
+                            tf!("Llegaste al límite de IA incluida de este mes; vuelve el {when}. Tus notas se guardan igual.", when = when)
                         } else {
-                            format!("Usaste el {} % de la IA incluida de este mes (vuelve a cero el {when}).", u.percent())
+                            tf!("Usaste el {pct} % de la IA incluida de este mes (vuelve a cero el {when}).", pct = u.percent(), when = when)
                         };
                         self.msg(text);
                     }
@@ -314,9 +314,9 @@ impl NotesApp {
         match self.ai_usage.as_ref()? {
             Ok(u) => {
                 let color = if u.percent() >= 100 { RED() } else if u.percent() >= 80 { WARN() } else { MUTED() };
-                Some((format!("{} % del mes usado · vuelve a cero el {}", u.percent(), long_date(&u.renueva)), color))
+                Some((tf!("{pct} % del mes usado · vuelve a cero el {when}", pct = u.percent(), when = long_date(&u.renueva)), color))
             }
-            Err(e) => Some((format!("no se pudo ver el uso: {e}"), RED())),
+            Err(e) => Some((tf!("no se pudo ver el uso: {e}", e = e), RED())),
         }
     }
 
@@ -328,8 +328,8 @@ impl NotesApp {
             let ai = match &self.ai {
                 Ok(ai) => ai,
                 Err(e) => {
-                    ui.label(RichText::new(format!("No disponible: {e}")).size(13.0).color(RED()));
-                    if ui.link(RichText::new("Configurar").size(13.0)).clicked() {
+                    ui.label(RichText::new(tf!("No disponible: {e}", e = e)).size(13.0).color(RED()));
+                    if ui.link(RichText::new(t!("Configurar")).size(13.0)).clicked() {
                         action = Some(Action::OpenSettings(Section::Ai));
                     }
                     return;
@@ -354,28 +354,28 @@ impl NotesApp {
                 } else {
                     String::new()
                 };
-                ui.label(RichText::new(format!("Organizando «{}»{progress}", vault::stem(p))).size(13.0).color(ACCENT()));
+                ui.label(RichText::new(tf!("Organizando «{note}»{progress}", note = vault::stem(p), progress = progress)).size(13.0).color(ACCENT()));
                 return;
             }
             if pending == 0 {
-                ui.label(RichText::new(format!("{} Todo organizado", icon::CHECK_CIRCLE)).size(13.0).color(SUCCESS()));
+                ui.label(RichText::new(format!("{} {}", icon::CHECK_CIRCLE, t!("Todo organizado"))).size(13.0).color(SUCCESS()));
             } else {
-                let what = if pending == 1 { "1 nota sin organizar".to_string() } else { format!("{pending} notas sin organizar") };
+                let what = if pending == 1 { t!("1 nota sin organizar").to_string() } else { tf!("{pending} notas sin organizar", pending = pending) };
                 let arrow = if self.show_unorganized { icon::CARET_UP } else { icon::CARET_DOWN };
                 let r = ui.add(egui::Button::new(RichText::new(format!("{what} {arrow}")).size(13.0).color(TEXT())).frame(false));
-                if r.on_hover_text(if self.show_unorganized { "Ocultar cuáles son" } else { "Ver cuáles son" }).clicked() {
+                if r.on_hover_text(if self.show_unorganized { t!("Ocultar cuáles son") } else { t!("Ver cuáles son") }).clicked() {
                     toggle = true;
                 }
-                let b = egui::Button::new(RichText::new(format!("{} Organizar ahora", icon::SPARKLE)).size(13.0));
-                if ui.add(b).on_hover_text("La IA pone etiquetas, tareas y fechas, y lleva cada nota a su espacio").clicked() {
+                let b = egui::Button::new(RichText::new(format!("{} {}", icon::SPARKLE, t!("Organizar ahora"))).size(13.0));
+                if ui.add(b).on_hover_text(t!("La IA pone etiquetas, tareas y fechas, y lleva cada nota a su espacio")).clicked() {
                     action = Some(Action::Organize);
                 }
             }
             if !self.ai_auto {
-                ui.label(RichText::new("· organizar sola: apagado").size(12.5).color(MUTED()));
+                ui.label(RichText::new(t!("· organizar sola: apagado")).size(12.5).color(MUTED()));
             }
             if let Some(e) = &self.ai_error {
-                ui.label(RichText::new(format!("· último error: {e}")).size(12.5).color(RED()));
+                ui.label(RichText::new(tf!("· último error: {e}", e = e)).size(12.5).color(RED()));
             }
         });
         if toggle {
@@ -397,7 +397,7 @@ impl NotesApp {
                     let start = tracking::preview(&n.text, 6, 140);
                     ui.horizontal(|ui| {
                         let b = egui::Button::new(RichText::new(icon::ARROW_SQUARE_OUT).size(14.0).color(ACCENT())).frame(false);
-                        if ui.add(b).on_hover_text("Abrir la nota").clicked() {
+                        if ui.add(b).on_hover_text(t!("Abrir la nota")).clicked() {
                             action = Some(Action::Open(p.clone(), None));
                         }
                         let mut job = LayoutJob::default();
@@ -431,17 +431,17 @@ impl NotesApp {
             }
             if asks.is_empty() && ideas.is_empty() && !suggested {
                 ui.add_space(8.0);
-                ui.label(RichText::new(format!("{} No hay preguntas pendientes.", icon::CHECK_CIRCLE)).size(15.0).color(SUCCESS()));
+                ui.label(RichText::new(format!("{} {}", icon::CHECK_CIRCLE, t!("No hay preguntas pendientes."))).size(15.0).color(SUCCESS()));
                 ui.add_space(4.0);
                 ui.label(
-                    RichText::new("Cuando la IA no esté segura de algo (a qué proyecto va una nota, de qué fecha habla, si dos notas son la misma), te preguntará aquí. Lo que respondas lo recuerda.")
+                    RichText::new(t!("Cuando la IA no esté segura de algo (a qué proyecto va una nota, de qué fecha habla, si dos notas son la misma), te preguntará aquí. Lo que respondas lo recuerda."))
                         .size(13.0)
                         .color(MUTED()),
                 );
                 ui.add_space(18.0);
             }
             if !ideas.is_empty() {
-                ui.label(RichText::new("Sugerencias").font(theme::bold(15.0)).color(SUCCESS()));
+                ui.label(RichText::new(t!("Sugerencias")).font(theme::bold(15.0)).color(SUCCESS()));
                 ui.add_space(6.0);
                 for i in &ideas {
                     if let Some(r) = self.idea_card(ui, i) {
@@ -451,7 +451,7 @@ impl NotesApp {
                 ui.add_space(10.0);
             }
             if !asks.is_empty() {
-                ui.label(RichText::new("Sobre tus notas").font(theme::bold(15.0)).color(ACCENT()));
+                ui.label(RichText::new(t!("Sobre tus notas")).font(theme::bold(15.0)).color(ACCENT()));
                 ui.add_space(6.0);
                 for (d, n) in &asks {
                     let label = d.note.replace('/', " / ");
@@ -462,12 +462,12 @@ impl NotesApp {
                 ui.add_space(10.0);
             }
             ui.horizontal_wrapped(|ui| {
-                if ui.button(format!("{} Buscar notas repetidas", icon::COPY)).on_hover_text("Revisa todas las notas y pregunta por las que parecen duplicadas").clicked() {
+                if ui.button(format!("{} {}", icon::COPY, t!("Buscar notas repetidas"))).on_hover_text(t!("Revisa todas las notas y pregunta por las que parecen duplicadas")).clicked() {
                     find_dups = true;
                 }
                 if learned > 0 {
-                    let text = format!("{} Lo que aprendió ({})", icon::LIGHTBULB, learned);
-                    if ui.link(RichText::new(text).size(12.5)).on_hover_text("aprendido.txt: lo que respondiste; la IA lo lee siempre (puedes editarlo)").clicked() {
+                    let text = format!("{} {}", icon::LIGHTBULB, tf!("Lo que aprendió ({n})", n = learned));
+                    if ui.link(RichText::new(text).size(12.5)).on_hover_text(t!("aprendido.txt: lo que respondiste; la IA lo lee siempre (puedes editarlo)")).clicked() {
                         action = Some(Action::OpenExternal(root.join(doubts::LEARNED_FILE)));
                     }
                 }
@@ -496,20 +496,20 @@ impl NotesApp {
         Self::column_at(ui, "ai-log", 18.0, |ui, col_w| {
             if n > 0 {
                 let pct = (n - bad) * 100 / n;
-                let text = format!(
-                    "Este mes: {} · {} · acertó en el {pct} %",
-                    plural(n, "cambio de la IA"),
-                    if bad == 1 { "1 deshecho o que no quisiste".to_string() } else { format!("{bad} deshechos o que no quisiste") }
+                let text = tf!("Este mes: {changes} · {bad} · acertó en el {pct} %",
+                    changes = plural(n, "cambio de la IA"),
+                    bad = if bad == 1 { t!("1 deshecho o que no quisiste").to_string() } else { tf!("{bad} deshechos o que no quisiste", bad = bad) },
+                    pct = pct
                 );
                 ui.label(RichText::new(text).size(13.0).color(if pct >= 90 { SUCCESS() } else if pct >= 70 { MUTED() } else { WARN() }));
                 ui.add_space(6.0);
             }
             if days.is_empty() {
                 ui.add_space(8.0);
-                ui.label(RichText::new("Todavía no hay cambios.").size(15.0).color(MUTED()));
+                ui.label(RichText::new(t!("Todavía no hay cambios.")).size(15.0).color(MUTED()));
                 ui.add_space(4.0);
                 ui.label(
-                    RichText::new("Cuando la IA organice una nota, anote un correo, o respondas una de sus preguntas, verás aquí qué hizo y dónde.")
+                    RichText::new(t!("Cuando la IA organice una nota, anote un correo, o respondas una de sus preguntas, verás aquí qué hizo y dónde."))
                         .size(13.0)
                         .color(MUTED()),
                 );
@@ -538,25 +538,25 @@ impl NotesApp {
                                 ui.label(RichText::new(format!("·  {d}")).size(12.5).color(MUTED()));
                             }
                             if e.details.len() > 12 {
-                                ui.label(RichText::new(format!("·  y {} más", e.details.len() - 12)).size(12.5).color(MUTED()));
+                                ui.label(RichText::new(tf!("·  y {n} más", n = e.details.len() - 12)).size(12.5).color(MUTED()));
                             }
                             ui.horizontal(|ui| {
                                 let path = root.join(format!("{}.md", e.note));
-                                if !e.note.is_empty() && path.is_file() && ui.link(RichText::new(format!("{} Abrir {}", icon::FILE_TEXT, e.note)).size(12.5)).clicked() {
+                                if !e.note.is_empty() && path.is_file() && ui.link(RichText::new(format!("{} {}", icon::FILE_TEXT, tf!("Abrir {note}", note = e.note))).size(12.5)).clicked() {
                                     action = Some(Action::Open(path, None));
                                 }
                                 if e.rechazado {
-                                    ui.label(RichText::new("no lo quisiste").size(12.5).color(MUTED()));
+                                    ui.label(RichText::new(t!("no lo quisiste")).size(12.5).color(MUTED()));
                                 } else if e.undone {
-                                    ui.label(RichText::new("deshecho").size(12.5).color(MUTED()));
+                                    ui.label(RichText::new(t!("deshecho")).size(12.5).color(MUTED()));
                                 } else {
                                     if undo_id.as_deref() == Some(e.id.as_str()) {
-                                        let b = egui::Button::new(RichText::new(format!("{} Deshacer", icon::ARROW_COUNTER_CLOCKWISE)).size(12.5));
+                                        let b = egui::Button::new(RichText::new(format!("{} {}", icon::ARROW_COUNTER_CLOCKWISE, t!("Deshacer"))).size(12.5));
                                         if ui.add(b).clicked() {
                                             action = Some(Action::Undo);
                                         }
                                     }
-                                    if matches!(e.kind, Kind::Organizar | Kind::Correo) && ui.link(RichText::new("No, gracias").size(12.5)).on_hover_text("La IA lo tendrá en cuenta para no repetirlo").clicked() {
+                                    if matches!(e.kind, Kind::Organizar | Kind::Correo) && ui.link(RichText::new(t!("No, gracias")).size(12.5)).on_hover_text(t!("La IA lo tendrá en cuenta para no repetirlo")).clicked() {
                                         action = Some(Action::Reject(e.id.clone()));
                                     }
                                 }

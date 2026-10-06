@@ -19,14 +19,14 @@ pub(super) enum ImportStep {
 impl NotesApp {
     /// Elegir la carpeta a importar.
     pub(super) fn pick_import(&mut self) {
-        let Some(src) = rfd::FileDialog::new().set_title("Carpeta con notas Markdown (Obsidian, Notion exportado…)").pick_folder() else { return };
+        let Some(src) = rfd::FileDialog::new().set_title(t!("Carpeta con notas Markdown (Obsidian, Notion exportado…)")).pick_folder() else { return };
         if src.starts_with(&self.vault.root) || self.vault.root.starts_with(&src) {
-            self.msg("Esa carpeta es (o contiene) tu carpeta de notas: elige otra");
+            self.msg(t!("Esa carpeta es (o contiene) tu carpeta de notas: elige otra"));
             return;
         }
         let (notes, files) = import::count(&src);
         if notes == 0 {
-            self.msg("En esa carpeta no hay notas Markdown (.md)");
+            self.msg(t!("En esa carpeta no hay notas Markdown (.md)"));
             return;
         }
         self.import = Some(ImportStep::Confirm { src, notes, files, organize: false });
@@ -63,18 +63,18 @@ impl NotesApp {
             }
             self.save_analyzed();
         }
-        let mut text = format!("Importé {} de «{name}»", plural(report.notes, "nota"));
+        let mut text = tf!("Importé {notes} de «{name}»", notes = plural(report.notes, "nota"), name = name);
         if report.files > 0 {
-            text += &format!(" y {}", plural(report.files, "archivo"));
+            text += &tf!(" y {files}", files = plural(report.files, "archivo"));
         }
         if !report.spaces.is_empty() {
-            text += &format!(", en {}", report.spaces.join(", "));
+            text += &tf!(", en {spaces}", spaces = report.spaces.join(", "));
         }
         if report.skipped > 0 {
-            text += &format!(" ({} ya estaban)", report.skipped);
+            text += &tf!(" ({n} ya estaban)", n = report.skipped);
         }
         if !report.errors.is_empty() {
-            text += &format!(" · {} no se pudieron: {}", report.errors.len(), report.errors[0]);
+            text += &tf!(" · {n} no se pudieron: {error}", n = report.errors.len(), error = report.errors[0]);
         }
         self.msg(text);
         if report.notes > 0 {
@@ -93,26 +93,26 @@ impl NotesApp {
             ImportStep::Confirm { src, notes, files, organize } => {
                 let modal = egui::Modal::new(Id::new("importar")).show(ctx, |ui| {
                     ui.set_width(460.0);
-                    ui.label(RichText::new(format!("{} Importar notas", icon::DOWNLOAD_SIMPLE)).font(theme::bold(17.0)));
+                    ui.label(RichText::new(format!("{} {}", icon::DOWNLOAD_SIMPLE, t!("Importar notas"))).font(theme::bold(17.0)));
                     ui.add_space(6.0);
-                    ui.label(RichText::new(format!("{} · {} y {}", src.display(), plural(*notes, "nota"), plural(*files, "archivo"))).size(13.0));
+                    ui.label(RichText::new(tf!("{path} · {notes} y {files}", path = src.display(), notes = plural(*notes, "nota"), files = plural(*files, "archivo"))).size(13.0));
                     ui.add_space(6.0);
                     ui.label(
-                        RichText::new("Cada carpeta de primer nivel pasa a ser un espacio. Las imágenes y archivos se copian a Adjuntos, y los enlaces entre páginas quedan como [[enlaces]]. Tu carpeta original no se toca, y si importas dos veces no se repite nada.")
+                        RichText::new(t!("Cada carpeta de primer nivel pasa a ser un espacio. Las imágenes y archivos se copian a Adjuntos, y los enlaces entre páginas quedan como [[enlaces]]. Tu carpeta original no se toca, y si importas dos veces no se repite nada."))
                             .size(12.5)
                             .color(MUTED()),
                     );
                     ui.add_space(8.0);
-                    ui.checkbox(organize, "Que la IA las organice después (etiquetas, tareas y fechas)");
+                    ui.checkbox(organize, t!("Que la IA las organice después (etiquetas, tareas y fechas)"));
                     if *organize && *notes > 200 {
-                        ui.label(RichText::new(format!("Con {} usa bastante IA y toma un buen rato.", plural(*notes, "nota"))).size(12.0).color(WARN()));
+                        ui.label(RichText::new(tf!("Con {notes} usa bastante IA y toma un buen rato.", notes = plural(*notes, "nota"))).size(12.0).color(WARN()));
                     }
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
-                        if ui.add(egui::Button::new(RichText::new("Importar").color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
+                        if ui.add(egui::Button::new(RichText::new(t!("Importar")).color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                             go = Some((src.clone(), *organize));
                         }
-                        if ui.button("Cancelar").clicked() {
+                        if ui.button(t!("Cancelar")).clicked() {
                             cancel = true;
                         }
                     });
@@ -131,10 +131,10 @@ impl NotesApp {
                 let (d, t) = (*done, *total);
                 egui::Modal::new(Id::new("importando")).show(ctx, |ui| {
                     ui.set_width(380.0);
-                    ui.label(RichText::new(format!("Importando «{name}»…")).font(theme::bold(15.0)));
+                    ui.label(RichText::new(tf!("Importando «{name}»…", name = name)).font(theme::bold(15.0)));
                     ui.add_space(8.0);
                     let frac = if t == 0 { 0.0 } else { d as f32 / t as f32 };
-                    ui.add(egui::ProgressBar::new(frac).text(format!("{d} de {t}")));
+                    ui.add(egui::ProgressBar::new(frac).text(tf!("{d} de {t}", d = d, t = t)));
                 });
             }
         }

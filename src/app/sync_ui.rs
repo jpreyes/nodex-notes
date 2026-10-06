@@ -104,9 +104,9 @@ impl NotesApp {
                 self.cfg.sin_sincronizar = false;
                 self.save_config();
                 self.restart_sync();
-                self.msg(format!("Tus notas ahora están en {} y se sincronizan con tu cuenta (la carpeta de Dropbox quedó como estaba)", dest.display()));
+                self.msg(tf!("Tus notas ahora están en {path} y se sincronizan con tu cuenta (la carpeta de Dropbox quedó como estaba)", path = dest.display()));
             }
-            Err(e) => self.msg(format!("No se pudieron copiar tus notas: {e}")),
+            Err(e) => self.msg(tf!("No se pudieron copiar tus notas: {e}", e = e)),
         }
     }
 
@@ -115,7 +115,7 @@ impl NotesApp {
         self.cfg.sin_sincronizar = !on;
         self.save_config();
         self.restart_sync();
-        self.msg(if on { "Tus notas se sincronizan con tu cuenta" } else { "Tus notas ya no se sincronizan con tu cuenta (quedan en este equipo)" });
+        self.msg(if on { t!("Tus notas se sincronizan con tu cuenta") } else { t!("Tus notas ya no se sincronizan con tu cuenta (quedan en este equipo)") });
     }
 
     /// Copiar las notas a una carpeta fuera de la nube y sincronizar esa.
@@ -142,21 +142,21 @@ impl NotesApp {
         let Some(h) = &self.sync.handle else { return };
         let Ok(s) = h.status.lock().map(|s| s.clone()) else { return };
         let (glyph, text, color) = if s.busy && s.pending > 0 {
-            (icon::CLOUD_ARROW_UP, format!("Sincronizando ({})", s.pending), MUTED())
+            (icon::CLOUD_ARROW_UP, tf!("Sincronizando ({n})", n = s.pending), MUTED())
         } else if s.busy {
-            (icon::CLOUD_ARROW_UP, "Sincronizando…".to_string(), MUTED())
+            (icon::CLOUD_ARROW_UP, t!("Sincronizando…").to_string(), MUTED())
         } else if let Some(e) = &s.error {
-            let short = if e.contains("sin conexión") { "Sin conexión: tus cambios quedan aquí".to_string() } else { e.chars().take(60).collect() };
+            let short = if e.contains("sin conexión") { t!("Sin conexión: tus cambios quedan aquí").to_string() } else { e.chars().take(60).collect() };
             (icon::CLOUD_SLASH, short, WARN())
         } else if s.synced_at.is_some() {
-            (icon::CLOUD_CHECK, "Sincronizado".to_string(), MUTED())
+            (icon::CLOUD_CHECK, t!("Sincronizado").to_string(), MUTED())
         } else {
-            (icon::CLOUD, "Conectando…".to_string(), MUTED())
+            (icon::CLOUD, t!("Conectando…").to_string(), MUTED())
         };
         let tip = match (&s.error, s.synced_at) {
-            (Some(e), _) => format!("{e}. Se reintenta solo; lo que escribas queda en este equipo y se sube al volver."),
-            (None, Some(t)) => format!("Tus notas están al día con tu cuenta (a las {})", t.format("%H:%M")),
-            _ => "Tus notas se sincronizan con tu cuenta".into(),
+            (Some(e), _) => tf!("{e}. Se reintenta solo; lo que escribas queda en este equipo y se sube al volver.", e = e),
+            (None, Some(t)) => tf!("Tus notas están al día con tu cuenta (a las {h})", h = t.format("%H:%M")),
+            _ => t!("Tus notas se sincronizan con tu cuenta").into(),
         };
         ui.label(RichText::new(format!("{glyph} {text}")).size(12.5).color(color)).on_hover_text(tip);
         ui.add_space(12.0);
@@ -181,21 +181,21 @@ impl NotesApp {
         let cloud = if crate::dropbox::contains(&self.vault.root) { "Dropbox" } else { "OneDrive" };
         let modal = egui::Modal::new(Id::new("ofrecer-sincronizar")).show(ctx, |ui| {
             ui.set_width(460.0);
-            ui.label(RichText::new(format!("{} ¿Sincronizamos tus notas con tu cuenta?", icon::CLOUD_ARROW_UP)).font(theme::bold(17.0)));
+            ui.label(RichText::new(format!("{} {}", icon::CLOUD_ARROW_UP, t!("¿Sincronizamos tus notas con tu cuenta?"))).font(theme::bold(17.0)));
             ui.add_space(6.0);
-            ui.label(RichText::new(format!("Tus notas están en {cloud}. Con tu cuenta, cada cambio llega en segundos a tus otros equipos, sin depender de {cloud}, y si dos equipos cambian la misma nota, se juntan.")).size(13.5));
+            ui.label(RichText::new(tf!("Tus notas están en {cloud}. Con tu cuenta, cada cambio llega en segundos a tus otros equipos, sin depender de {cloud}, y si dos equipos cambian la misma nota, se juntan.", cloud = cloud)).size(13.5));
             ui.add_space(6.0);
             ui.label(
-                RichText::new(format!("Para que no se peleen las dos sincronizaciones, tus notas se copian a {} y la app pasa a usar esa carpeta. La de {cloud} queda como está.", dest.display()))
+                RichText::new(tf!("Para que no se peleen las dos sincronizaciones, tus notas se copian a {path} y la app pasa a usar esa carpeta. La de {cloud} queda como está.", path = dest.display(), cloud = cloud))
                     .size(12.5)
                     .color(MUTED()),
             );
             ui.add_space(12.0);
             ui.horizontal(|ui| {
-                if ui.add(egui::Button::new(RichText::new("Sí, sincronizar").color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
+                if ui.add(egui::Button::new(RichText::new(t!("Sí, sincronizar")).color(theme::c(Color32::WHITE))).fill(ACCENT())).clicked() {
                     yes = true;
                 }
-                if ui.button(format!("Seguir con {cloud}")).clicked() {
+                if ui.button(tf!("Seguir con {cloud}", cloud = cloud)).clicked() {
                     keep = true;
                 }
             });
@@ -208,7 +208,7 @@ impl NotesApp {
         } else if keep {
             self.cfg.sin_sincronizar = true;
             self.save_config();
-            self.msg(format!("Tus notas siguen con {cloud}. Puedes cambiarlo en Configuración → Tu cuenta"));
+            self.msg(tf!("Tus notas siguen con {cloud}. Puedes cambiarlo en Configuración → Tu cuenta", cloud = cloud));
         } else if close {
             self.sync.offer_closed = true;
         }
@@ -218,8 +218,8 @@ impl NotesApp {
     pub(super) fn sync_settings(&self, ui: &mut Ui, changes: &mut Vec<settings::Change>) {
         use settings::Change;
         let cloud = in_cloud(&self.vault.root);
-        let hint = "Tus notas en todos tus equipos, sin Dropbox: cada cambio sube a tu cuenta y llega al instante a tus otros equipos. Si dos equipos cambian la misma nota, se juntan. Sin conexión, escribes igual. Se enciende sola al entrar.";
-        settings::row(ui, "Sincronizar tus notas", hint, |ui| {
+        let hint = t!("Tus notas en todos tus equipos, sin Dropbox: cada cambio sube a tu cuenta y llega al instante a tus otros equipos. Si dos equipos cambian la misma nota, se juntan. Sin conexión, escribes igual. Se enciende sola al entrar.");
+        settings::row(ui, t!("Sincronizar tus notas"), hint, |ui| {
             let mut on = !self.cfg.sin_sincronizar && !cloud;
             ui.add_enabled_ui(!cloud && self.sync.copy.is_none(), |ui| {
                 if settings::toggle(ui, &mut on).changed() {
@@ -231,24 +231,24 @@ impl NotesApp {
             ui.horizontal(|ui| {
                 ui.spinner();
                 let n = job.done.load(Ordering::Relaxed);
-                ui.label(RichText::new(format!("Copiando tus notas a {}… {n} de {}", job.dest.display(), job.total)).size(12.5).color(MUTED()));
+                ui.label(RichText::new(tf!("Copiando tus notas a {path}… {n} de {total}", path = job.dest.display(), n = n, total = job.total)).size(12.5).color(MUTED()));
             });
         } else if cloud {
             ui.label(
-                RichText::new("Tu carpeta de notas está en Dropbox u OneDrive, que ya la sincroniza: con las dos a la vez se pelearían. Para usar tu cuenta, tus notas se copian a una carpeta fuera de la nube (la de Dropbox queda como está).")
+                RichText::new(t!("Tu carpeta de notas está en Dropbox u OneDrive, que ya la sincroniza: con las dos a la vez se pelearían. Para usar tu cuenta, tus notas se copian a una carpeta fuera de la nube (la de Dropbox queda como está)."))
                     .size(12.5)
                     .color(MUTED()),
             );
             ui.add_space(4.0);
             let dest = outside_folder();
-            if ui.button(format!("{}  Copiar mis notas a {} y sincronizarlas", icon::COPY, dest.display())).clicked() {
+            if ui.button(format!("{}  {}", icon::COPY, tf!("Copiar mis notas a {path} y sincronizarlas", path = dest.display()))).clicked() {
                 changes.push(Change::CopyOutOfCloud);
             }
         } else if let Some(h) = self.sync.handle.as_ref() {
             if let Ok(s) = h.status.lock() {
                 if s.limit > 0 {
                     let mb = |b: u64| b as f64 / 1_048_576.0;
-                    ui.label(RichText::new(format!("Espacio usado: {:.1} MB de {:.0} MB", mb(s.used), mb(s.limit))).size(12.5).color(MUTED()));
+                    ui.label(RichText::new(tf!("Espacio usado: {used} MB de {limit} MB", used = format!("{:.1}", mb(s.used)), limit = format!("{:.0}", mb(s.limit)))).size(12.5).color(MUTED()));
                 }
             }
         }

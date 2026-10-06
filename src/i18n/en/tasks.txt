@@ -1,0 +1,163 @@
+# Traducciones al inglés (ver src/i18n.rs).
+
+Hecha
+= Done
+
+Seguimiento
+= Follow-up
+
+{head}: «{title}»
+= {head}: “{title}”
+
+Omitir (Esc)
+= Skip (Esc)
+
+¿Qué se hizo? Queda anotado debajo, con la fecha, y la IA lo tiene en cuenta.
+= What was done? It's noted below with the date, and the AI keeps it in mind.
+
+Por ejemplo: se pidió a Gerdau, llega el lunes
+= For example: ordered from Gerdau, arrives Monday
+
+Anotar
+= Add note
+
+Omitir
+= Skip
+
+Cancelar
+= Cancel
+
+Seguimiento anotado en «{title}»
+= Follow-up added to “{title}”
+
+No se pudo anotar el seguimiento
+= Couldn't add the follow-up
+
+No se pudo actualizar tareas.txt: {e}
+= Couldn't update tareas.txt: {e}
+
+¿Marco «{title}» como hecha?
+= Mark “{title}” as done?
+
+El seguimiento dice: «{quote}»
+= The follow-up says: “{quote}”
+
+Marcar hecha
+= Mark as done
+
+No, sigue pendiente
+= No, still pending
+
+«{title}» marcada como hecha
+= “{title}” marked as done
+
+«{note}»: {lines}
+= “{note}”: {lines}
+
+Juntó 1 línea repetida
+= Merged 1 repeated line
+
+Juntó {total} líneas repetidas
+= Merged {total} repeated lines
+
+«{task}»
+= “{task}”
+
+y {more} más
+= and {more} more
+
+Quitó 1 tarea repetida (ya estaba la misma)
+= Removed 1 duplicate task (the same one was already there)
+
+Quitó {n} tareas repetidas (ya estaba la misma)
+= Removed {n} duplicate tasks (the same ones were already there)
+
+No se pudo mover la nota: {e}
+= Couldn't move the note: {e}
+
+«{title}» movida a {ws}
+= “{title}” moved to {ws}
+
+«{new}» es una carpeta reservada (Diario, Adjuntos, Plantillas o Bloc); elige otro nombre
+= “{new}” is a reserved folder (Diario, Adjuntos, Plantillas or Bloc); pick another name
+
+Ya hay un espacio «{new}»
+= There's already a Space called “{new}”
+
+No se pudo cambiar el nombre: {e}
+= Couldn't rename: {e}
+
+El espacio «{old}» ahora se llama «{new}»
+= The Space “{old}” is now called “{new}”
+
+No se pudo cambiar {note}: {e}
+= Couldn't change {note}: {e}
+
+#{old} ahora es #{new} en {notes}
+= #{old} is now #{new} in {notes}
+
+«{title}» ya es una tarea
+= “{title}” is already a task
+
+«{title}» quedó como tarea (en Tareas)
+= “{title}” is now a task (in Tasks)
+
+No se pudo escribir tareas.txt: {e}
+= Couldn't write tareas.txt: {e}
+
+Cambiar el nombre de #{old}
+= Rename #{old}
+
+Cambia en todas las notas. Si ya existe la etiqueta nueva, se juntan.
+= Changes it in every note. If the new tag already exists, they're merged.
+
+Nombre nuevo
+= New name
+
+Cambiar
+= Rename
+
+«{note}» era una copia en conflicto sin original: quedó con su nombre
+= “{note}” was a conflicted copy with no original: it now has the original name
+
+«{note}»
+= “{note}”
+
+No había nada nuevo en la copia
+= There was nothing new in the copy
+
+1 línea de la copia se agregó
+= 1 line from the copy was added
+
+{n} líneas de la copia se agregaron
+= {n} lines from the copy were added
+
+Se juntó una copia en conflicto de {what}
+= Merged a conflicted copy of {what}
+
+La copia quedó en la papelera: {name}
+= The copy was moved to the Trash: {name}
+
+No se pudo juntar la nota del {day}: {e}
+= Couldn't merge the note for {day}: {e}
+
+Juntó {notes} de {spaces} en el Diario: ahora hay un solo «Hoy»
+= Merged {notes} from {spaces} into the daily notes: now there's just one “Today”
+
+1 nota del día
+= 1 daily note
+
+{n} notas del día
+= {n} daily notes
+
+«{space}»
+= “{space}”
+
+{n} espacios
+= {n} Spaces
+
+plural:nota
+= note|notes
+
+plural:línea
+= line|lines

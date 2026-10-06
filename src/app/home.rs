@@ -23,7 +23,7 @@ fn card<R>(ui: &mut Ui, glyph: &str, title: &str, closed: &RefCell<HashSet<Strin
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
             let head = ui
                 .horizontal(|ui| {
-                    ui.label(RichText::new(format!("{glyph}  {title}")).font(theme::bold(14.0)).color(TEXT()));
+                    ui.label(RichText::new(format!("{glyph}  {}", crate::i18n::tr_owned(title))).font(theme::bold(14.0)).color(TEXT()));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(RichText::new(if is_closed { icon::CARET_RIGHT } else { icon::CARET_DOWN }).size(13.0).color(MUTED()));
                     });
@@ -31,7 +31,7 @@ fn card<R>(ui: &mut Ui, glyph: &str, title: &str, closed: &RefCell<HashSet<Strin
                 .response
                 .interact(Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .on_hover_text(if is_closed { "Abrir" } else { "Minimizar" });
+                .on_hover_text(if is_closed { t!("Abrir") } else { t!("Minimizar") });
             if head.clicked() {
                 let mut c = closed.borrow_mut();
                 if !c.remove(title) {
@@ -80,7 +80,7 @@ impl NotesApp {
                 let _ = fs::create_dir_all(dir);
             }
             if let Err(e) = fs::write(&path, &new) {
-                self.msg(format!("No se pudo anotar: {e}"));
+                self.msg(tf!("No se pudo anotar: {e}", e = e));
                 return;
             }
             if let Some(m) = vault::modified(&path) {
@@ -88,7 +88,7 @@ impl NotesApp {
             }
             self.touched.insert(path.clone());
         }
-        self.msg("Anotado en la nota de hoy; la IA lo lleva a su espacio");
+        self.msg(t!("Anotado en la nota de hoy; la IA lo lleva a su espacio"));
     }
 
     pub(super) fn home_view(&mut self, ui: &mut Ui) -> Option<Action> {
@@ -131,17 +131,17 @@ impl NotesApp {
 
         Self::column(ui, "inicio", |ui, col_w| {
             let hour = chrono::Timelike::hour(&Local::now());
-            let hello = if hour < 12 { "Buenos días" } else if hour < 20 { "Buenas tardes" } else { "Buenas noches" };
+            let hello = if hour < 12 { t!("Buenos días") } else if hour < 20 { t!("Buenas tardes") } else { t!("Buenas noches") };
             ui.label(RichText::new(hello).font(theme::bold(26.0)));
             let mut status = vec![long_date(&today_s)];
             if !soon.is_empty() {
-                status.push(format!("{} para hoy y mañana", plural(soon.len(), "tarea")));
+                status.push(tf!("{n} para hoy y mañana", n = plural(soon.len(), "tarea")));
             }
             if overdue > 0 {
-                status.push(format!("{overdue} atrasada{}", if overdue == 1 { "" } else { "s" }));
+                status.push(if overdue == 1 { tf!("{n} atrasada", n = overdue) } else { tf!("{n} atrasadas", n = overdue) });
             }
             if asks + ideas > 0 {
-                status.push(format!("la IA tiene {}", plural(asks + ideas, "pregunta")));
+                status.push(tf!("la IA tiene {n}", n = plural(asks + ideas, "pregunta")));
             }
             ui.label(RichText::new(status.join("  ·  ")).size(13.0).color(MUTED()));
             ui.add_space(14.0);
@@ -155,11 +155,11 @@ impl NotesApp {
                 });
                 sent
             };
-            if boxed(ui, &mut self.home_capture, "inicio-anotar", format!("{}  Anota algo rápido… (va a la nota de hoy; la IA lo lleva a su espacio)", icon::NOTE_PENCIL)) {
+            if boxed(ui, &mut self.home_capture, "inicio-anotar", format!("{}  {}", icon::NOTE_PENCIL, t!("Anota algo rápido… (va a la nota de hoy; la IA lo lleva a su espacio)"))) {
                 capture = Some(std::mem::take(&mut self.home_capture));
             }
             ui.add_space(6.0);
-            if boxed(ui, &mut self.home_question, "inicio-preguntar", format!("{}  Pregúntale a tus notas…", icon::CHAT_CIRCLE_TEXT)) {
+            if boxed(ui, &mut self.home_question, "inicio-preguntar", format!("{}  {}", icon::CHAT_CIRCLE_TEXT, t!("Pregúntale a tus notas…"))) {
                 question = Some(std::mem::take(&mut self.home_question));
             }
             ui.add_space(16.0);
@@ -173,9 +173,9 @@ impl NotesApp {
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal_wrapped(|ui| {
-                            ui.label(RichText::new(format!("{} ¿Hacemos la revisión de la semana?", icon::CALENDAR_CHECK)).size(14.5).color(TEXT()));
-                            ui.label(RichText::new("Lo hecho, lo atrasado, lo que viene y un resumen de la IA.").size(13.0).color(MUTED()));
-                            if ui.button("Abrir revisión").clicked() {
+                            ui.label(RichText::new(format!("{} {}", icon::CALENDAR_CHECK, t!("¿Hacemos la revisión de la semana?"))).size(14.5).color(TEXT()));
+                            ui.label(RichText::new(t!("Lo hecho, lo atrasado, lo que viene y un resumen de la IA.")).size(13.0).color(MUTED()));
+                            if ui.button(t!("Abrir revisión")).clicked() {
                                 action = Some(Action::ShowTab(View::Week));
                             }
                         });
@@ -194,19 +194,19 @@ impl NotesApp {
             let mut left = |ui: &mut Ui| {
                 card(ui, icon::USERS, "Reuniones recientes", &closed, |ui| {
                     if meetings.is_empty() {
-                        ui.label(RichText::new("Todavía no hay reuniones.").color(MUTED()));
+                        ui.label(RichText::new(t!("Todavía no hay reuniones.")).color(MUTED()));
                     }
                     for (p, title, m, open) in &meetings {
                         let right = match *open {
                             0 => short_date(*m),
-                            1 => format!("1 acuerdo abierto · {}", short_date(*m)),
-                            n => format!("{n} acuerdos abiertos · {}", short_date(*m)),
+                            1 => tf!("1 acuerdo abierto · {date}", date = short_date(*m)),
+                            n => tf!("{n} acuerdos abiertos · {date}", n = n, date = short_date(*m)),
                         };
                         if let Some(a) = note_row(ui, icon::USERS, title, &right, p) {
                             act_l = Some(a);
                         }
                     }
-                    if ui.link(RichText::new(format!("{} Nueva reunión (Ctrl+R)", icon::PLUS)).size(12.5)).clicked() {
+                    if ui.link(RichText::new(format!("{} {}", icon::PLUS, t!("Nueva reunión (Ctrl+R)"))).size(12.5)).clicked() {
                         act_l = Some(Action::StartMeeting);
                     }
                 });
@@ -217,28 +217,28 @@ impl NotesApp {
                             act_l = Some(a);
                         }
                     }
-                    ui.label(RichText::new("Ctrl+clic: abrir en otra pestaña").size(12.0).color(MUTED()));
+                    ui.label(RichText::new(t!("Ctrl+clic: abrir en otra pestaña")).size(12.0).color(MUTED()));
                 });
             };
             let mut right = |ui: &mut Ui| {
                 card(ui, icon::SPARKLE, "La IA", &closed, |ui| {
                     if asks + ideas == 0 {
-                        ui.label(RichText::new("Nada pendiente: todo organizado.").color(MUTED()));
+                        ui.label(RichText::new(t!("Nada pendiente: todo organizado.")).color(MUTED()));
                     } else {
                         if asks > 0 {
-                            ui.label(RichText::new(format!("{} esperando tu respuesta", plural(asks, "pregunta"))).size(13.5));
+                            ui.label(RichText::new(tf!("{n} esperando tu respuesta", n = plural(asks, "pregunta"))).size(13.5));
                         }
                         if ideas > 0 {
-                            ui.label(RichText::new(format!("{} de espacio nuevo", plural(ideas, "sugerencia"))).size(13.5));
+                            ui.label(RichText::new(tf!("{n} de espacio nuevo", n = plural(ideas, "sugerencia"))).size(13.5));
                         }
-                        if ui.link(RichText::new("Responder").size(12.5)).clicked() {
+                        if ui.link(RichText::new(t!("Responder")).size(12.5)).clicked() {
                             act_r = Some(Action::ShowAi(super::ai_view::AiTab::Asks));
                         }
                     }
                     if let Some(p) = &self.in_flight {
-                        ui.label(RichText::new(format!("Organizando «{}»…", vault::stem(p))).size(12.5).color(ACCENT()));
+                        ui.label(RichText::new(tf!("Organizando «{name}»…", name = vault::stem(p))).size(12.5).color(ACCENT()));
                     }
-                    if ui.link(RichText::new("Lo que hizo la IA").size(12.5)).clicked() {
+                    if ui.link(RichText::new(t!("Lo que hizo la IA")).size(12.5)).clicked() {
                         act_r = Some(Action::ShowAi(super::ai_view::AiTab::Log));
                     }
                 });
@@ -248,15 +248,15 @@ impl NotesApp {
                         let important = self.mail.store.mails.iter().filter(|m| m.important && m.date >= since).count();
                         let checks = self.mail.open_checks().len();
                         if important == 0 && checks == 0 {
-                            ui.label(RichText::new("Nada importante en los últimos dos días.").color(MUTED()));
+                            ui.label(RichText::new(t!("Nada importante en los últimos dos días.")).color(MUTED()));
                         }
                         if important > 0 {
-                            ui.label(RichText::new(format!("{} importantes en los últimos dos días", plural(important, "correo"))).size(13.5));
+                            ui.label(RichText::new(tf!("{n} importantes en los últimos dos días", n = plural(important, "correo"))).size(13.5));
                         }
                         if checks > 0 {
-                            ui.label(RichText::new(format!("{} para verificar", plural(checks, "compromiso"))).size(13.5).color(SUCCESS()));
+                            ui.label(RichText::new(tf!("{n} para verificar", n = plural(checks, "compromiso"))).size(13.5).color(SUCCESS()));
                         }
-                        if ui.link(RichText::new("Ver correos").size(12.5)).clicked() {
+                        if ui.link(RichText::new(t!("Ver correos")).size(12.5)).clicked() {
                             act_r = Some(Action::ShowTab(View::Mail));
                         }
                     });
@@ -270,10 +270,10 @@ impl NotesApp {
                     }
                 });
                 card(ui, icon::CALENDAR_CHECK, "Esta semana", &closed, |ui| {
-                    let done = if done_week == 1 { "1 tarea hecha".to_string() } else { format!("{done_week} tareas hechas") };
-                    let written = if written == 1 { "1 nota escrita".to_string() } else { format!("{written} notas escritas") };
+                    let done = if done_week == 1 { t!("1 tarea hecha").to_string() } else { tf!("{n} tareas hechas", n = done_week) };
+                    let written = if written == 1 { t!("1 nota escrita").to_string() } else { tf!("{n} notas escritas", n = written) };
                     ui.label(RichText::new(format!("{written}  ·  {done}")).size(13.5));
-                    if ui.link(RichText::new("Revisión semanal").size(12.5)).clicked() {
+                    if ui.link(RichText::new(t!("Revisión semanal")).size(12.5)).clicked() {
                         act_r = Some(Action::ShowTab(View::Week));
                     }
                 });

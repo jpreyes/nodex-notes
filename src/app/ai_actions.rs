@@ -63,7 +63,7 @@ impl NotesApp {
                 "hecha" => {
                     let Some(t) = self.task_of(&a.tarea, tasks) else { continue };
                     if t.done {
-                        done.push(format!("«{}» ya estaba hecha", agenda::display_text(&t.text)));
+                        done.push(tf!("«{task}» ya estaba hecha", task = agenda::display_text(&t.text)));
                         continue;
                     }
                     match (&t.id, &t.note) {
@@ -80,14 +80,14 @@ impl NotesApp {
                             let _ = self.agenda.toggle_task(&t.raw, &today_s);
                         }
                     }
-                    done.push(format!("Marqué hecha «{}»", agenda::display_text(&t.text)));
+                    done.push(tf!("Marqué hecha «{task}»", task = agenda::display_text(&t.text)));
                 }
                 "tarea" if !a.texto.trim().is_empty() => {
                     let due = Some(a.fecha.trim()).filter(|d| agenda::is_date(d));
                     let ws = ws_of(self, &a.espacio);
                     if self.agenda.add_task(agenda::format_task(&today_s, a.texto.trim(), &ws, due, "", None)).is_ok() {
                         let when = due.map(|d| format!(" · {}", long_date(d))).unwrap_or_default();
-                        done.push(format!("Nueva tarea «{}»{when}", a.texto.trim()));
+                        done.push(tf!("Nueva tarea «{task}»{when}", task = a.texto.trim(), when = when));
                     }
                 }
                 "evento" if !a.titulo.trim().is_empty() && agenda::is_date(a.fecha.trim()) => {
@@ -95,8 +95,8 @@ impl NotesApp {
                     let title = if a.lugar.trim().is_empty() { a.titulo.trim().to_string() } else { format!("{} · {}", a.titulo.trim(), a.lugar.trim()) };
                     let ws = ws_of(self, &a.espacio);
                     if self.agenda.add_lines(&[], &[agenda::format_event(a.fecha.trim(), time, &title, &ws, "")]).is_ok() {
-                        let when = time.map_or_else(|| "todo el día".to_string(), |h| format!("a las {h}"));
-                        done.push(format!("Evento «{title}» · {}, {when}", long_date(a.fecha.trim())));
+                        let when = time.map_or_else(|| t!("todo el día").to_string(), |h| tf!("a las {h}", h = h));
+                        done.push(tf!("Evento «{title}» · {date}, {when}", title = title, date = long_date(a.fecha.trim()), when = when));
                     }
                 }
                 "anotar" if !a.texto.trim().is_empty() => {
@@ -107,7 +107,7 @@ impl NotesApp {
                     let old = self.text_of(&path);
                     let text = if old.trim().is_empty() { format!("{}\n", a.texto.trim()) } else { format!("{}\n{}\n", old.trim_end(), a.texto.trim()) };
                     self.write_for_ai(&path, text, &mut files);
-                    done.push(format!("Anoté en «{}»: {}", display_title(&vault::stem(&path)), a.texto.trim()));
+                    done.push(tf!("Anoté en «{note}»: {text}", note = display_title(&vault::stem(&path)), text = a.texto.trim()));
                 }
                 "seguimiento" if !a.texto.trim().is_empty() => {
                     let Some(t) = self.task_of(&a.tarea, tasks) else { continue };
@@ -123,13 +123,13 @@ impl NotesApp {
                         _ => super::tracking::Target::Task(super::tracking::task_key(&t)),
                     };
                     if self.add_follow_up(target, a.texto.trim()) {
-                        done.push(format!("Seguimiento en «{}»: {}", agenda::display_text(&t.text), a.texto.trim()));
+                        done.push(tf!("Seguimiento en «{task}»: {text}", task = agenda::display_text(&t.text), text = a.texto.trim()));
                     }
                 }
                 "fecha" if agenda::is_date(a.fecha.trim()) => {
                     let Some(t) = self.task_of(&a.tarea, tasks) else { continue };
                     let Some(id) = t.id.clone() else {
-                        done.push(format!("No pude cambiar la fecha de «{}» (cámbiala en Tareas)", agenda::display_text(&t.text)));
+                        done.push(tf!("No pude cambiar la fecha de «{task}» (cámbiala en Tareas)", task = agenda::display_text(&t.text)));
                         continue;
                     };
                     let date = a.fecha.trim().to_string();
@@ -143,7 +143,7 @@ impl NotesApp {
                         let (d, i) = (date.clone(), id.clone());
                         self.edit_task_line(note, &id, move |line| Some(lines::set_meta(line, Some(&d), Some(&i))));
                     }
-                    done.push(format!("«{}» ahora vence el {}", agenda::display_text(&t.text), long_date(&date)));
+                    done.push(tf!("«{task}» ahora vence el {date}", task = agenda::display_text(&t.text), date = long_date(&date)));
                 }
                 _ => {}
             }
@@ -155,7 +155,7 @@ impl NotesApp {
         self.follow_ask = None; // lo que pediste ya dice qué se hizo
         let notes: Vec<String> = files.iter().map(|(p, _)| self.rel(p)).collect();
         self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: Vec::new(), created_dir: None, apart: Vec::new(), keep_tasks: Vec::new(), relinks: Vec::new() });
-        let what = format!("Hizo lo que pediste: {}", plural(done.len(), "cambio"));
+        let what = tf!("Hizo lo que pediste: {changes}", changes = plural(done.len(), "cambio"));
         self.log_ai(crate::activity::Kind::Pedido, notes.first().map_or("", |s| s.as_str()), what, done.clone(), true);
         (done, self.undo_entry.clone())
     }

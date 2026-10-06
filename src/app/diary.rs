@@ -116,7 +116,7 @@ impl NotesApp {
                     let _ = fs::create_dir_all(dir);
                 }
                 if let Err(e) = fs::write(&target, &text) {
-                    self.msg(format!("No se pudo juntar la nota del {}: {e}", long_date(&day)));
+                    self.msg(tf!("No se pudo juntar la nota del {day}: {e}", day = long_date(&day), e = e));
                     crate::claims::release_note(&root, &target_rel, &self.machine);
                     continue;
                 }
@@ -187,10 +187,9 @@ impl NotesApp {
         self.vault.scan();
         self.days_gen = Some(self.vault.generation);
         self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved, created_dir: None, apart: merged_rels, keep_tasks: Vec::new(), relinks: Vec::new() });
-        let what = format!(
-            "Juntó {} de {} en el Diario: ahora hay un solo «Hoy»",
-            if n == 1 { "1 nota del día".to_string() } else { format!("{n} notas del día") },
-            if spaces.len() == 1 { format!("«{}»", spaces[0]) } else { format!("{} espacios", spaces.len()) }
+        let what = tf!("Juntó {notes} de {spaces} en el Diario: ahora hay un solo «Hoy»",
+            notes = if n == 1 { t!("1 nota del día").to_string() } else { tf!("{n} notas del día", n = n) },
+            spaces = if spaces.len() == 1 { tf!("«{space}»", space = spaces[0]) } else { tf!("{n} espacios", n = spaces.len()) }
         );
         self.msg(what.clone());
         self.log_ai(crate::activity::Kind::Sincronizar, &first_target, what, details, true);

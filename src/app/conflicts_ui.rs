@@ -102,7 +102,7 @@ impl NotesApp {
             if self.note.path == copy {
                 self.note = OpenNote::load(main.clone());
             }
-            self.msg(format!("«{}» era una copia en conflicto sin original: quedó con su nombre", vault::stem(&main)));
+            self.msg(tf!("«{note}» era una copia en conflicto sin original: quedó con su nombre", note = vault::stem(&main)));
             return true;
         };
 
@@ -132,18 +132,18 @@ impl NotesApp {
             self.gcal_dirty = true;
         }
         self.undo = Some(Undo { files, renamed: None, agenda: snapshot, at: Instant::now(), moved: vec![(copy.to_path_buf(), trashed)], created_dir: None, apart: Vec::new(), keep_tasks: Vec::new(), relinks: Vec::new() });
-        let what = if is_note { format!("«{}»", display_title(&vault::stem(&main))) } else { original.clone() };
+        let what = if is_note { tf!("«{note}»", note = display_title(&vault::stem(&main))) } else { original.clone() };
         let detail = match added {
-            0 => "No había nada nuevo en la copia".to_string(),
-            1 => "1 línea de la copia se agregó".to_string(),
-            n => format!("{n} líneas de la copia se agregaron"),
+            0 => t!("No había nada nuevo en la copia").to_string(),
+            1 => t!("1 línea de la copia se agregó").to_string(),
+            n => tf!("{n} líneas de la copia se agregaron", n = n),
         };
         let note = if is_note { self.rel(&main) } else { String::new() };
         self.log_ai(
             Kind::Sincronizar,
             &note,
-            format!("Se juntó una copia en conflicto de {what}"),
-            vec![detail, format!("La copia quedó en la papelera: {name}")],
+            tf!("Se juntó una copia en conflicto de {what}", what = what),
+            vec![detail, tf!("La copia quedó en la papelera: {name}", name = name)],
             true,
         );
         true

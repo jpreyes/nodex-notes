@@ -185,21 +185,20 @@ fn text_center(boxes: &[CharBox], i: usize) -> f32 {
 
 /// "hoy", "mañana", "vie 26", "3 oct", "venció 24 sep", con sus colores.
 fn due_label(date: &str, done: bool) -> (String, Color32, Color32) {
-    const DIAS_CORTOS: [&str; 7] = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
     let gray = (theme::c(Color32::from_rgb(95, 94, 90)), theme::c(Color32::from_rgb(241, 239, 232)));
     let Ok(d) = NaiveDate::parse_from_str(date, "%Y-%m-%d") else {
         return (date.to_string(), gray.0, gray.1);
     };
     let today = Local::now().date_naive();
     let days = (d - today).num_days();
-    let short = format!("{} {}", d.day(), MESES[d.month0() as usize]);
+    let short = format!("{} {}", d.day(), crate::i18n::meses()[d.month0() as usize]);
     let (text, (fg, bg)) = match days {
         _ if done => (short, gray),
-        n if n < 0 => (format!("venció {short}"), (theme::c(Color32::from_rgb(163, 45, 45)), theme::c(Color32::from_rgb(252, 235, 235)))),
-        0 => ("hoy".to_string(), (theme::c(Color32::from_rgb(133, 79, 11)), theme::c(Color32::from_rgb(250, 238, 218)))),
-        1 => ("mañana".to_string(), (theme::c(Color32::from_rgb(133, 79, 11)), theme::c(Color32::from_rgb(250, 238, 218)))),
+        n if n < 0 => (tf!("venció {short}", short = short), (theme::c(Color32::from_rgb(163, 45, 45)), theme::c(Color32::from_rgb(252, 235, 235)))),
+        0 => (t!("hoy").to_string(), (theme::c(Color32::from_rgb(133, 79, 11)), theme::c(Color32::from_rgb(250, 238, 218)))),
+        1 => (t!("mañana").to_string(), (theme::c(Color32::from_rgb(133, 79, 11)), theme::c(Color32::from_rgb(250, 238, 218)))),
         n if n < 7 => (
-            format!("{} {}", DIAS_CORTOS[d.weekday().num_days_from_monday() as usize], d.day()),
+            format!("{} {}", crate::i18n::dias_cortos()[d.weekday().num_days_from_monday() as usize], d.day()),
             (theme::c(Color32::from_rgb(12, 68, 124)), theme::c(Color32::from_rgb(230, 241, 251))),
         ),
         _ => (short, gray),
@@ -210,20 +209,19 @@ fn due_label(date: &str, done: bool) -> (String, Color32, Color32) {
 /// "## Reunión CIC · 2026-09-24 10:00" -> "Reunión · mié 24 sep · 10:00" (en la primera línea el
 /// título ya está arriba); "## fin · 10:40" -> "Fin · 10:40". Otras líneas "##": `None`.
 fn meeting_label(line: &str, first: bool) -> Option<String> {
-    const DIAS_CORTOS: [&str; 7] = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
     let body = line.trim().trim_start_matches('#').trim();
     if lines::is_block_end(line) {
         let time = body.rsplit_once('·').map(|(_, t)| t.trim()).filter(|t| agenda::is_time(t));
         return Some(match time {
-            Some(t) => format!("{} Fin · {t}", icon::FLAG_CHECKERED),
-            None => format!("{} Fin de la reunión", icon::FLAG_CHECKERED),
+            Some(t) => format!("{} {}", icon::FLAG_CHECKERED, tf!("Fin · {t}", t = t)),
+            None => format!("{} {}", icon::FLAG_CHECKERED, t!("Fin de la reunión")),
         });
     }
     let (title, when) = body.rsplit_once(" · ")?;
     let (date, time) = when.trim().split_once(' ').unwrap_or((when.trim(), ""));
     let d = NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?;
-    let day = format!("{} {} {}", DIAS_CORTOS[d.weekday().num_days_from_monday() as usize], d.day(), MESES[d.month0() as usize]);
-    let name = if first { "Reunión".to_string() } else { title.trim().to_string() };
+    let day = format!("{} {} {}", crate::i18n::dias_cortos()[d.weekday().num_days_from_monday() as usize], d.day(), crate::i18n::meses()[d.month0() as usize]);
+    let name = if first { t!("Reunión").to_string() } else { title.trim().to_string() };
     let time = if agenda::is_time(time.trim()) { format!(" · {}", time.trim()) } else { String::new() };
     Some(format!("{} {name} · {day}{time}", icon::USERS))
 }
@@ -408,7 +406,7 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
         // Seguimiento ("↳ 2026-10-01: …"): la fecha, como etiqueta verde.
         if !is_active {
             if let Some((date, at)) = lines::follow_up(&line[pos..]) {
-                let day = if date.is_empty() { "Seguimiento".to_string() } else { super::tracking::short_day(date) };
+                let day = if date.is_empty() { t!("Seguimiento").to_string() } else { super::tracking::short_day(date) };
                 let label = format!("{} {day}", icon::ARROW_ELBOW_DOWN_RIGHT);
                 let w = measure(&label, &FontId::proportional(LABEL_SIZE)) + 16.0;
                 job.append(&line[pos..pos + at], w, hidden.clone());
@@ -654,7 +652,7 @@ impl NotesApp {
                         .id(Id::new("title"))
                         .font(theme::bold(26.0))
                         .frame(Frame::NONE)
-                        .hint_text("Sin título")
+                        .hint_text(t!("Sin título"))
                         .desired_width(f32::INFINITY),
                 );
                 if std::mem::take(&mut self.focus_title) {
@@ -677,9 +675,9 @@ impl NotesApp {
             let when = match self.note.disk_mtime {
                 Some(m) => {
                     let d: DateTime<Local> = m.into();
-                    format!("editada {} {} {}", d.day(), MESES[d.month0() as usize], d.format("%H:%M"))
+                    tf!("editada {day} {month} {time}", day = d.day(), month = crate::i18n::meses()[d.month0() as usize], time = d.format("%H:%M"))
                 }
-                None => "sin guardar".into(),
+                None => t!("sin guardar").into(),
             };
             let count = lines::units(&self.note.text).len();
             ui.horizontal(|ui| {
@@ -687,19 +685,19 @@ impl NotesApp {
                 let gap = ui.spacing().item_spacing.x;
                 ui.spacing_mut().item_spacing.x = 0.0;
                 if vault::in_diary(&self.note.path) {
-                    ui.label(RichText::new(format!("{} Diario · la IA lleva cada cosa a su espacio", icon::SUN)).size(12.5).color(MUTED()));
+                    ui.label(RichText::new(format!("{} {}", icon::SUN, t!("Diario · la IA lleva cada cosa a su espacio"))).size(12.5).color(MUTED()));
                 } else if vault::in_templates(&self.note.path) {
-                    ui.label(RichText::new(format!("{} Plantilla · se usa desde el + de las pestañas", icon::FILE_DASHED)).size(12.5).color(MUTED()))
-                        .on_hover_text("Al crear una nota con ella, {{fecha}}, {{hoy}}, {{hora}} y {{titulo}} se cambian por la fecha, el día, la hora y el nombre de la nota");
+                    ui.label(RichText::new(format!("{} {}", icon::FILE_DASHED, t!("Plantilla · se usa desde el + de las pestañas"))).size(12.5).color(MUTED()))
+                        .on_hover_text(t!("Al crear una nota con ella, {{fecha}}, {{hoy}}, {{hora}} y {{titulo}} se cambian por la fecha, el día, la hora y el nombre de la nota"));
                 } else {
                     // El espacio de la nota: un clic permite moverla a otro.
                     let here = workspace_of(&self.note.path).unwrap_or_else(|| self.ws.clone());
                     let r = ui
                         .add(egui::Label::new(RichText::new(format!("{} {here} {}", icon::FOLDER_SIMPLE, icon::CARET_DOWN)).size(12.5).color(MUTED())).sense(Sense::click()))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .on_hover_text("Mover la nota a otro espacio");
+                        .on_hover_text(t!("Mover la nota a otro espacio"));
                     egui::Popup::menu(&r).show(|ui| {
-                        ui.label(RichText::new("Mover a").size(12.0).color(MUTED()));
+                        ui.label(RichText::new(t!("Mover a")).size(12.0).color(MUTED()));
                         for w in self.vault.workspaces.iter().filter(|w| **w != here) {
                             if ui.button(format!("{}  {w}", icon::FOLDER_SIMPLE)).clicked() {
                                 move_to = Some(w.clone());
@@ -713,17 +711,17 @@ impl NotesApp {
                 if self.note.disk_mtime.is_some() && !vault::in_templates(&self.note.path) {
                     ui.label(RichText::new("   ·   ").size(12.5).color(MUTED()));
                     let r = ui
-                        .add(egui::Label::new(RichText::new(format!("{} Historial", icon::CLOCK_COUNTER_CLOCKWISE)).size(12.5).color(MUTED())).sense(Sense::click()))
+                        .add(egui::Label::new(RichText::new(format!("{} {}", icon::CLOCK_COUNTER_CLOCKWISE, t!("Historial"))).size(12.5).color(MUTED())).sense(Sense::click()))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .on_hover_text("Ver y recuperar cómo estaba la nota antes");
+                        .on_hover_text(t!("Ver y recuperar cómo estaba la nota antes"));
                     if r.clicked() {
                         show_history = true;
                     }
                     ui.label(RichText::new("   ·   ").size(12.5).color(MUTED()));
                     let r = ui
-                        .add(egui::Label::new(RichText::new(format!("{} Archivar", icon::ARCHIVE)).size(12.5).color(MUTED())).sense(Sense::click()))
+                        .add(egui::Label::new(RichText::new(format!("{} {}", icon::ARCHIVE, t!("Archivar"))).size(12.5).color(MUTED())).sense(Sense::click()))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .on_hover_text("Sacarla de la vista sin borrarla (queda en Archivadas, abajo a la izquierda)");
+                        .on_hover_text(t!("Sacarla de la vista sin borrarla (queda en Archivadas, abajo a la izquierda)"));
                     if r.clicked() {
                         archive_it = true;
                     }
@@ -732,7 +730,7 @@ impl NotesApp {
                 if !backlinks.is_empty() {
                     ui.label(RichText::new("   ·   ").size(12.5).color(MUTED()));
                     let r = ui
-                        .add(egui::Label::new(RichText::new(format!("{} Enlazada desde {}", icon::LINK_SIMPLE, plural(backlinks.len(), "nota"))).size(12.5).color(ACCENT())).sense(Sense::click()))
+                        .add(egui::Label::new(RichText::new(format!("{} {}", icon::LINK_SIMPLE, tf!("Enlazada desde {n}", n = plural(backlinks.len(), "nota")))).size(12.5).color(ACCENT())).sense(Sense::click()))
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
                     egui::Popup::menu(&r).show(|ui| {
                         for p in &backlinks {
@@ -746,11 +744,11 @@ impl NotesApp {
                 }
                 ui.spacing_mut().item_spacing.x = gap;
                 if in_meeting {
-                    ui.label(RichText::new(format!("  {} Reunión en curso", icon::RECORD)).size(12.5).color(SUCCESS()));
+                    ui.label(RichText::new(format!("  {} {}", icon::RECORD, t!("Reunión en curso"))).size(12.5).color(SUCCESS()));
                 } else if is_meeting(&self.note.text) && self.ai.is_ok() {
                     ui.add_space(8.0);
-                    let r = ui.link(RichText::new(format!("{} Correo de seguimiento", icon::ENVELOPE_SIMPLE)).size(12.5));
-                    if r.on_hover_text("La IA redacta un correo con el resumen, las decisiones y los acuerdos").clicked() {
+                    let r = ui.link(RichText::new(format!("{} {}", icon::ENVELOPE_SIMPLE, t!("Correo de seguimiento"))).size(12.5));
+                    if r.on_hover_text(t!("La IA redacta un correo con el resumen, las decisiones y los acuerdos")).clicked() {
                         followup = true;
                     }
                 }
@@ -826,11 +824,11 @@ impl NotesApp {
                 ui.fonts_mut(|f| f.layout_job(job))
             };
             let hint = if in_meeting {
-                "Escribe lo que se va diciendo; cada Enter agrega la hora…"
+                t!("Escribe lo que se va diciendo; cada Enter agrega la hora…")
             } else if vault::in_templates(&self.note.path) {
-                "Escribe cómo empieza cada nota de este tipo…  {{fecha}}, {{hoy}}, {{hora}} y {{titulo}} se completan solos"
+                t!("Escribe cómo empieza cada nota de este tipo…  {{fecha}}, {{hoy}}, {{hora}} y {{titulo}} se completan solos")
             } else {
-                "Escribe una idea por línea…  Tab la une a la de arriba · #etiqueta · «el viernes» le pone fecha · Ctrl+R reunión"
+                t!("Escribe una idea por línea…  Tab la une a la de arriba · #etiqueta · «el viernes» le pone fecha · Ctrl+R reunión")
             };
             let under = ui.painter().add(egui::Shape::Noop);
             let out = egui::TextEdit::multiline(&mut self.note.text)
@@ -851,38 +849,38 @@ impl NotesApp {
             let mut to_task = None;
             let mut paste_now = false;
             out.response.context_menu(|ui| {
-                if ui.button(format!("{}  Pegar imagen del portapapeles", icon::IMAGE)).clicked() {
+                if ui.button(format!("{}  {}", icon::IMAGE, t!("Pegar imagen del portapapeles"))).clicked() {
                     paste_now = true;
                     ui.close();
                 }
-                if ui.button(format!("{}  Adjuntar archivo…", icon::PAPERCLIP)).on_hover_text("También puedes arrastrar archivos a la ventana").clicked() {
+                if ui.button(format!("{}  {}", icon::PAPERCLIP, t!("Adjuntar archivo…"))).on_hover_text(t!("También puedes arrastrar archivos a la ventana")).clicked() {
                     attach_now = true;
                     ui.close();
                 }
-                if ui.button(format!("{}  Insertar tabla", icon::TABLE)).on_hover_text("Tab pasa a la celda siguiente; Enter agrega una fila").clicked() {
+                if ui.button(format!("{}  {}", icon::TABLE, t!("Insertar tabla"))).on_hover_text(t!("Tab pasa a la celda siguiente; Enter agrega una fila")).clicked() {
                     table_now = true;
                     ui.close();
                 }
-                if !vault::in_templates(&self.note.path) && ui.button(format!("{}  Guardar como plantilla", icon::FILE_DASHED)).on_hover_text("Para crear notas que empiecen igual (desde el + de las pestañas)").clicked() {
+                if !vault::in_templates(&self.note.path) && ui.button(format!("{}  {}", icon::FILE_DASHED, t!("Guardar como plantilla"))).on_hover_text(t!("Para crear notas que empiecen igual (desde el + de las pestañas)")).clicked() {
                     template_now = true;
                     ui.close();
                 }
                 let Some(l) = self.menu_line else { return };
                 let line = nth_line(&self.note.text, l);
                 if line.trim().is_empty() || lines::is_heading(line) {
-                    ui.label(RichText::new("Haz clic derecho en una línea con texto").size(12.5).color(MUTED()));
+                    ui.label(RichText::new(t!("Haz clic derecho en una línea con texto")).size(12.5).color(MUTED()));
                     return;
                 }
                 let label = match lines::parse(line).check {
-                    None => format!("{}  Convertir en tarea   Ctrl+Enter", icon::CHECK_SQUARE),
-                    Some(false) => format!("{}  Marcar hecha   Ctrl+Enter", icon::CHECK_SQUARE),
-                    Some(true) => format!("{}  Marcar pendiente   Ctrl+Enter", icon::SQUARE),
+                    None => format!("{}  {}   Ctrl+Enter", icon::CHECK_SQUARE, t!("Convertir en tarea")),
+                    Some(false) => format!("{}  {}   Ctrl+Enter", icon::CHECK_SQUARE, t!("Marcar hecha")),
+                    Some(true) => format!("{}  {}   Ctrl+Enter", icon::SQUARE, t!("Marcar pendiente")),
                 };
                 if ui.button(label).clicked() {
                     to_task = Some(l);
                     ui.close();
                 }
-                if !lines::is_follow_up(line) && ui.button(format!("{}  Seguimiento   Ctrl+Shift+Enter", icon::ARROW_ELBOW_DOWN_RIGHT)).on_hover_text("Anotar debajo qué se hizo, con la fecha (la IA lo tiene en cuenta)").clicked() {
+                if !lines::is_follow_up(line) && ui.button(format!("{}  {}   Ctrl+Shift+Enter", icon::ARROW_ELBOW_DOWN_RIGHT, t!("Seguimiento"))).on_hover_text(t!("Anotar debajo qué se hizo, con la fecha (la IA lo tiene en cuenta)")).clicked() {
                     follow_now = Some(l);
                     ui.close();
                 }
@@ -1090,7 +1088,7 @@ impl NotesApp {
                     if hover.is_some_and(|p| rect.contains(p)) {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("imagen-tip"), egui::PopupAnchor::Pointer)
-                            .show(|ui| ui.label(RichText::new("Abrir en tamaño real").size(12.5)));
+                            .show(|ui| ui.label(RichText::new(t!("Abrir en tamaño real")).size(12.5)));
                         if out.response.clicked() {
                             clicked = Some((d.line, Click::Open(Target::Path(file))));
                         }
@@ -1106,8 +1104,8 @@ impl NotesApp {
                     if hover.is_some_and(|p| rects.iter().any(|r| r.contains(p))) {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         let tip = match target {
-                            Target::Url(u) => format!("Abrir {u}"),
-                            Target::Path(p) => format!("Abrir {}", p.display()),
+                            Target::Url(u) => tf!("Abrir {what}", what = u),
+                            Target::Path(p) => tf!("Abrir {what}", what = p.display()),
                         };
                         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("link-tip"), egui::PopupAnchor::Pointer)
                             .show(|ui| ui.label(RichText::new(tip).size(12.5)));
@@ -1147,7 +1145,7 @@ impl NotesApp {
                     if hover.is_some_and(|p| rects.iter().any(|r| r.contains(p))) {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         let name = target.rsplit('/').next().unwrap_or(target);
-                        let tip = if *exists { format!("Abrir «{name}»") } else { format!("Crear la nota «{name}»") };
+                        let tip = if *exists { tf!("Abrir «{name}»", name = name) } else { tf!("Crear la nota «{name}»", name = name) };
                         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("link-tip"), egui::PopupAnchor::Pointer)
                             .show(|ui| ui.label(RichText::new(tip).size(12.5)));
                         if out.response.clicked() {
@@ -1165,7 +1163,7 @@ impl NotesApp {
                     if hover.is_some_and(|p| rects.iter().any(|r| r.contains(p))) {
                         let Target::Path(path) = target else { continue };
                         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                        let tip = if *exists { format!("Abrir {name}") } else { format!("No se encuentra {}", path.display()) };
+                        let tip = if *exists { tf!("Abrir {what}", what = name) } else { tf!("No se encuentra {path}", path = path.display()) };
                         if *exists {
                             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         }
@@ -1216,7 +1214,7 @@ impl NotesApp {
             match self.agenda.set_done_by_id(&id, done, &today()) {
                 Ok(true) => self.gcal_dirty = true,
                 Ok(false) => {}
-                Err(e) => self.msg(format!("No se pudo actualizar tareas.txt: {e}")),
+                Err(e) => self.msg(tf!("No se pudo actualizar tareas.txt: {e}", e = e)),
             }
         }
         self.save();
@@ -1273,11 +1271,11 @@ impl NotesApp {
         let due = lines::due_of(&new_line).filter(|d| agenda::is_date(d));
         let (rel, ws) = (self.rel(&self.note.path), self.space_of(&self.note.path));
         if let Err(e) = self.agenda.add_task(agenda::format_task(&today(), &text, &ws, due.as_deref(), &rel, Some(&id))) {
-            self.msg(format!("No se pudo escribir tareas.txt: {e}"));
+            self.msg(tf!("No se pudo escribir tareas.txt: {e}", e = e));
         }
         self.gcal_dirty = true;
         self.save();
-        self.msg(format!("Tarea: «{text}» (Ctrl+Enter la marca hecha)"));
+        self.msg(tf!("Tarea: «{text}» (Ctrl+Enter la marca hecha)", text = text));
     }
 
     /// Tab, Shift+Tab, Enter y Retroceso en líneas con sangría o casilla; Ctrl+Enter, tarea.

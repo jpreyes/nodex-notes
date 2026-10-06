@@ -294,7 +294,7 @@ impl GCal {
                     self.connecting = false;
                     self.connected = true;
                     self.last_error = None;
-                    msgs.push("Google Calendar conectado: se creó el calendario «Notas»".into());
+                    msgs.push(t!("Google Calendar conectado: se creó el calendario «Notas»").into());
                 }
                 Reply::Connected(Err(e)) => {
                     self.connecting = false;
@@ -305,7 +305,7 @@ impl GCal {
                     self.last_sync = Some(Local::now());
                     self.last_error = None;
                     if created + deleted > 0 {
-                        msgs.push(format!("Google Calendar: {created} agregados, {deleted} quitados"));
+                        msgs.push(tf!("Google Calendar: {created} agregados, {deleted} quitados", created = created, deleted = deleted));
                     }
                 }
                 Reply::Synced(Err(e)) => {
@@ -316,7 +316,7 @@ impl GCal {
                 Reply::Disconnected => {
                     self.connected = false;
                     self.last_sync = None;
-                    msgs.push("Google Calendar desconectado".into());
+                    msgs.push(t!("Google Calendar desconectado").into());
                 }
             }
         }
@@ -343,7 +343,7 @@ struct HttpError {
 impl Worker {
     fn send(&self, req: reqwest::RequestBuilder) -> Result<Value, HttpError> {
         self.rt.block_on(async {
-            let resp = req.send().await.map_err(|e| HttpError { status: 0, message: format!("sin conexión ({e})") })?;
+            let resp = req.send().await.map_err(|e| HttpError { status: 0, message: tf!("sin conexión ({e})", e = e) })?;
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
             if (200..300).contains(&status) {
@@ -384,7 +384,7 @@ impl Worker {
         } else {
             open_browser(&url);
         }
-        let code = wait_for_code(&[listener], &state, "tu Google Calendar")?;
+        let code = wait_for_code(&[listener], &state, t!("tu Google Calendar"))?;
 
         let form = [
             ("code", code.as_str()),
@@ -395,7 +395,7 @@ impl Worker {
             ("code_verifier", verifier.as_str()),
         ];
         let v = self.send(self.http.post(&self.ep.token).form(&form)).map_err(|e| e.message)?;
-        let refresh = v["refresh_token"].as_str().ok_or("Google no entregó un token de acceso permanente")?;
+        let refresh = v["refresh_token"].as_str().ok_or(t!("Google no entregó un token de acceso permanente"))?;
         self.remember_access(&v);
         let token = serde_json::to_string(&Token { refresh_token: refresh.to_string() }).map_err(|e| e.to_string())?;
         if let Some(dir) = token_path().parent() {
@@ -422,7 +422,7 @@ impl Worker {
                 return Ok(t.clone());
             }
         }
-        let raw = std::fs::read_to_string(token_path()).map_err(|_| "no conectado".to_string())?;
+        let raw = std::fs::read_to_string(token_path()).map_err(|_| t!("no conectado").to_string())?;
         let tok: Token = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
         let form = [
             ("client_id", self.id.as_str()),
@@ -433,11 +433,11 @@ impl Worker {
         match self.send(self.http.post(&self.ep.token).form(&form)) {
             Ok(v) => {
                 self.remember_access(&v);
-                self.access.as_ref().map(|(t, _)| t.clone()).ok_or_else(|| "respuesta sin token".into())
+                self.access.as_ref().map(|(t, _)| t.clone()).ok_or_else(|| t!("respuesta sin token").into())
             }
             Err(e) if e.status == 400 || e.status == 401 => {
                 let _ = std::fs::remove_file(token_path());
-                Err("Google retiró el permiso; vuelve a conectar desde Agenda".into())
+                Err(t!("Google retiró el permiso; vuelve a conectar desde Agenda").into())
             }
             Err(e) => Err(e.message),
         }
@@ -467,7 +467,7 @@ impl Worker {
         let body = json!({ "summary": CALENDAR_NAME, "description": "Eventos y tareas de la app Notas (nodex-notes)" });
         let url = format!("{}/calendar/v3/calendars", self.ep.api);
         let v = self.send(self.http.post(url).bearer_auth(token).json(&body)).map_err(|e| e.message)?;
-        st.calendar_id = v["id"].as_str().ok_or("Google no devolvió el calendario")?.to_string();
+        st.calendar_id = v["id"].as_str().ok_or(t!("Google no devolvió el calendario"))?.to_string();
         st.events.clear();
         Ok(())
     }
@@ -512,7 +512,7 @@ impl Worker {
                     st.calendar_id.clear();
                     st.events.clear();
                     self.save_state(&st);
-                    return Err("el calendario «Notas» ya no existía; se volverá a crear".into());
+                    return Err(t!("el calendario «Notas» ya no existía; se volverá a crear").into());
                 }
                 Err(e) => return Err(e.message),
             }
@@ -556,9 +556,9 @@ pub fn wait_for_code(listeners: &[TcpListener], state: &str, service: &str) -> R
                 let params = query_params(request.lines().next().unwrap_or(""));
                 let (ok, page) = match (params.get("code"), params.get("error")) {
                     (Some(_), _) if params.get("state").map(String::as_str) == Some(state) => {
-                        (true, format!("Listo: Notas quedó conectada a {service}. Ya puedes cerrar esta pestaña."))
+                        (true, tf!("Listo: Notas quedó conectada a {service}. Ya puedes cerrar esta pestaña.", service = service))
                     }
-                    (_, Some(_)) => (false, "No se dio el permiso. Puedes cerrar esta pestaña e intentarlo de nuevo.".to_string()),
+                    (_, Some(_)) => (false, t!("No se dio el permiso. Puedes cerrar esta pestaña e intentarlo de nuevo.").to_string()),
                     _ => {
                         // Otra petición del navegador (p. ej. favicon): se ignora.
                         let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
@@ -578,12 +578,12 @@ pub fn wait_for_code(listeners: &[TcpListener], state: &str, service: &str) -> R
                 return if ok {
                     Ok(params["code"].clone())
                 } else {
-                    Err(format!("permiso rechazado ({})", params.get("error").cloned().unwrap_or_default()))
+                    Err(tf!("permiso rechazado ({error})", error = params.get("error").cloned().unwrap_or_default()))
                 };
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 if Instant::now() > deadline {
-                    return Err("se acabó el tiempo para dar el permiso en el navegador".into());
+                    return Err(t!("se acabó el tiempo para dar el permiso en el navegador").into());
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
