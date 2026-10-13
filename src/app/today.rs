@@ -15,6 +15,10 @@ impl NotesApp {
         if let Some(a) = self.proposals_ui(ui) {
             action = Some(a);
         }
+        // Los hábitos de hoy, para marcarlos aquí mismo.
+        if let Some(a) = self.habits_today_ui(ui) {
+            action = Some(a);
+        }
         let (today, tomorrow, week) = (today(), day(1), day(7));
         let tasks = self.agenda.tasks();
         let pending: Vec<&agenda::Task> = tasks.iter().filter(|t| !t.done).collect();

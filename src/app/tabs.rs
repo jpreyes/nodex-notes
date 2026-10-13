@@ -58,6 +58,7 @@ pub(super) fn encode(tab: &Tab, root: &Path) -> String {
                 View::Bloc => "bloc".into(),
                 View::Archive => "archivadas".into(),
                 View::Notes => "notas".into(),
+                View::Habits => "habitos".into(),
                 View::Tag(t) => format!("#{t}"),
                 View::Editor => "inicio".into(),
             }
@@ -81,6 +82,7 @@ pub(super) fn decode(s: &str, root: &Path) -> Option<Tab> {
         "bloc" => View::Bloc,
         "archivadas" => View::Archive,
         "notas" => View::Notes,
+        "habitos" => View::Habits,
         t => View::Tag(t.strip_prefix('#')?.to_string()),
     };
     Some(Tab::View(v))
@@ -98,6 +100,7 @@ fn view_label(v: &View) -> (&'static str, String) {
         View::Bloc => (icon::NOTEPAD, t!("Bloc").into()),
         View::Archive => (icon::ARCHIVE, t!("Archivadas").into()),
         View::Notes => (icon::FILE_TEXT, t!("Notas").into()),
+        View::Habits => (icon::FLAME, t!("Hábitos").into()),
         View::Tag(t) => (icon::HASH, t.clone()),
     }
 }

@@ -201,6 +201,13 @@ impl NotesApp {
             sources.insert(doc.key.clone(), Source { path: doc.path.clone(), label: format!("Bloc / {page}") });
             docs.push(doc);
         }
+        // Los hábitos (desde la vista de hábitos o Inicio, o si se pregunta por todo).
+        if !only || matches!(view, View::Habits | View::Home) {
+            if let Some(text) = self.habits_for_ai() {
+                let path = self.vault.root.join(".nodex").join(habits::FILE);
+                docs.push(ask::Doc { key: format!("n{}", docs.len() + 1), path, workspace: String::new(), title: "Hábitos".into(), date: today(), text });
+            }
+        }
         let all = self.agenda.tasks();
         let (pending, done): (Vec<_>, Vec<_>) = all.into_iter().partition(|t| !t.done);
         let mut chosen: Vec<agenda::Task> = pending.into_iter().chain(done.into_iter().rev().take(30)).collect();

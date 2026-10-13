@@ -668,3 +668,108 @@ Pasé {n} a «Por agendar» (en Tu día): venían de correos y habían entrado s
 
 plural:evento
 = event|events
+
+Hábitos
+= Habits
+
+Hábitos: hoy {done} de {total}
+= Habits: {done} of {total} today
+
+Hábitos: meta de hoy cumplida
+= Habits: today's goal met
+
+Hábitos: unos pocos hábitos diarios, con su racha
+= Habits: a few daily habits, with their streaks
+
+Algunas ideas para empezar:
+= Some ideas to get started:
+
+Aún sin racha
+= No streak yet
+
+Cambiar el nombre
+= Rename
+
+Hecho hoy (clic para desmarcar)
+= Done today (click to undo)
+
+Hoy: {done} de {total}
+= Today: {done} of {total}
+
+Hoy: {done} de {total} · llevas {n} cumpliendo la meta
+= Today: {done} of {total} · you've met your goal {n} in a row
+
+Los cuadritos son los últimos {n} días: clic en uno para corregirlo.
+= The squares are the last {n} days: click one to correct it.
+
+Marcar como hecho hoy
+= Mark as done today
+
+Meta de hoy cumplida
+= Today's goal met
+
+Meta de hoy cumplida · {n} seguidos cumpliéndola
+= Today's goal met · {n} in a row
+
+Meta de hoy cumplida: {n} días seguidos
+= Today's goal met: {n} days in a row
+
+Más
+= More
+
+Nuevo hábito (p. ej. Caminar 30 minutos)
+= New habit (e.g. Walk 30 minutes)
+
+Quitar el hábito
+= Remove habit
+
+Quité el hábito «{name}» (sus días quedan guardados)
+= Removed the habit “{name}” (its days are kept)
+
+Sin racha ahora · la mejor: {n}
+= No streak right now · best: {n}
+
+Unos pocos hábitos diarios, marcados día a día. La meta: hacerlos todos.
+= A few daily habits, checked off day by day. The goal: do them all.
+
+Ver tus hábitos y sus rachas
+= See your habits and their streaks
+
+hecho
+= done
+
+meta de hoy cumplida
+= today's goal met
+
+no hecho
+= not done
+
+{flame} {n} seguidos · la mejor: {best}
+= {flame} {n} in a row · best: {best}
+
+{flame} {n} seguidos · tu mejor racha
+= {flame} {n} in a row · your best streak
+
+tus hábitos
+= your habits
+
+Caminar 30 minutos
+= Walk 30 minutes
+
+Leer 20 minutos
+= Read for 20 minutes
+
+Tomar 2 litros de agua
+= Drink 2 liters of water
+
+Dormir antes de las 12
+= Go to bed before midnight
+
+¿Cómo voy con mis hábitos?
+= How am I doing with my habits?
+
+¿Qué hábito se me está cayendo?
+= Which habit am I slipping on?
+
+plural:día
+= day|days

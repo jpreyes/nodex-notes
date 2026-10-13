@@ -42,6 +42,7 @@ mod nav;
 mod notes_view;
 mod proposals;
 mod followup;
+mod habits;
 mod history_ui;
 mod home;
 mod images;
@@ -330,6 +331,8 @@ enum View {
     Archive,
     /// Todas las notas.
     Notes,
+    /// Los hábitos diarios y sus rachas.
+    Habits,
 }
 
 enum Action {
@@ -472,6 +475,9 @@ pub struct NotesApp {
     /// «Notas»: lo que se busca y el espacio elegido.
     notes_filter: String,
     notes_space: Option<String>,
+    /// Hábitos: el que se está escribiendo y el que se renombra (id, nombre).
+    habit_new: String,
+    habit_edit: Option<(String, String)>,
     /// Agenda: el mes que se ve (None = el actual), el día elegido y si se ve como lista.
     agenda_month: Option<NaiveDate>,
     agenda_day: Option<String>,
@@ -810,6 +816,8 @@ impl NotesApp {
             nav: nav::History::default(),
             notes_filter: String::new(),
             notes_space: None,
+            habit_new: String::new(),
+            habit_edit: None,
             agenda_month: None,
             agenda_day: None,
             agenda_list: false,
@@ -2426,8 +2434,8 @@ impl NotesApp {
 
     fn rail(&mut self, ui: &mut Ui) -> Option<Action> {
         let mut action = None;
-        // Con la ventana baja, los accesos se achican para que quepan los 13.
-        let h = ((ui.available_height() - 8.0) / 13.0 - 4.0).clamp(30.0, 50.0);
+        // Con la ventana baja, los accesos se achican para que quepan los 14.
+        let h = ((ui.available_height() - 8.0) / 14.0 - 4.0).clamp(30.0, 50.0);
         ui.ctx().data_mut(|d| d.insert_temp(Id::new(RAIL_H), h));
         ui.vertical_centered(|ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
@@ -2449,6 +2457,13 @@ impl NotesApp {
             }
             if rail_item(ui, icon::CALENDAR_BLANK, t!("Agenda"), t!("Tus calendarios, eventos y tareas con fecha"), self.view == View::Agenda, TEXT()).clicked() {
                 action = Some(Action::ShowTab(View::Agenda));
+            }
+            // Hábitos: en verde cuando la meta de hoy está cumplida.
+            let habits = self.habits();
+            let met = habits::goal_met(&habits, &today());
+            let tip = if habits.is_empty() { t!("Hábitos: unos pocos hábitos diarios, con su racha").to_string() } else if met { t!("Hábitos: meta de hoy cumplida").to_string() } else { tf!("Hábitos: hoy {done} de {total}", done = habits.iter().filter(|h| h.is_done(&today())).count(), total = habits.len()) };
+            if rail_item(ui, icon::FLAME, t!("Hábitos"), &tip, self.view == View::Habits, if met { SUCCESS() } else { TEXT() }).clicked() {
+                action = Some(Action::ShowTab(View::Habits));
             }
             let checks = self.mail.open_checks().len();
             let color = if self.mail.busy() { ACCENT() } else { TEXT() };
@@ -3350,6 +3365,7 @@ impl NotesApp {
                     View::Trash => actions.extend(self.trash_view(ui)),
                     View::Archive => actions.extend(self.archive_view(ui)),
                     View::Notes => actions.extend(self.notes_view(ui)),
+                    View::Habits => actions.extend(self.habits_view(ui)),
                     View::Bloc => actions.extend(self.bloc_view(ui)),
                 }
             }

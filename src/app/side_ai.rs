@@ -24,6 +24,7 @@ impl NotesApp {
             View::Mail => ("los correos".into(), None),
             View::Bloc => ("el Bloc".into(), None),
             View::Notes => ("la lista de notas".into(), None),
+            View::Habits => ("tus hábitos".into(), None),
             View::Archive => ("las notas archivadas".into(), None),
             View::Trash => ("la papelera".into(), None),
             View::Tag(t) => (format!("la etiqueta #{t}"), None),
@@ -46,6 +47,7 @@ impl NotesApp {
             View::Mail => t!("los correos").into(),
             View::Bloc => t!("el Bloc").into(),
             View::Notes => t!("la lista de notas").into(),
+            View::Habits => t!("tus hábitos").into(),
             View::Archive => t!("las notas archivadas").into(),
             View::Trash => t!("la papelera").into(),
             View::Tag(t) => tf!("la etiqueta #{tag}", tag = t),
@@ -60,6 +62,7 @@ impl NotesApp {
             View::Tasks => &["¿Qué hago primero hoy?", "¿Qué está atrasado y qué hago con eso?", "Agrupa mis tareas por proyecto"],
             View::Agenda | View::Week => &["¿Qué tengo esta semana?", "¿Qué tengo mañana?", "¿Tengo algo que choque?"],
             View::Mail => &["¿Qué correos debo responder?", "¿Qué me pidieron por correo esta semana?"],
+            View::Habits => &["¿Cómo voy con mis hábitos?", "¿Qué hábito se me está cayendo?"],
             _ => &["¿Qué tengo para hoy?", "¿Qué está atrasado?", "¿Qué tengo esta semana?"],
         }
     }
