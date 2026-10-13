@@ -323,6 +323,34 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// Lo que escribe el celular (una tarea en la nota del día y en tareas.txt, una marcada hecha
+    /// en los dos lados) ya está emparejado para la app: no se cambia ni se repite nada.
+    #[test]
+    fn what_the_phone_writes_is_already_paired() {
+        let dir = std::env::temp_dir().join(format!("nodex-tareas-celular-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("General")).unwrap();
+        fs::create_dir_all(dir.join("Diario")).unwrap();
+        fs::create_dir_all(dir.join("Obra")).unwrap();
+        let id = nodex_core::formato::new_id(42);
+        let note = format!("Llamar al inspector\n- [ ] Revisar cubicación due:2026-10-16 ^{id}\n");
+        fs::write(dir.join("Diario").join("2026-10-12.md"), &note).unwrap();
+        fs::write(dir.join("Obra").join("Muro.md"), "- [x] Enviar planos due:2026-10-12 ^pl001\n").unwrap();
+        let tasks = format!(
+            "{}\n{}\n",
+            agenda::format_task("2026-10-12", "Revisar cubicación", "General", Some("2026-10-16"), "Diario/2026-10-12", Some(&id)),
+            nodex_core::formato::set_task_done("2026-10-10 Enviar planos +Obra due:2026-10-12 nota:Obra/Muro id:pl001", true, "2026-10-12"),
+        );
+        fs::write(dir.join("tareas.txt"), &tasks).unwrap();
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut app = NotesApp::new(cfg, None, egui::Context::default());
+        assert_eq!(app.reconcile_tasks(), 0);
+        assert_eq!(fs::read_to_string(dir.join("tareas.txt")).unwrap(), tasks);
+        assert_eq!(fs::read_to_string(dir.join("Diario").join("2026-10-12.md")).unwrap(), note);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// Las repetidas se quitan; con Deshacer vuelven y ya no se quitan más.
     #[test]
     fn repeated_tasks_are_removed_and_undone() {

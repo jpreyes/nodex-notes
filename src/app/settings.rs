@@ -459,6 +459,18 @@ impl NotesApp {
         });
         // Tus notas, sincronizadas con la cuenta.
         self.sync_settings(ui, changes);
+        // Notas en el celular: una app web en el mismo servidor.
+        if let Some(url) = server.as_ref().map(|s| format!("{s}/app/")) {
+            row(ui, t!("En el celular"), t!("Abre esta dirección en el navegador del celular, entra con tu cuenta y agrégala a la pantalla de inicio"), |ui| {
+                if ui.button(t!("Abrir")).clicked() {
+                    crate::links::open(&crate::links::Target::Url(url.clone()));
+                }
+                if ui.button(t!("Copiar")).clicked() {
+                    ui.ctx().copy_text(url.clone());
+                }
+                ui.label(RichText::new(&url).size(13.5).color(ACCENT()));
+            });
+        }
         // Qué IA se usa: la de Notas o la propia.
         let included = self.cfg.proveedor == "notas";
         row(ui, t!("La IA"), if included { t!("La de Notas, incluida con tu cuenta") } else { t!("Tu propia clave (en Inteligencia artificial)") }, |ui| {

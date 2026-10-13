@@ -1,6 +1,6 @@
 [package]
 name = "nodex-notes"
-version = "0.50.0"
+version = "0.51.0"
 edition = "2024"
 description = "Notas rápidas estilo Notepad con espacios de trabajo, reuniones e IA que organiza sola"
 license = "MIT"
@@ -8,10 +8,11 @@ repository = "https://github.com/jpreyes/nodex-notes"
 
 # El servidor de la IA incluida vive en server/ (se compila aparte: cargo build -p nodex-ia).
 [workspace]
-members = [".", "server"]
+members = [".", "server", "core"]
 default-members = ["."]
 
 [dependencies]
+nodex-core = { path = "core" }
 # Pegar capturas de pantalla (imagen del portapapeles) y guardarlas como PNG.
 arboard = "3.6"
 base64 = "0.22"

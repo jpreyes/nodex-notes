@@ -3252,14 +3252,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
+name = "nodex-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+]
+
+[[package]]
 name = "nodex-ia"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "argon2",
  "axum",
  "chrono",
  "flate2",
  "getrandom 0.3.4",
+ "nodex-core",
  "reqwest",
  "serde",
  "serde_json",
@@ -3269,7 +3277,7 @@ dependencies = [
 
 [[package]]
 name = "nodex-notes"
-version = "0.50.0"
+version = "0.51.0"
 dependencies = [
  "arboard",
  "axum",
@@ -3288,6 +3296,7 @@ dependencies = [
  "imap",
  "mail-parser",
  "memory-stats",
+ "nodex-core",
  "nodex-ia",
  "notify",
  "png",

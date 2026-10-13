@@ -330,6 +330,68 @@ pub async fn delete(State(state): State<Arc<AppState>>, headers: HeaderMap, Quer
     }
 }
 
+// Para la app del celular (`movil`): leer y cambiar archivos de la cuenta directo, como si los
+// subiera un equipo más. Los equipos lo bajan al instante y, si tenían un cambio propio en el
+// mismo archivo, lo juntan (como entre dos equipos).
+
+/// Los archivos vigentes de una cuenta.
+pub(crate) async fn files(state: &AppState, account: &str) -> Vec<Entry> {
+    let ix = state.sync.index(&state.settings.data, account).await;
+    let ix = ix.lock().await;
+    ix.files.values().filter(|e| !e.borrado).cloned().collect()
+}
+
+/// El texto de una versión, por su huella.
+pub(crate) fn blob_text(state: &AppState, account: &str, hash: &str) -> Option<String> {
+    valid_hash(hash).then_some(())?;
+    read_blob(&blob_path(&state.settings.data, account, hash)).ok().map(|b| String::from_utf8_lossy(&b).into_owned())
+}
+
+/// El texto vigente de un archivo y su versión.
+pub(crate) async fn read_text(state: &AppState, account: &str, ruta: &str) -> Option<(String, u64)> {
+    let e = {
+        let ix = state.sync.index(&state.settings.data, account).await;
+        let ix = ix.lock().await;
+        ix.files.get(ruta).filter(|e| !e.borrado).cloned()?
+    };
+    Some((blob_text(state, account, &e.hash)?, e.seq))
+}
+
+/// Cambia un archivo de texto: `f` recibe el texto vigente (None si no existe) y devuelve el
+/// nuevo (None = no cambiarlo). Todo con el índice tomado, para que dos cambios seguidos no se
+/// pisen. Devuelve la versión nueva (None si no cambió).
+pub(crate) async fn modify(state: &AppState, account: &str, ruta: &str, f: impl FnOnce(Option<&str>) -> Option<String>) -> Result<Option<u64>, String> {
+    if !valid_path(ruta) {
+        return Err("Ruta inválida.".into());
+    }
+    let data = state.settings.data.clone();
+    let ix = state.sync.index(&data, account).await;
+    let mut ix = ix.lock().await;
+    let cur = ix.files.get(ruta).filter(|e| !e.borrado).cloned();
+    let old = match &cur {
+        Some(e) => Some(read_blob(&blob_path(&data, account, &e.hash)).map(|b| String::from_utf8_lossy(&b).into_owned()).map_err(|e| e.to_string())?),
+        None => None,
+    };
+    let Some(new) = f(old.as_deref()) else { return Ok(None) };
+    if old.as_deref() == Some(new.as_str()) {
+        return Ok(None);
+    }
+    let body = new.into_bytes();
+    if body.len() > MAX_FILE {
+        return Err("El archivo es demasiado grande.".into());
+    }
+    let hash = sha256(&body);
+    if !ix.blobs.contains_key(&hash) && ix.used() + body.len() as u64 > state.settings.sync_limit {
+        return Err("Se llenó el espacio de tu cuenta para sincronizar.".into());
+    }
+    let file = blob_path(&data, account, &hash);
+    if !has_blob(&file) {
+        write_blob(&file, &body).map_err(|e| e.to_string())?;
+    }
+    let e = Entry { ruta: ruta.to_string(), seq: 0, hash, tam: body.len() as u64, borrado: false };
+    record(state, account, &mut ix, e).await.map(Some).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

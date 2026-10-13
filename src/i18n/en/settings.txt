@@ -791,3 +791,9 @@ De todo: letras, íconos y botones. También con Ctrl + y Ctrl − (Ctrl 0 vuelv
 
 Normal
 = Normal
+
+En el celular
+= On your phone
+
+Abre esta dirección en el navegador del celular, entra con tu cuenta y agrégala a la pantalla de inicio
+= Open this address in your phone's browser, sign in with your account and add it to your home screen

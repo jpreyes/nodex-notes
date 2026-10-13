@@ -1,0 +1,10 @@
+[package]
+name = "nodex-core"
+version = "0.1.0"
+edition = "2024"
+description = "Los formatos de los archivos de Notas (tareas, agenda, hábitos), compartidos por la app y el servidor"
+license = "MIT"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }

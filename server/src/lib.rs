@@ -15,6 +15,7 @@
 //! una cuenta (ver `accounts`): se entra con el correo o con Microsoft y la sesión sirve de clave.
 
 pub mod accounts;
+pub mod movil;
 pub mod sync;
 
 use axum::extract::State;
@@ -403,6 +404,22 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/v1/sync/archivo",
             axum::routing::put(sync::put).delete(sync::delete).layer(axum::extract::DefaultBodyLimit::max(sync::MAX_FILE + 1024)),
         )
+        // La app del celular (una app web instalable) y lo que pide.
+        .route("/app", get(|| async { axum::response::Redirect::permanent("/app/") }))
+        .route("/app/", get(movil::web_index))
+        .route("/app/{file}", get(movil::web))
+        .route("/v1/movil/hoy", get(movil::today))
+        .route("/v1/movil/tareas", get(movil::tasks))
+        .route("/v1/movil/agenda", get(movil::agenda))
+        .route("/v1/movil/anotar", post(movil::jot))
+        .route("/v1/movil/tarea", post(movil::add_task))
+        .route("/v1/movil/tarea/hecha", post(movil::task_done))
+        .route("/v1/movil/habito", post(movil::habit))
+        .route("/v1/movil/por-agendar", post(movil::decide))
+        .route("/v1/movil/notas", get(movil::notes))
+        .route("/v1/movil/nota", get(movil::note))
+        .route("/v1/movil/nota/linea", post(movil::note_line))
+        .route("/v1/movil/preguntar", post(movil::ask))
         .route("/salud", get(|| async { "ok" }))
         .with_state(state)
 }

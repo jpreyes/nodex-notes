@@ -217,22 +217,7 @@ impl Note {
 
 /// Minúsculas y sin tildes, para buscar: «Cubicación» y «cubicacion» son lo mismo.
 /// La ñ se mantiene (no es una tilde). Los saltos de línea quedan donde estaban.
-pub fn fold(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            'á' | 'à' | 'ä' | 'â' | 'Á' | 'À' | 'Ä' | 'Â' => out.push('a'),
-            'é' | 'è' | 'ë' | 'ê' | 'É' | 'È' | 'Ë' | 'Ê' => out.push('e'),
-            'í' | 'ì' | 'ï' | 'î' | 'Í' | 'Ì' | 'Ï' | 'Î' => out.push('i'),
-            'ó' | 'ò' | 'ö' | 'ô' | 'Ó' | 'Ò' | 'Ö' | 'Ô' => out.push('o'),
-            'ú' | 'ù' | 'ü' | 'û' | 'Ú' | 'Ù' | 'Ü' | 'Û' => out.push('u'),
-            'Ñ' => out.push('ñ'),
-            c if c.is_ascii() => out.push(c.to_ascii_lowercase()),
-            c => out.extend(c.to_lowercase()),
-        }
-    }
-    out
-}
+pub use nodex_core::formato::fold;
 
 pub struct Vault {
     pub root: PathBuf,
