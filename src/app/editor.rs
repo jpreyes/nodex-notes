@@ -110,6 +110,8 @@ enum Click {
     Check,
     Open(Target),
     Note(String),
+    /// Ya se hizo (pasar de página en un PDF): solo que no se mueva el cursor.
+    Nothing,
 }
 
 /// Cómo se ve un enlace escrito (`[[Nota]]` o `[texto](destino)`), desde la nota `note`.
@@ -328,8 +330,8 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
             continue;
         }
 
-        // Una imagen (salvo en la línea que se edita): su línea queda del alto de la imagen.
-        if let Some((w, h)) = lines::image_of(line).filter(|_| !is_active).and_then(|(_, rel)| Some((rel, image(rel)?))).map(|(rel, (w, h))| {
+        // Una imagen o un PDF (salvo en la línea que se edita): su línea queda del alto de la imagen.
+        if let Some((w, h)) = lines::image_of(line).or_else(|| lines::pdf_of(line)).filter(|_| !is_active).and_then(|(_, rel)| Some((rel, image(rel)?))).map(|(rel, (w, h))| {
             decos.push(Deco { kind: Kind::Image(rel.to_string(), w, h), chars: ci..ci + n_chars(0, line.len()), line: li, lead: 0.0 });
             (w, h)
         }) {
@@ -639,6 +641,7 @@ impl NotesApp {
         let mut archive_it = false;
         let mut attach_now = false;
         let mut table_now = false;
+        let (mut size_now, mut keep_now): (Option<(usize, Option<u32>)>, Option<usize>) = (None, None);
         let mut template_now = false;
         let mut follow_now: Option<usize> = None;
         let backlinks = self.backlinks();
@@ -786,13 +789,36 @@ impl NotesApp {
 
             // Las imágenes de la nota: se cargan una vez; cada una, del ancho de la columna.
             self.images.prepare(&ctx, &self.note.path, &self.note.text);
+            let resizing = self.images.resizing.clone();
             let image_sizes: HashMap<String, (f32, f32)> = self
                 .note
                 .text
                 .lines()
-                .filter_map(lines::image_of)
-                .filter_map(|(_, rel)| Some((rel.to_string(), self.images.shown_size(&super::images::resolve(&self.note.path, rel), col_w - 8.0)?)))
+                .filter_map(|l| lines::image_of(l).or_else(|| lines::pdf_of(l)))
+                .filter_map(|(alt, rel)| {
+                    let mut want = lines::shown_width(alt).1.map(|w| w as f32);
+                    if want == Some(0.0) {
+                        return None; // un PDF que se ve como enlace
+                    }
+                    if let Some((r, w)) = resizing.as_ref().filter(|(r, _)| r == rel) {
+                        let _ = r;
+                        want = Some(*w);
+                    }
+                    Some((rel.to_string(), self.images.shown_size(&super::images::locate(&self.note.path, rel), col_w - 8.0, want)?))
+                })
                 .collect();
+            // Pegar la dirección de una imagen en una línea vacía la muestra.
+            if focused && active.is_some_and(|l| nth_line(&self.note.text, l).trim().is_empty()) {
+                ui.input_mut(|i| {
+                    for e in i.events.iter_mut() {
+                        if let egui::Event::Paste(s) = e {
+                            if let Some(md) = super::images::pasted_image_url(s) {
+                                *s = md;
+                            }
+                        }
+                    }
+                });
+            }
             // Ctrl+V con una imagen en el portapapeles (sin texto: egui no la pega).
             let ctrl_v = self.images.ctrl_v_pressed(ui) && !ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Paste(_))));
             if focused && ctrl_v {
@@ -867,6 +893,31 @@ impl NotesApp {
                 }
                 let Some(l) = self.menu_line else { return };
                 let line = nth_line(&self.note.text, l);
+                let media = lines::image_of(line).map(|m| (m, false)).or_else(|| lines::pdf_of(line).map(|m| (m, true)));
+                if let Some(((alt, rel), pdf)) = media {
+                    let now = lines::shown_width(alt).1;
+                    ui.separator();
+                    ui.menu_button(format!("{}  {}", icon::ARROWS_OUT_SIMPLE, t!("Tamaño")), |ui| {
+                        for (label, w) in [(t!("Chica"), Some(240)), (t!("Mediana"), Some(420)), (t!("Grande"), Some(640)), (t!("Como siempre"), None)] {
+                            if ui.radio(now == w, label).clicked() {
+                                size_now = Some((l, w));
+                                ui.close();
+                            }
+                        }
+                    });
+                    if pdf {
+                        let (label, w) = if now == Some(0) { (t!("Mostrar las páginas"), None) } else { (t!("Ver solo como enlace"), Some(0)) };
+                        if ui.button(format!("{}  {}", icon::FILE_PDF, label)).clicked() {
+                            size_now = Some((l, w));
+                            ui.close();
+                        }
+                    }
+                    if super::images::is_url(rel) && ui.button(format!("{}  {}", icon::DOWNLOAD_SIMPLE, t!("Guardar la imagen en Adjuntos"))).on_hover_text(t!("Para que siga aunque la página web cambie o se borre")).clicked() {
+                        keep_now = Some(l);
+                        ui.close();
+                    }
+                    return;
+                }
                 if line.trim().is_empty() || lines::is_heading(line) {
                     ui.label(RichText::new(t!("Haz clic derecho en una línea con texto")).size(12.5).color(MUTED()));
                     return;
@@ -887,6 +938,12 @@ impl NotesApp {
             });
             if paste_now {
                 self.paste_image(self.menu_line);
+            }
+            if let Some((l, w)) = size_now {
+                self.set_shown_width(l, w);
+            }
+            if let Some(l) = keep_now {
+                self.keep_web_image(l);
             }
             if attach_now {
                 self.pick_attachments(self.menu_line);
@@ -1080,17 +1137,80 @@ impl NotesApp {
                     );
                 }
                 Kind::Image(rel, w, h) => {
-                    let file = super::images::resolve(&self.note.path, rel);
+                    let file = super::images::locate(&self.note.path, rel);
                     let Some(tex) = self.images.texture(&file) else { continue };
                     let rect = egui::Rect::from_min_size(egui::pos2(o.x + first.x, o.y + first.row_top + 6.0), egui::vec2(*w, *h));
+                    // PDF: sin «tamaño real», con su página.
                     painter.image(tex, rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), theme::c(Color32::WHITE));
                     painter.rect_stroke(rect, 4.0, Stroke::new(1.0, theme::BORDER()), egui::StrokeKind::Outside);
-                    if hover.is_some_and(|p| rect.contains(p)) {
+                    let pointer = ui.ctx().pointer_hover_pos().filter(|p| rect.expand(4.0).contains(*p));
+                    let is_pdf = super::images::is_pdf(&file);
+                    let mut used = false;
+                    if is_pdf {
+                        let line = nth_line(&text, d.line);
+                        let name = lines::pdf_of(line).map(|(alt, _)| lines::shown_width(alt).0.to_string()).unwrap_or_default();
+                        let chip = |painter: &egui::Painter, pos: egui::Pos2, align: Align2, label: &str| {
+                            let g = painter.layout_no_wrap(label.to_string(), FontId::proportional(12.0), theme::c(Color32::WHITE));
+                            let r = align.anchor_size(pos, g.size() + egui::vec2(14.0, 6.0));
+                            painter.rect_filled(r, 6.0, Color32::from_black_alpha(170));
+                            painter.galley(r.min + egui::vec2(7.0, 3.0), g, theme::c(Color32::WHITE));
+                            r
+                        };
+                        chip(painter, rect.left_top() + egui::vec2(8.0, 8.0), Align2::LEFT_TOP, &format!("{}  {name}", icon::FILE_PDF));
+                        let (page, pages) = (self.images.page(&file), self.images.pages(&file));
+                        if pointer.is_some() && pages > 1 {
+                            let mid = rect.center_bottom() - egui::vec2(0.0, 22.0);
+                            let label = chip(painter, mid, Align2::CENTER_CENTER, &tf!("{n} de {total}", n = page + 1, total = pages));
+                            let prev = chip(painter, label.left_center() - egui::vec2(6.0, 0.0), Align2::RIGHT_CENTER, icon::CARET_LEFT);
+                            let next = chip(painter, label.right_center() + egui::vec2(6.0, 0.0), Align2::LEFT_CENTER, icon::CARET_RIGHT);
+                            for (r, to) in [(prev, page.checked_sub(1)), (next, Some(page + 1).filter(|p| *p < pages))] {
+                                if pointer.is_some_and(|p| r.contains(p)) {
+                                    used = true;
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                    if let (Some(to), true) = (to, out.response.clicked()) {
+                                        self.images.set_page(&file, to);
+                                        clicked = Some((d.line, Click::Nothing));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // La esquina de abajo a la derecha: arrastrar para cambiar el tamaño.
+                    let corner = egui::Rect::from_center_size(rect.right_bottom() - egui::vec2(6.0, 6.0), egui::vec2(16.0, 16.0));
+                    let handle = ui.interact(corner, Id::new(("imagen-tamaño", d.line)), Sense::drag());
+                    let resizing = self.images.resizing.as_ref().is_some_and(|(r, _)| r == rel);
+                    if pointer.is_some() || resizing {
+                        for k in 0..3 {
+                            let off = 4.0 + k as f32 * 4.0;
+                            painter.line_segment(
+                                [rect.right_bottom() - egui::vec2(off, 2.0), rect.right_bottom() - egui::vec2(2.0, off)],
+                                Stroke::new(1.5, Color32::from_black_alpha(150)),
+                            );
+                        }
+                    }
+                    if handle.hovered() || handle.dragged() {
+                        used = true;
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+                    }
+                    if handle.dragged() {
+                        if let Some(p) = ui.ctx().pointer_interact_pos() {
+                            self.images.resizing = Some((rel.clone(), (p.x - rect.left()).max(48.0)));
+                            ui.ctx().request_repaint();
+                        }
+                    }
+                    if handle.drag_stopped() {
+                        if let Some((_, w)) = self.images.resizing.take() {
+                            self.set_shown_width(d.line, Some(w.round() as u32));
+                        }
+                    }
+                    if !used && pointer.is_some() && hover.is_some_and(|p| rect.contains(p)) {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        let tip = if is_pdf { t!("Abrir el PDF") } else if super::images::is_url(rel) { t!("Abrir la imagen en el navegador") } else { t!("Abrir en tamaño real") };
                         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("imagen-tip"), egui::PopupAnchor::Pointer)
-                            .show(|ui| ui.label(RichText::new(t!("Abrir en tamaño real")).size(12.5)));
+                            .show(|ui| ui.label(RichText::new(tip).size(12.5)));
                         if out.response.clicked() {
-                            clicked = Some((d.line, Click::Open(Target::Path(file))));
+                            let target = if super::images::is_url(rel) { Target::Url(rel.clone()) } else { Target::Path(file) };
+                            clicked = Some((d.line, Click::Open(target)));
                         }
                     }
                 }
@@ -1186,6 +1306,7 @@ impl NotesApp {
             }
             match target {
                 Click::Open(t) => links::open(&t),
+                Click::Nothing => {}
                 Click::Check => self.toggle_line_check(line),
                 Click::Note(t) => return Some(t),
             }

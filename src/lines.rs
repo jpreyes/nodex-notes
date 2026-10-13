@@ -218,11 +218,42 @@ pub fn decode_path(s: &str) -> String {
 /// Una línea que es solo una imagen: "![Captura 30 sep](../Adjuntos/captura.png)" -> (texto, ruta).
 /// Después pueden venir etiquetas o metadatos (los que agrega la IA), pero no más texto.
 pub fn image_of(line: &str) -> Option<(&str, &str)> {
-    let t = line.trim().strip_prefix("![")?;
+    link_line(line.trim().strip_prefix("![")?)
+}
+
+/// «texto](ruta)» y después solo etiquetas o metadatos.
+fn link_line(t: &str) -> Option<(&str, &str)> {
     let (alt, rest) = t.split_once("](")?;
     let (path, after) = rest.split_once(')')?;
     let meta_only = after.split_whitespace().all(|w| w.starts_with('#') || w.starts_with("due:") || (w.starts_with('^') && w.len() > 3));
     (meta_only && !path.trim().is_empty() && !path.contains('(')).then_some((alt, path.trim()))
+}
+
+/// Una línea que es solo un enlace a un PDF: "[Informe](../Adjuntos/informe.pdf)" -> (texto, ruta).
+pub fn pdf_of(line: &str) -> Option<(&str, &str)> {
+    let (alt, path) = link_line(line.trim().strip_prefix('[')?)?;
+    path.to_lowercase().ends_with(".pdf").then_some((alt, path))
+}
+
+/// El ancho pedido para una imagen o un PDF, escrito al final de su texto («Plano|300»).
+/// `|0` = sin vista previa (solo el enlace).
+pub fn shown_width(alt: &str) -> (&str, Option<u32>) {
+    match alt.rsplit_once('|') {
+        Some((name, w)) if !w.is_empty() && w.len() <= 5 && w.bytes().all(|b| b.is_ascii_digit()) => (name, w.parse().ok()),
+        _ => (alt, None),
+    }
+}
+
+/// La misma línea de imagen o PDF con otro ancho (None = el de siempre).
+pub fn with_width(line: &str, width: Option<u32>) -> String {
+    let Some(open) = line.find('[') else { return line.to_string() };
+    let Some(close) = line[open..].find("](").map(|i| open + i) else { return line.to_string() };
+    let (name, _) = shown_width(&line[open + 1..close]);
+    let alt = match width {
+        Some(w) => format!("{name}|{w}"),
+        None => name.to_string(),
+    };
+    format!("{}{alt}{}", &line[..open + 1], &line[close..])
 }
 
 pub fn is_heading(line: &str) -> bool {
@@ -583,6 +614,20 @@ pub fn units(text: &str) -> Vec<Unit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pdf_lines_and_widths() {
+        assert_eq!(pdf_of("[Informe](../Adjuntos/informe.PDF) #obra"), Some(("Informe", "../Adjuntos/informe.PDF")));
+        assert_eq!(pdf_of("![x](a.pdf)"), None);
+        assert_eq!(pdf_of("[x](a.docx)"), None);
+        assert_eq!(pdf_of("ver [x](a.pdf)"), None);
+        assert_eq!(shown_width("Plano|300"), ("Plano", Some(300)));
+        assert_eq!(shown_width("Plano|a"), ("Plano|a", None));
+        assert_eq!(shown_width("Plano"), ("Plano", None));
+        assert_eq!(with_width("![Plano|300](a.png) #obra", Some(480)), "![Plano|480](a.png) #obra");
+        assert_eq!(with_width("![Plano|300](a.png)", None), "![Plano](a.png)");
+        assert_eq!(with_width("[Informe](a.pdf)", Some(0)), "[Informe|0](a.pdf)");
+    }
 
     #[test]
     fn subtasks() {

@@ -257,3 +257,45 @@ Guardada como plantilla «{name}»: úsala desde el + de las pestañas
 
 No se pudo guardar la plantilla: {e}
 = Couldn't save the template: {e}
+
+Abrir el PDF
+= Open the PDF
+
+Abrir la imagen en el navegador
+= Open the image in your browser
+
+Chica
+= Small
+
+Como siempre
+= Default
+
+Grande
+= Large
+
+Guardar la imagen en Adjuntos
+= Save the image in Attachments
+
+Mediana
+= Medium
+
+Mostrar las páginas
+= Show the pages
+
+Para que siga aunque la página web cambie o se borre
+= So it stays even if the web page changes or goes away
+
+Tamaño
+= Size
+
+Ver solo como enlace
+= Show as a link only
+
+{n} de {total}
+= {n} of {total}
+
+Imagen guardada en {dir}/{name}
+= Image saved to {dir}/{name}
+
+La imagen aún no se ha bajado
+= The image hasn't downloaded yet
