@@ -479,6 +479,7 @@ pub struct NotesApp {
     /// Hábitos: el que se está escribiendo y el que se renombra (id, nombre).
     habit_new: String,
     habit_edit: Option<(String, String)>,
+    habit_new_freq: habits::Freq,
     /// El tamaño de la interfaz que se aplicó (para notar Ctrl + y Ctrl −).
     zoom_applied: f32,
     /// «Guardar una página web», abierta.
@@ -823,6 +824,7 @@ impl NotesApp {
             notes_space: None,
             habit_new: String::new(),
             habit_edit: None,
+            habit_new_freq: habits::Freq::Daily,
             zoom_applied: 1.0,
             web_clip: None,
             agenda_month: None,
@@ -2468,7 +2470,16 @@ impl NotesApp {
             // Hábitos: en verde cuando la meta de hoy está cumplida.
             let habits = self.habits();
             let met = habits::goal_met(&habits, &today());
-            let tip = if habits.is_empty() { t!("Hábitos: unos pocos hábitos diarios, con su racha").to_string() } else if met { t!("Hábitos: meta de hoy cumplida").to_string() } else { tf!("Hábitos: hoy {done} de {total}", done = habits.iter().filter(|h| h.is_done(&today())).count(), total = habits.len()) };
+            let (done, due) = habits::today_count(&habits, &today());
+            let tip = if habits.is_empty() {
+                t!("Hábitos: unos pocos hábitos, con su racha").to_string()
+            } else if met {
+                t!("Hábitos: meta de hoy cumplida").to_string()
+            } else if due == 0 {
+                t!("Hábitos: hoy no toca ninguno de todos los días").to_string()
+            } else {
+                tf!("Hábitos: hoy {done} de {total}", done = done, total = due)
+            };
             if rail_item(ui, icon::FLAME, t!("Hábitos"), &tip, self.view == View::Habits, if met { SUCCESS() } else { TEXT() }).clicked() {
                 action = Some(Action::ShowTab(View::Habits));
             }

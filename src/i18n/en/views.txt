@@ -678,8 +678,6 @@ Hábitos: hoy {done} de {total}
 Hábitos: meta de hoy cumplida
 = Habits: today's goal met
 
-Hábitos: unos pocos hábitos diarios, con su racha
-= Habits: a few daily habits, with their streaks
 
 Algunas ideas para empezar:
 = Some ideas to get started:
@@ -729,8 +727,6 @@ Quité el hábito «{name}» (sus días quedan guardados)
 Sin racha ahora · la mejor: {n}
 = No streak right now · best: {n}
 
-Unos pocos hábitos diarios, marcados día a día. La meta: hacerlos todos.
-= A few daily habits, checked off day by day. The goal: do them all.
 
 Ver tus hábitos y sus rachas
 = See your habits and their streaks
@@ -744,11 +740,7 @@ meta de hoy cumplida
 no hecho
 = not done
 
-{flame} {n} seguidos · la mejor: {best}
-= {flame} {n} in a row · best: {best}
 
-{flame} {n} seguidos · tu mejor racha
-= {flame} {n} in a row · your best streak
 
 tus hábitos
 = your habits
@@ -812,3 +804,69 @@ Página guardada: «{title}»
 
 Queda como nota en este espacio: solo el artículo, sin menús ni avisos, con sus imágenes y la dirección de dónde salió.
 = It becomes a note in this space: just the article, without menus or ads, with its images and the address it came from.
+
+Hábitos: hoy no toca ninguno de todos los días
+= Habits: none of your daily ones today
+
+Hábitos: unos pocos hábitos, con su racha
+= Habits: a few habits, with their streaks
+
+{done} de {n} esta semana
+= {done} of {n} this week
+
+1 vez
+= 1 time
+
+1 vez por semana
+= Once a week
+
+Cada cuánto
+= How often
+
+Cada {days}
+= Every {days}
+
+De lunes a viernes
+= Monday to Friday
+
+Hoy no toca
+= Not today
+
+Hoy no toca ninguno de todos los días
+= None of your daily habits today
+
+Los cuadritos son las últimas {n} semanas, de lunes a domingo: clic en uno para corregirlo.
+= The squares are the last {n} weeks, Monday to Sunday: click one to correct it.
+
+Solo ciertos días:
+= Only certain days:
+
+Todos los días
+= Every day
+
+Unos pocos hábitos, marcados día a día. La meta: hacer todo lo que toca hoy.
+= A few habits, checked off day by day. The goal: do everything that's due today.
+
+Veces por semana, el día que sea:
+= Times a week, any day:
+
+no toca
+= not due
+
+{flame} Racha: {n} · la mejor: {best}
+= {flame} Streak: {n} · best: {best}
+
+{flame} Racha: {n} · tu mejor racha
+= {flame} Streak: {n} · your best streak
+
+{n} veces
+= {n} times
+
+{n} veces por semana
+= {n} times a week
+
+«{name}»: listo esta semana
+= “{name}”: done for this week
+
+plural:semana
+= week|weeks
