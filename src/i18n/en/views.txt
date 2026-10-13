@@ -773,3 +773,42 @@ Dormir antes de las 12
 
 plural:día
 = day|days
+
+Guardar la página en una nota
+= Save the page as a note
+
+El artículo queda como nota, sin menús ni avisos
+= The article becomes a note, without menus or ads
+
+Guardar una página web…
+= Save a web page…
+
+el sitio respondió {status}
+= the site answered {status}
+
+la página es muy grande
+= the page is too big
+
+no es una página web ({kind})
+= it's not a web page ({kind})
+
+Bajando la página…
+= Downloading the page…
+
+Eso no parece una dirección web
+= That doesn't look like a web address
+
+Fuente: [{title}]({url}) · guardada el {date}
+= Source: [{title}]({url}) · saved on {date}
+
+Guardar una página web
+= Save a web page
+
+No se pudo guardar la página: {e}
+= Couldn't save the page: {e}
+
+Página guardada: «{title}»
+= Page saved: “{title}”
+
+Queda como nota en este espacio: solo el artículo, sin menús ni avisos, con sus imágenes y la dirección de dónde salió.
+= It becomes a note in this space: just the article, without menus or ads, with its images and the address it came from.

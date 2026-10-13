@@ -1,6 +1,6 @@
 [package]
 name = "nodex-notes"
-version = "0.48.0"
+version = "0.49.0"
 edition = "2024"
 description = "Notas rápidas estilo Notepad con espacios de trabajo, reuniones e IA que organiza sola"
 license = "MIT"
@@ -19,17 +19,20 @@ base64 = "0.22"
 chacha20poly1305 = "0.10"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 dirs = "7.0.0"
-eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+eframe = { version = "0.36.2", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
 egui-phosphor = "0.14.0"
 genai = "0.6.5"
 getrandom = "0.3"
 # Fotos y otras imágenes adjuntas (JPG, GIF, WebP…), además de las capturas PNG.
+dom_smoothie = "0.18"
 hayro = "0.8"
+htmd = "0.5"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 imap = { version = "3.0.0-alpha.15", default-features = false }
 mail-parser = "0.11"
 notify = "8"
 png = "0.18"
+regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "form", "query"] }
 rfd = "0.17.2"
 rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs", "tls12"] }

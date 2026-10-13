@@ -351,6 +351,7 @@ impl NotesApp {
                             let on = h.is_done(&day);
                             let before = day < h.since;
                             let (rect, r) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), Sense::click());
+                            r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, format!("{} · {}", h.name, long_date(&day))));
                             let fill = if on { SUCCESS() } else if before { Color32::TRANSPARENT } else { HOVER() };
                             ui.painter().rect_filled(rect, 3, fill);
                             if day == today {

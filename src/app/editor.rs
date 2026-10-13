@@ -642,6 +642,7 @@ impl NotesApp {
         let mut attach_now = false;
         let mut table_now = false;
         let (mut size_now, mut keep_now): (Option<(usize, Option<u32>)>, Option<usize>) = (None, None);
+        let mut clip_now: Option<String> = None;
         let mut template_now = false;
         let mut follow_now: Option<usize> = None;
         let backlinks = self.backlinks();
@@ -922,6 +923,12 @@ impl NotesApp {
                     ui.label(RichText::new(t!("Haz clic derecho en una línea con texto")).size(12.5).color(MUTED()));
                     return;
                 }
+                if let Some(url) = crate::webclip::url_in(line) {
+                    if ui.button(format!("{}  {}", icon::GLOBE, t!("Guardar la página en una nota"))).on_hover_text(url.as_str()).clicked() {
+                        clip_now = Some(url);
+                        ui.close();
+                    }
+                }
                 let label = match lines::parse(line).check {
                     None => format!("{}  {}   Ctrl+Enter", icon::CHECK_SQUARE, t!("Convertir en tarea")),
                     Some(false) => format!("{}  {}   Ctrl+Enter", icon::CHECK_SQUARE, t!("Marcar hecha")),
@@ -944,6 +951,9 @@ impl NotesApp {
             }
             if let Some(l) = keep_now {
                 self.keep_web_image(l);
+            }
+            if let Some(url) = clip_now.take() {
+                self.open_web_clip(Some(url));
             }
             if attach_now {
                 self.pick_attachments(self.menu_line);

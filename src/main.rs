@@ -36,6 +36,7 @@ mod todo;
 mod update;
 mod theme;
 mod vault;
+mod webclip;
 
 fn main() -> eframe::Result {
     // Recién actualizada: la versión anterior termina de guardar antes de leer nada.

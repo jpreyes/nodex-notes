@@ -254,6 +254,7 @@ impl NotesApp {
             CloseOthers(usize),
             Move(usize, usize),
             Recurring,
+            WebClip,
             New,
             NewNote,
             NewMeeting,
@@ -359,6 +360,10 @@ impl NotesApp {
                         todo = Some(Do::Recurring);
                         ui.close();
                     }
+                    if ui.button(format!("{}  {}", icon::GLOBE, t!("Guardar una página web…"))).on_hover_text(t!("El artículo queda como nota, sin menús ni avisos")).clicked() {
+                        todo = Some(Do::WebClip);
+                        ui.close();
+                    }
                     if ui.button(format!("{}  {}", icon::HOUSE, t!("Inicio   Ctrl+T"))).clicked() {
                         todo = Some(Do::New);
                         ui.close();
@@ -411,6 +416,7 @@ impl NotesApp {
             }
             Some(Do::NewMeeting) => self.start_meeting(),
             Some(Do::Recurring) => self.open_recurring(),
+            Some(Do::WebClip) => self.open_web_clip(None),
             Some(Do::FromTemplate(t)) => self.new_from_template(&t),
             Some(Do::EditTemplate(t)) => self.open_in_tab(t, None),
             Some(Do::NewTemplate) => self.new_template(),

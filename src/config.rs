@@ -41,6 +41,8 @@ pub struct Config {
     pub tema: String,
     /// Idioma de la interfaz: "es", "en" o "" (el del sistema).
     pub idioma: String,
+    /// Tamaño del texto y de todo lo demás (1.0 = normal). Ctrl + y Ctrl − también lo cambian.
+    pub tamano_texto: f32,
     /// Abrir Notas al iniciar Windows, ya en segundo plano.
     pub iniciar_con_windows: bool,
     /// No sincronizar la carpeta de notas con la cuenta (se sincroniza sola al entrar, salvo que
@@ -98,6 +100,7 @@ impl Default for Config {
             segundo_plano: true,
             tema: "sistema".into(),
             idioma: String::new(),
+            tamano_texto: 1.0,
             iniciar_con_windows: false,
             sin_sincronizar: false,
             first_run: false,

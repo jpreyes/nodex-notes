@@ -61,6 +61,7 @@ mod tabs;
 mod tasks_sync;
 mod templates;
 mod tracking;
+mod webclip_ui;
 mod trust;
 mod trash_view;
 #[cfg(test)]
@@ -478,6 +479,10 @@ pub struct NotesApp {
     /// Hábitos: el que se está escribiendo y el que se renombra (id, nombre).
     habit_new: String,
     habit_edit: Option<(String, String)>,
+    /// El tamaño de la interfaz que se aplicó (para notar Ctrl + y Ctrl −).
+    zoom_applied: f32,
+    /// «Guardar una página web», abierta.
+    web_clip: Option<webclip_ui::WebClip>,
     /// Agenda: el mes que se ve (None = el actual), el día elegido y si se ve como lista.
     agenda_month: Option<NaiveDate>,
     agenda_day: Option<String>,
@@ -818,6 +823,8 @@ impl NotesApp {
             notes_space: None,
             habit_new: String::new(),
             habit_edit: None,
+            zoom_applied: 1.0,
+            web_clip: None,
             agenda_month: None,
             agenda_day: None,
             agenda_list: false,
@@ -3275,6 +3282,18 @@ impl NotesApp {
         if dark != theme::is_dark() {
             theme::apply(&ctx, dark);
         }
+        // El tamaño: el elegido en Ajustes, o el que se cambió con Ctrl + y Ctrl − (se guarda).
+        let size = self.cfg.tamano_texto.clamp(MIN_ZOOM, MAX_ZOOM);
+        if (size - self.zoom_applied).abs() > 0.001 {
+            ctx.set_zoom_factor(size);
+            self.zoom_applied = size;
+        } else if (ctx.zoom_factor() - self.zoom_applied).abs() > 0.001 {
+            let z = ctx.zoom_factor().clamp(MIN_ZOOM, MAX_ZOOM);
+            ctx.set_zoom_factor(z);
+            self.cfg.tamano_texto = z;
+            self.zoom_applied = z;
+            self.save_config();
+        }
         // El cursor parpadea solo mientras se usa la app (ver CURSOR_REST).
         if ctx.input(|i| !i.events.is_empty()) {
             self.last_input = Instant::now();
@@ -3393,6 +3412,7 @@ impl NotesApp {
         self.sync_offer_window(&ctx);
         self.side_ai_button(&ctx);
         self.import_window(&ctx);
+        self.web_clip_window(&ctx);
         self.follow_up_window(&ctx);
         self.done_suggest_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {
@@ -3434,11 +3454,15 @@ impl NotesApp {
 
 /// La altura de los accesos de la barra izquierda (en la memoria de egui).
 const RAIL_H: &str = "riel-alto";
+/// El tamaño de la interfaz va de 70 % a 200 %.
+const MIN_ZOOM: f32 = 0.7;
+const MAX_ZOOM: f32 = 2.0;
 
 /// Un acceso de la barra izquierda: ícono con su nombre debajo (si cabe).
 fn rail_item(ui: &mut Ui, glyph: &str, label: &str, tip: &str, selected: bool, color: Color32) -> Response {
     let h = ui.ctx().data(|d| d.get_temp::<f32>(Id::new(RAIL_H))).unwrap_or(50.0);
     let (rect, r) = ui.allocate_exact_size(egui::vec2(56.0, h), Sense::click());
+    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, label));
     let p = ui.painter();
     if selected {
         p.rect_filled(rect, 8, ACCENT_BG());

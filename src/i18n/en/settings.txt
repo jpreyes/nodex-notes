@@ -782,3 +782,12 @@ plural:nota
 
 plural:archivo
 = file|files
+
+Tamaño del texto
+= Text size
+
+De todo: letras, íconos y botones. También con Ctrl + y Ctrl − (Ctrl 0 vuelve al normal)
+= Everything: text, icons and buttons. Also with Ctrl + and Ctrl − (Ctrl 0 goes back to normal)
+
+Normal
+= Normal

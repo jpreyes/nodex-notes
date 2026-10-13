@@ -109,6 +109,7 @@ pub(super) enum Change {
     UpdateAuto(bool),
     Background(bool),
     Theme(&'static str),
+    TextSize(f32),
     Language(&'static str),
     Import,
     StartWithWindows(bool),
@@ -382,6 +383,10 @@ impl NotesApp {
                 self.cfg.tema = t.to_string();
                 self.save_config();
             }
+            Change::TextSize(z) => {
+                self.cfg.tamano_texto = z;
+                self.save_config();
+            }
             Change::Language(l) => {
                 self.cfg.idioma = l.to_string();
                 crate::i18n::set_english(match l {
@@ -542,6 +547,14 @@ impl NotesApp {
             for (id, label) in [("claro", t!("Claro")), ("oscuro", t!("Oscuro")), ("sistema", t!("Según el sistema"))] {
                 if ui.selectable_label(self.cfg.tema == id, label).clicked() && self.cfg.tema != id {
                     changes.push(Change::Theme(id));
+                }
+            }
+        });
+        ui.add_space(16.0);
+        row(ui, t!("Tamaño del texto"), t!("De todo: letras, íconos y botones. También con Ctrl + y Ctrl − (Ctrl 0 vuelve al normal)"), |ui| {
+            for (z, label) in [(0.9, "90 %"), (1.0, t!("Normal")), (1.15, "115 %"), (1.3, "130 %"), (1.5, "150 %")] {
+                if ui.selectable_label((self.cfg.tamano_texto - z).abs() < 0.01, label).clicked() {
+                    changes.push(Change::TextSize(z));
                 }
             }
         });
