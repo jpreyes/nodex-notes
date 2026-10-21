@@ -45,6 +45,10 @@ pub(super) struct Images {
     pdf_last: HashMap<PathBuf, PathBuf>,
     /// Arrastrando la esquina de una imagen: (ruta escrita, ancho).
     pub resizing: Option<(String, f32)>,
+    /// La línea de imagen que se ve como texto (para editarla: clic derecho → Editar el texto).
+    pub raw: Option<usize>,
+    /// La imagen o el PDF que se ve en grande (dentro de la app).
+    pub viewer: Option<PathBuf>,
 }
 
 impl Default for Images {
@@ -60,6 +64,8 @@ impl Default for Images {
             pdf_page: HashMap::new(),
             pdf_last: HashMap::new(),
             resizing: None,
+            raw: None,
+            viewer: None,
         }
     }
 }
@@ -353,7 +359,200 @@ impl Images {
     }
 }
 
+/// El nombre con que se guarda una imagen o un PDF («Guardar como…»).
+fn file_name_of(path: &Path, bytes: &[u8]) -> String {
+    let s = path.to_string_lossy();
+    let last = s.split(['?', '#']).next().unwrap_or(&s).rsplit(['/', '\\']).next().unwrap_or("").to_string();
+    let last = lines::decode_path(&last);
+    if last.contains('.') && !last.starts_with('.') {
+        return last;
+    }
+    let ext = match image::guess_format(bytes) {
+        Ok(image::ImageFormat::Jpeg) => "jpg",
+        Ok(image::ImageFormat::Gif) => "gif",
+        Ok(image::ImageFormat::WebP) => "webp",
+        _ => "png",
+    };
+    format!("{}.{ext}", if last.is_empty() { "imagen" } else { &last })
+}
+
+/// Muestra el archivo en su carpeta (marcado, en Windows).
+fn reveal(path: &Path) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("explorer").raw_arg(format!("/select,\"{}\"", path.display())).spawn();
+    }
+    #[cfg(not(windows))]
+    if let Some(dir) = path.parent() {
+        crate::links::open(&crate::links::Target::Path(dir.to_path_buf()));
+    }
+}
+
+/// Lo que se puede hacer con una imagen o un PDF de la nota.
+pub(super) enum MediaDo {
+    /// Verla en grande, dentro de la app.
+    View(PathBuf),
+    SaveAs(PathBuf),
+    Copy(PathBuf),
+    /// Abrirla con otra aplicación (o en el navegador, si es de la web).
+    Outside(PathBuf),
+    Reveal(PathBuf),
+    /// Ver su línea como texto, para cambiarla.
+    EditText(usize),
+    /// Quitarla de la nota (el archivo queda en Adjuntos).
+    Remove(usize),
+}
+
 impl NotesApp {
+    /// Los bytes de una imagen o un PDF (de la web, los que se bajaron).
+    fn media_bytes(&self, path: &Path) -> Option<Vec<u8>> {
+        let s = path.to_string_lossy();
+        if is_url(&s) { fs::read(web_cache(&s)).ok() } else { fs::read(path).ok() }
+    }
+
+    pub(super) fn media_do(&mut self, what: MediaDo) {
+        match what {
+            MediaDo::View(p) => self.images.viewer = Some(p),
+            MediaDo::Outside(p) => {
+                let s = p.to_string_lossy().into_owned();
+                crate::links::open(&if is_url(&s) { crate::links::Target::Url(s) } else { crate::links::Target::Path(p) });
+            }
+            MediaDo::Reveal(p) => reveal(&p),
+            MediaDo::SaveAs(p) => {
+                let Some(bytes) = self.media_bytes(&p) else {
+                    self.msg(t!("La imagen aún no se ha bajado"));
+                    return;
+                };
+                let name = file_name_of(&p, &bytes);
+                let Some(dest) = rfd::FileDialog::new().set_title(t!("Guardar como")).set_file_name(&name).save_file() else { return };
+                match fs::write(&dest, &bytes) {
+                    Ok(()) => self.msg(tf!("Guardada en {path}", path = dest.display())),
+                    Err(e) => self.msg(tf!("No se pudo guardar la imagen: {e}", e = e)),
+                }
+            }
+            MediaDo::Copy(p) => {
+                let img = self.media_bytes(&p).and_then(|b| image::load_from_memory(&b).ok()).map(|i| i.to_rgba8());
+                let Some(img) = img else {
+                    self.msg(t!("No se pudo copiar la imagen"));
+                    return;
+                };
+                let data = arboard::ImageData { width: img.width() as usize, height: img.height() as usize, bytes: img.into_raw().into() };
+                match arboard::Clipboard::new().and_then(|mut c| c.set_image(data)) {
+                    Ok(()) => self.msg(t!("Imagen copiada: pégala donde quieras")),
+                    Err(e) => self.msg(tf!("No se pudo copiar la imagen: {e}", e = e)),
+                }
+            }
+            MediaDo::EditText(l) => {
+                self.images.raw = Some(l);
+                let starts: Vec<usize> = std::iter::once(0).chain(self.note.text.char_indices().filter(|(_, c)| *c == '\n').map(|(i, _)| self.note.text[..i].chars().count() + 1)).collect();
+                let len = self.note.text.split('\n').nth(l).map(|x| x.trim_end_matches('\r').chars().count()).unwrap_or(0);
+                self.pending_cursor = starts.get(l).map(|s| s + len);
+                self.focus_editor = true;
+            }
+            MediaDo::Remove(l) => {
+                let mut ls: Vec<&str> = self.note.text.split('\n').collect();
+                if l < ls.len() {
+                    ls.remove(l);
+                    self.note.text = ls.join("\n");
+                    self.note.dirty = true;
+                    self.save();
+                    self.msg(t!("Quité la imagen de la nota (el archivo sigue en Adjuntos)"));
+                }
+            }
+        }
+    }
+
+    /// La imagen o el PDF en grande, sobre la ventana: Guardar como, Copiar, abrir con otra
+    /// aplicación. Esc o un clic afuera la cierra.
+    pub(super) fn image_viewer(&mut self, ctx: &egui::Context) {
+        let Some(file) = self.images.viewer.clone() else { return };
+        let pdf = is_pdf(&file);
+        let screen = ctx.content_rect();
+        let mut close = ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape));
+        let mut todo = None;
+        let mut page_to = None;
+        let name = {
+            let s = file.to_string_lossy();
+            lines::decode_path(s.split(['?', '#']).next().unwrap_or(&s).rsplit(['/', '\\']).next().unwrap_or(""))
+        };
+        egui::Area::new(Id::new("visor-imagen")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
+            let (rect, bg) = ui.allocate_exact_size(screen.size(), Sense::click());
+            ui.painter().rect_filled(rect, 0.0, Color32::from_black_alpha(220));
+            let white = Color32::from_gray(235);
+            let bar = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 52.0)).shrink2(egui::vec2(18.0, 10.0));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(bar).layout(Layout::left_to_right(Align::Center)), |ui| {
+                ui.label(RichText::new(format!("{}  {name}", if pdf { icon::FILE_PDF } else { icon::IMAGE })).size(14.5).color(white));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let b = |g: &str, label: &str| egui::Button::new(RichText::new(if label.is_empty() { g.to_string() } else { format!("{g}  {label}") }).size(13.5).color(white)).fill(Color32::from_white_alpha(18));
+                    if ui.add(b(icon::X, "")).on_hover_text(t!("Cerrar (Esc)")).clicked() {
+                        close = true;
+                    }
+                    if ui.add(b(icon::ARROW_SQUARE_OUT, t!("Abrir con otra aplicación"))).clicked() {
+                        todo = Some(MediaDo::Outside(file.clone()));
+                    }
+                    if !pdf && ui.add(b(icon::COPY, t!("Copiar"))).clicked() {
+                        todo = Some(MediaDo::Copy(file.clone()));
+                    }
+                    if ui.add(b(icon::DOWNLOAD_SIMPLE, t!("Guardar como…"))).clicked() {
+                        todo = Some(MediaDo::SaveAs(file.clone()));
+                    }
+                    let (page, pages) = (self.images.page(&file), self.images.pages(&file));
+                    if pdf && pages > 1 {
+                        ui.add_space(12.0);
+                        if ui.add_enabled(page + 1 < pages, b(icon::CARET_RIGHT, "")).clicked() {
+                            page_to = Some(page + 1);
+                        }
+                        ui.label(RichText::new(tf!("{n} de {total}", n = page + 1, total = pages)).size(13.5).color(white));
+                        if ui.add_enabled(page > 0, b(icon::CARET_LEFT, "")).clicked() {
+                            page_to = page.checked_sub(1);
+                        }
+                    }
+                });
+            });
+            // La imagen, lo más grande que quepa (sin agrandarla más que su tamaño).
+            let area = egui::Rect::from_min_max(rect.min + egui::vec2(24.0, 60.0), rect.max - egui::vec2(24.0, 24.0));
+            let mut inside = None;
+            match self.images.shown(&file) {
+                Some((tex, [w, h])) => {
+                    let (w, h) = (*w as f32, *h as f32);
+                    let scale = (area.width() / w).min(area.height() / h).min(if pdf { 4.0 } else { 1.0 });
+                    let r = egui::Rect::from_center_size(area.center(), egui::vec2(w * scale, h * scale));
+                    ui.painter().image(tex.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+                    inside = Some(r);
+                }
+                None => {
+                    ui.painter().text(area.center(), Align2::CENTER_CENTER, t!("Cargando…"), FontId::proportional(15.0), white);
+                }
+            }
+            // Las flechas también pasan de página.
+            if pdf {
+                let page = self.images.page(&file);
+                ui.input_mut(|i| {
+                    if i.consume_key(Modifiers::NONE, Key::ArrowRight) || i.consume_key(Modifiers::NONE, Key::PageDown) {
+                        page_to = Some(page + 1);
+                    }
+                    if i.consume_key(Modifiers::NONE, Key::ArrowLeft) || i.consume_key(Modifiers::NONE, Key::PageUp) {
+                        page_to = page.checked_sub(1);
+                    }
+                });
+            }
+            if bg.clicked() && !bg.interact_pointer_pos().is_some_and(|p| inside.is_some_and(|r| r.contains(p)) || bar.contains(p)) {
+                close = true;
+            }
+        });
+        if let Some(p) = page_to {
+            self.images.set_page(&file, p);
+            ctx.request_repaint();
+        }
+        if let Some(t) = todo {
+            self.media_do(t);
+        }
+        if close {
+            self.images.viewer = None;
+        }
+    }
+
     /// Cambia el ancho con que se ve la imagen o el PDF de la línea `idx` (None = el de siempre).
     pub(super) fn set_shown_width(&mut self, idx: usize, width: Option<u32>) {
         let Some(line) = self.note.text.split('\n').nth(idx).map(|l| l.trim_end_matches('\r').to_string()) else { return };

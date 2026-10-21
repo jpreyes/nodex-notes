@@ -975,6 +975,11 @@ impl NotesApp {
         if std::env::var("NODEX_DEMO_LADO").is_ok() {
             app.side_ai = true;
         }
+        // Solo en compilaciones de prueba: un archivo abierto en el visor (para capturas).
+        #[cfg(debug_assertions)]
+        if let Ok(p) = std::env::var("NODEX_DEMO_VISOR") {
+            app.images.viewer = Some(PathBuf::from(p));
+        }
         // Solo en compilaciones de prueba: abrir Preguntar con una pregunta (para capturas).
         #[cfg(debug_assertions)]
         if let Ok(q) = std::env::var("NODEX_DEMO_ASK") {
@@ -3424,6 +3429,7 @@ impl NotesApp {
         self.side_ai_button(&ctx);
         self.import_window(&ctx);
         self.web_clip_window(&ctx);
+        self.image_viewer(&ctx);
         self.follow_up_window(&ctx);
         self.done_suggest_window(&ctx);
         if let Some(a) = self.rename_tag_window(&ctx) {

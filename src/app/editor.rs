@@ -112,6 +112,8 @@ enum Click {
     Note(String),
     /// Ya se hizo (pasar de página en un PDF): solo que no se mueva el cursor.
     Nothing,
+    /// Ver una imagen o un PDF en grande, dentro de la app.
+    View(PathBuf),
 }
 
 /// Cómo se ve un enlace escrito (`[[Nota]]` o `[texto](destino)`), desde la nota `note`.
@@ -263,6 +265,8 @@ struct Env<'a> {
     link: &'a dyn Fn(&lines::Link) -> Kind,
     /// Ancho del texto.
     width: f32,
+    /// La línea de imagen que se ve como texto (se pidió editarla).
+    raw: Option<usize>,
 }
 
 /// `build_in` con lo mínimo (para las pruebas).
@@ -275,7 +279,7 @@ fn build(
     image: &dyn Fn(&str) -> Option<(f32, f32)>,
     link: &dyn Fn(&lines::Link) -> Kind,
 ) -> (LayoutJob, Vec<Deco>) {
-    build_in(text, active, cache, &Env { measure: &|s, _| measure(s), image, link, width: f32::INFINITY })
+    build_in(text, active, cache, &Env { measure: &|s, _| measure(s), image, link, width: f32::INFINITY, raw: None })
 }
 
 /// Arma el texto con formato y la lista de cosas a dibujar.
@@ -330,8 +334,9 @@ fn build_in(text: &str, active: Option<usize>, cache: &mut LinkCache, env: &Env)
             continue;
         }
 
-        // Una imagen o un PDF (salvo en la línea que se edita): su línea queda del alto de la imagen.
-        if let Some((w, h)) = lines::image_of(line).or_else(|| lines::pdf_of(line)).filter(|_| !is_active).and_then(|(_, rel)| Some((rel, image(rel)?))).map(|(rel, (w, h))| {
+        // Una imagen o un PDF (aunque el cursor esté en su línea; salvo que se pida editar su
+        // texto): su línea queda del alto de la imagen.
+        if let Some((w, h)) = lines::image_of(line).or_else(|| lines::pdf_of(line)).filter(|_| env.raw != Some(li)).and_then(|(_, rel)| Some((rel, image(rel)?))).map(|(rel, (w, h))| {
             decos.push(Deco { kind: Kind::Image(rel.to_string(), w, h), chars: ci..ci + n_chars(0, line.len()), line: li, lead: 0.0 });
             (w, h)
         }) {
@@ -820,6 +825,14 @@ impl NotesApp {
                     }
                 });
             }
+            // «Editar el texto» dura mientras el cursor siga en esa línea.
+            if self.images.raw.is_some() && active.is_some() && self.images.raw != active {
+                self.images.raw = None;
+            }
+            let raw_line = self.images.raw;
+            if focused {
+                self.media_keys(ui, id, active);
+            }
             // Ctrl+V con una imagen en el portapapeles (sin texto: egui no la pega).
             let ctrl_v = self.images.ctrl_v_pressed(ui) && !ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Paste(_))));
             if focused && ctrl_v {
@@ -844,7 +857,7 @@ impl NotesApp {
             let links = &mut self.links;
             let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
                 let measure = |s: &str, font: &FontId| ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), font.clone(), TEXT()).size().x);
-                let env = Env { measure: &measure, image: &|rel| image_sizes.get(rel).copied(), link: &link_of, width: wrap };
+                let env = Env { measure: &measure, image: &|rel| image_sizes.get(rel).copied(), link: &link_of, width: wrap, raw: raw_line };
                 let (mut job, d) = build_in(buf.as_str(), active, links, &env);
                 *decos.borrow_mut() = d;
                 job.wrap.max_width = wrap;
@@ -875,7 +888,57 @@ impl NotesApp {
             }
             let mut to_task = None;
             let mut paste_now = false;
+            let mut media_now: Option<super::images::MediaDo> = None;
             out.response.context_menu(|ui| {
+                // En una imagen o un PDF: lo que se hace con ella.
+                let media_line = self.menu_line.map(|l| (l, nth_line(&self.note.text, l))).and_then(|(l, line)| {
+                    lines::image_of(line).map(|m| (l, m, false)).or_else(|| lines::pdf_of(line).map(|m| (l, m, true)))
+                });
+                if let Some((l, (alt, rel), pdf)) = media_line {
+                    use super::images::MediaDo;
+                    let file = super::images::locate(&self.note.path, rel);
+                    let web = super::images::is_url(rel);
+                    let mut pick = |ui: &mut Ui, glyph: &str, label: &str, what: MediaDo| {
+                        if ui.button(format!("{glyph}  {label}")).clicked() {
+                            media_now = Some(what);
+                            ui.close();
+                        }
+                    };
+                    pick(ui, icon::MAGNIFYING_GLASS_PLUS, if pdf { t!("Ver el PDF en grande") } else { t!("Ver en grande") }, MediaDo::View(file.clone()));
+                    pick(ui, icon::DOWNLOAD_SIMPLE, t!("Guardar como…"), MediaDo::SaveAs(file.clone()));
+                    if !pdf {
+                        pick(ui, icon::COPY, t!("Copiar la imagen"), MediaDo::Copy(file.clone()));
+                    }
+                    pick(ui, icon::ARROW_SQUARE_OUT, if web { t!("Abrir en el navegador") } else { t!("Abrir con otra aplicación") }, MediaDo::Outside(file.clone()));
+                    if !web {
+                        pick(ui, icon::FOLDER_OPEN, t!("Mostrar en la carpeta"), MediaDo::Reveal(file.clone()));
+                    }
+                    ui.separator();
+                    let now = lines::shown_width(alt).1;
+                    ui.menu_button(format!("{}  {}", icon::ARROWS_OUT_SIMPLE, t!("Tamaño")), |ui| {
+                        for (label, w) in [(t!("Chica"), Some(240)), (t!("Mediana"), Some(420)), (t!("Grande"), Some(640)), (t!("Como siempre"), None)] {
+                            if ui.radio(now == w, label).clicked() {
+                                size_now = Some((l, w));
+                                ui.close();
+                            }
+                        }
+                    });
+                    if pdf {
+                        let (label, w) = if now == Some(0) { (t!("Mostrar las páginas"), None) } else { (t!("Ver solo como enlace"), Some(0)) };
+                        if ui.button(format!("{}  {}", icon::FILE_PDF, label)).clicked() {
+                            size_now = Some((l, w));
+                            ui.close();
+                        }
+                    }
+                    if web && ui.button(format!("{}  {}", icon::DOWNLOAD_SIMPLE, t!("Guardar la imagen en Adjuntos"))).on_hover_text(t!("Para que siga aunque la página web cambie o se borre")).clicked() {
+                        keep_now = Some(l);
+                        ui.close();
+                    }
+                    ui.separator();
+                    pick(ui, icon::PENCIL_SIMPLE, t!("Editar el texto"), MediaDo::EditText(l));
+                    pick(ui, icon::TRASH, t!("Quitar de la nota"), MediaDo::Remove(l));
+                    return;
+                }
                 if ui.button(format!("{}  {}", icon::IMAGE, t!("Pegar imagen del portapapeles"))).clicked() {
                     paste_now = true;
                     ui.close();
@@ -894,31 +957,6 @@ impl NotesApp {
                 }
                 let Some(l) = self.menu_line else { return };
                 let line = nth_line(&self.note.text, l);
-                let media = lines::image_of(line).map(|m| (m, false)).or_else(|| lines::pdf_of(line).map(|m| (m, true)));
-                if let Some(((alt, rel), pdf)) = media {
-                    let now = lines::shown_width(alt).1;
-                    ui.separator();
-                    ui.menu_button(format!("{}  {}", icon::ARROWS_OUT_SIMPLE, t!("Tamaño")), |ui| {
-                        for (label, w) in [(t!("Chica"), Some(240)), (t!("Mediana"), Some(420)), (t!("Grande"), Some(640)), (t!("Como siempre"), None)] {
-                            if ui.radio(now == w, label).clicked() {
-                                size_now = Some((l, w));
-                                ui.close();
-                            }
-                        }
-                    });
-                    if pdf {
-                        let (label, w) = if now == Some(0) { (t!("Mostrar las páginas"), None) } else { (t!("Ver solo como enlace"), Some(0)) };
-                        if ui.button(format!("{}  {}", icon::FILE_PDF, label)).clicked() {
-                            size_now = Some((l, w));
-                            ui.close();
-                        }
-                    }
-                    if super::images::is_url(rel) && ui.button(format!("{}  {}", icon::DOWNLOAD_SIMPLE, t!("Guardar la imagen en Adjuntos"))).on_hover_text(t!("Para que siga aunque la página web cambie o se borre")).clicked() {
-                        keep_now = Some(l);
-                        ui.close();
-                    }
-                    return;
-                }
                 if line.trim().is_empty() || lines::is_heading(line) {
                     ui.label(RichText::new(t!("Haz clic derecho en una línea con texto")).size(12.5).color(MUTED()));
                     return;
@@ -954,6 +992,9 @@ impl NotesApp {
             }
             if let Some(url) = clip_now.take() {
                 self.open_web_clip(Some(url));
+            }
+            if let Some(m) = media_now.take() {
+                self.media_do(m);
             }
             if attach_now {
                 self.pick_attachments(self.menu_line);
@@ -1151,8 +1192,12 @@ impl NotesApp {
                     let Some(tex) = self.images.texture(&file) else { continue };
                     let rect = egui::Rect::from_min_size(egui::pos2(o.x + first.x, o.y + first.row_top + 6.0), egui::vec2(*w, *h));
                     // PDF: sin «tamaño real», con su página.
-                    painter.image(tex, rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), theme::c(Color32::WHITE));
-                    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, theme::BORDER()), egui::StrokeKind::Outside);
+                    painter.image(tex, rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE); // con sus colores, también en el tema oscuro
+                    if active == Some(d.line) {
+                        painter.rect_stroke(rect.expand(2.0), 5.0, Stroke::new(2.0, ACCENT()), egui::StrokeKind::Outside);
+                    } else {
+                        painter.rect_stroke(rect, 4.0, Stroke::new(1.0, theme::BORDER()), egui::StrokeKind::Outside);
+                    }
                     let pointer = ui.ctx().pointer_hover_pos().filter(|p| rect.expand(4.0).contains(*p));
                     let is_pdf = super::images::is_pdf(&file);
                     let mut used = false;
@@ -1160,10 +1205,10 @@ impl NotesApp {
                         let line = nth_line(&text, d.line);
                         let name = lines::pdf_of(line).map(|(alt, _)| lines::shown_width(alt).0.to_string()).unwrap_or_default();
                         let chip = |painter: &egui::Painter, pos: egui::Pos2, align: Align2, label: &str| {
-                            let g = painter.layout_no_wrap(label.to_string(), FontId::proportional(12.0), theme::c(Color32::WHITE));
+                            let g = painter.layout_no_wrap(label.to_string(), FontId::proportional(12.0), Color32::WHITE);
                             let r = align.anchor_size(pos, g.size() + egui::vec2(14.0, 6.0));
                             painter.rect_filled(r, 6.0, Color32::from_black_alpha(170));
-                            painter.galley(r.min + egui::vec2(7.0, 3.0), g, theme::c(Color32::WHITE));
+                            painter.galley(r.min + egui::vec2(7.0, 3.0), g, Color32::WHITE);
                             r
                         };
                         chip(painter, rect.left_top() + egui::vec2(8.0, 8.0), Align2::LEFT_TOP, &format!("{}  {name}", icon::FILE_PDF));
@@ -1214,13 +1259,11 @@ impl NotesApp {
                         }
                     }
                     if !used && pointer.is_some() && hover.is_some_and(|p| rect.contains(p)) {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                        let tip = if is_pdf { t!("Abrir el PDF") } else if super::images::is_url(rel) { t!("Abrir la imagen en el navegador") } else { t!("Abrir en tamaño real") };
+                        let tip = if is_pdf { t!("Doble clic: ver el PDF en grande · clic derecho: más opciones") } else { t!("Doble clic: ver en grande · clic derecho: más opciones") };
                         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), Id::new("imagen-tip"), egui::PopupAnchor::Pointer)
                             .show(|ui| ui.label(RichText::new(tip).size(12.5)));
-                        if out.response.clicked() {
-                            let target = if super::images::is_url(rel) { Target::Url(rel.clone()) } else { Target::Path(file) };
-                            clicked = Some((d.line, Click::Open(target)));
+                        if out.response.double_clicked() {
+                            clicked = Some((d.line, Click::View(file)));
                         }
                     }
                 }
@@ -1317,6 +1360,7 @@ impl NotesApp {
             match target {
                 Click::Open(t) => links::open(&t),
                 Click::Nothing => {}
+                Click::View(p) => self.images.viewer = Some(p),
                 Click::Check => self.toggle_line_check(line),
                 Click::Note(t) => return Some(t),
             }
@@ -1410,6 +1454,66 @@ impl NotesApp {
     }
 
     /// Tab, Shift+Tab, Enter y Retroceso en líneas con sangría o casilla; Ctrl+Enter, tarea.
+    /// Con el cursor en una imagen (o un PDF), su línea es un bloque: escribir o Enter siguen en
+    /// una línea nueva debajo, las flechas la saltan y Borrar no la rompe (se quita con el clic
+    /// derecho). Borrar al comienzo de la línea de abajo la marca en vez de juntarse con ella.
+    fn media_keys(&mut self, ui: &Ui, id: Id, active: Option<usize>) {
+        let Some(l) = active else { return };
+        if self.images.raw == Some(l) {
+            return;
+        }
+        let text = self.note.text.clone();
+        let is_media = |i: usize| {
+            let s = nth_line(&text, i);
+            lines::image_of(s).or_else(|| lines::pdf_of(s).filter(|(alt, _)| lines::shown_width(alt).1 != Some(0))).is_some()
+        };
+        let Some(mut st) = TextEditState::load(ui.ctx(), id) else { return };
+        let Some(r) = st.cursor.char_range() else { return };
+        if r.primary.index != r.secondary.index {
+            return;
+        }
+        let starts = line_starts(&text);
+        let end_of = |i: usize| starts[i] + nth_line(&text, i).chars().count();
+        let total = text.chars().count();
+        let mut to = None;
+        let mut hint = false;
+        if is_media(l) {
+            ui.input_mut(|inp| {
+                let events = std::mem::take(&mut inp.events);
+                for e in events {
+                    match e {
+                        egui::Event::Key { key: Key::Backspace | Key::Delete, pressed: true, .. } => hint = true,
+                        egui::Event::Key { key: Key::Backspace | Key::Delete, pressed: false, .. } => {}
+                        egui::Event::Key { key: Key::ArrowLeft, pressed: true, modifiers, .. } if !modifiers.shift => to = Some(starts[l].saturating_sub(1)),
+                        egui::Event::Key { key: Key::ArrowRight, pressed: true, modifiers, .. } if !modifiers.shift => to = Some(starts.get(l + 1).copied().unwrap_or(total)),
+                        egui::Event::Key { key: Key::Enter, pressed: true, .. } => {
+                            to = Some(end_of(l));
+                            inp.events.push(e);
+                        }
+                        egui::Event::Text(t) => {
+                            to = Some(end_of(l));
+                            inp.events.push(egui::Event::Text(format!("\n{t}")));
+                        }
+                        egui::Event::Paste(t) => {
+                            to = Some(end_of(l));
+                            inp.events.push(egui::Event::Paste(format!("\n{t}")));
+                        }
+                        e => inp.events.push(e),
+                    }
+                }
+            });
+        } else if l > 0 && is_media(l - 1) && r.primary.index.0 == starts[l] && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Backspace)) {
+            to = Some(end_of(l - 1));
+        }
+        if let Some(c) = to {
+            st.cursor.set_char_range(Some(CCursorRange::one(CCursor::new(c))));
+            st.store(ui.ctx(), id);
+        }
+        if hint {
+            self.msg(t!("Para quitar la imagen: clic derecho → Quitar de la nota"));
+        }
+    }
+
     fn edit_keys(&mut self, ui: &Ui, id: Id) {
         let ctx = ui.ctx();
         let Some(mut st) = TextEditState::load(ctx, id) else { return };
@@ -1678,7 +1782,7 @@ mod tests {
         let text = "| Material | Kg |\n|---|---|\n| Acero | 120 |\n";
         // Cada letra mide 7 (en negrita, 8).
         let measure = |s: &str, f: &FontId| s.chars().count() as f32 * if f.family == FontId::proportional(1.0).family { 7.0 } else { 8.0 };
-        let env = Env { measure: &measure, image: &|_| None, link: &test_links, width: 500.0 };
+        let env = Env { measure: &measure, image: &|_| None, link: &test_links, width: 500.0, raw: None };
         let (job, decos) = build_in(text, None, &mut cache, &env);
         let rows: Vec<(bool, bool)> = decos
             .iter()
@@ -1711,7 +1815,7 @@ mod tests {
         assert_eq!(job.text, text);
         assert!(decos.iter().any(|d| matches!(&d.kind, Kind::Image(r, w, h) if r == "../Adjuntos/c.png" && *w == 300.0 && *h == 150.0) && d.line == 1));
         let (_, decos) = build(text, Some(1), &mut cache, &|_| 10.0, &size, &test_links);
-        assert!(!decos.iter().any(|d| matches!(d.kind, Kind::Image(..))), "en la línea que se edita se ve el texto");
+        assert!(decos.iter().any(|d| matches!(d.kind, Kind::Image(..))), "con el cursor en su línea, se sigue viendo");
     }
 
     #[test]
