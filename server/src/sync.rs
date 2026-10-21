@@ -7,7 +7,13 @@
 //!
 //! - Contenido: `sync/<cuenta>/blobs/ab/abcdef….gz` por su huella SHA-256, comprimido (no se borra:
 //!   es el historial). Si comprimirlo no ahorra nada (una foto, un PDF) queda sin `.gz`, tal cual.
-//! - Índice: `sync/<cuenta>/diario.jsonl`, una línea por cambio; al arrancar se rehace leyéndolo.
+//! - Índice: en SQLite (`notas.db`, junto a los demás datos), para miles de cuentas sin tenerlas
+//!   en memoria: `archivos` (la versión vigente de cada archivo), `cambios` (cada cambio, en orden:
+//!   el historial), `contenidos` (qué contenido guarda cada cuenta, para medir su espacio) y
+//!   `cuentas_sync` (el último número y el espacio usado). Lo que había en
+//!   `sync/<cuenta>/diario.jsonl` (antes de SQLite) se pasa solo al arrancar.
+//! - Respaldo: cada 6 horas, una copia consistente en `respaldo/notas.db` (la recoge el respaldo
+//!   diario del servidor).
 //! - Avisos al instante: `GET /v1/sync/esperar?desde=N` responde apenas hay algo más nuevo que N
 //!   (o a los 25 s).
 
@@ -17,19 +23,24 @@ use axum::body::Bytes;
 use axum::extract::{Path as UrlPath, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{Mutex, OwnedMutexGuard, watch};
 
 /// Tamaño máximo de un archivo.
 pub const MAX_FILE: usize = 50 * 1024 * 1024;
 /// Cuánto espera `esperar` antes de responder sin cambios.
 const WAIT: Duration = Duration::from_secs(25);
+/// El archivo de la base de datos (en la carpeta de datos).
+pub const DB_FILE: &str = "notas.db";
+/// Cada cuánto se deja una copia consistente de la base para el respaldo.
+pub const BACKUP_EVERY: Duration = Duration::from_secs(6 * 3600);
 
 /// La versión vigente de un archivo.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -42,26 +53,199 @@ pub struct Entry {
     pub borrado: bool,
 }
 
-/// El índice de una cuenta.
-#[derive(Debug, Default)]
-pub struct Index {
-    pub seq: u64,
-    pub files: BTreeMap<String, Entry>,
-    /// Contenido guardado (huella → tamaño), para medir el espacio usado.
-    blobs: HashMap<String, u64>,
+/// La base de datos, los turnos por cuenta (un cambio a la vez en cada una) y los avisos.
+pub struct Hub {
+    db: std::sync::Mutex<Connection>,
+    turns: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    notify: Mutex<HashMap<String, watch::Sender<u64>>>,
 }
 
-impl Index {
-    pub fn used(&self) -> u64 {
-        self.blobs.values().sum()
+const SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS archivos (
+    cuenta TEXT NOT NULL, ruta TEXT NOT NULL, seq INTEGER NOT NULL, hash TEXT NOT NULL,
+    tam INTEGER NOT NULL, borrado INTEGER NOT NULL, PRIMARY KEY (cuenta, ruta)
+);
+CREATE INDEX IF NOT EXISTS archivos_seq ON archivos (cuenta, seq);
+CREATE TABLE IF NOT EXISTS cambios (
+    cuenta TEXT NOT NULL, seq INTEGER NOT NULL, ruta TEXT NOT NULL, hash TEXT NOT NULL,
+    tam INTEGER NOT NULL, borrado INTEGER NOT NULL, en INTEGER NOT NULL, PRIMARY KEY (cuenta, seq)
+);
+CREATE TABLE IF NOT EXISTS contenidos (
+    cuenta TEXT NOT NULL, hash TEXT NOT NULL, tam INTEGER NOT NULL, PRIMARY KEY (cuenta, hash)
+);
+CREATE TABLE IF NOT EXISTS cuentas_sync (
+    cuenta TEXT PRIMARY KEY, seq INTEGER NOT NULL, usado INTEGER NOT NULL
+);
+";
+
+fn entry_of(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
+    Ok(Entry { ruta: r.get(0)?, seq: r.get::<_, i64>(1)? as u64, hash: r.get(2)?, tam: r.get::<_, i64>(3)? as u64, borrado: r.get::<_, i64>(4)? != 0 })
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+/// Anota un cambio (dentro de una transacción): sube el número de la cuenta, lo guarda en el
+/// historial, deja la versión vigente y suma el contenido nuevo al espacio usado.
+fn record_in(tx: &rusqlite::Transaction, account: &str, e: &Entry, at: i64) -> rusqlite::Result<u64> {
+    let seq: i64 = tx.query_row("SELECT seq FROM cuentas_sync WHERE cuenta = ?1", [account], |r| r.get(0)).optional()?.unwrap_or(0);
+    let seq = if e.seq > 0 { (e.seq as i64).max(seq) } else { seq + 1 };
+    let target = if e.seq > 0 { e.seq as i64 } else { seq };
+    tx.execute(
+        "INSERT OR REPLACE INTO cambios (cuenta, seq, ruta, hash, tam, borrado, en) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![account, target, e.ruta, e.hash, e.tam as i64, e.borrado as i64, at],
+    )?;
+    tx.execute(
+        "INSERT INTO archivos (cuenta, ruta, seq, hash, tam, borrado) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT (cuenta, ruta) DO UPDATE SET seq = excluded.seq, hash = excluded.hash, tam = excluded.tam, borrado = excluded.borrado
+         WHERE excluded.seq >= archivos.seq",
+        params![account, e.ruta, target, e.hash, e.tam as i64, e.borrado as i64],
+    )?;
+    let mut added = 0i64;
+    if !e.borrado {
+        added = tx.execute("INSERT OR IGNORE INTO contenidos (cuenta, hash, tam) VALUES (?1, ?2, ?3)", params![account, e.hash, e.tam as i64])? as i64 * e.tam as i64;
+    }
+    tx.execute(
+        "INSERT INTO cuentas_sync (cuenta, seq, usado) VALUES (?1, ?2, ?3)
+         ON CONFLICT (cuenta) DO UPDATE SET seq = max(cuentas_sync.seq, excluded.seq), usado = cuentas_sync.usado + ?3",
+        params![account, seq, added],
+    )?;
+    Ok(target as u64)
+}
+
+/// Pasa a la base lo que había en `sync/<cuenta>/diario.jsonl` (antes de SQLite). Una vez por
+/// cuenta: el diario queda como `diario.jsonl.migrado`. Devuelve cuántas cuentas pasó.
+fn migrate(conn: &mut Connection, data: &Path) -> rusqlite::Result<usize> {
+    let mut done = 0;
+    for acc in std::fs::read_dir(data.join("sync")).into_iter().flatten().flatten() {
+        let journal = acc.path().join("diario.jsonl");
+        let Ok(text) = std::fs::read_to_string(&journal) else { continue };
+        let account = acc.file_name().to_string_lossy().into_owned();
+        let tx = conn.transaction()?;
+        let already: bool = tx.query_row("SELECT 1 FROM cuentas_sync WHERE cuenta = ?1", [&account], |_| Ok(true)).optional()?.unwrap_or(false);
+        if !already {
+            for line in text.lines() {
+                if let Ok(e) = serde_json::from_str::<Entry>(line) {
+                    if e.seq > 0 {
+                        record_in(&tx, &account, &e, 0)?;
+                    }
+                }
+            }
+        }
+        tx.commit()?;
+        let _ = std::fs::rename(&journal, journal.with_extension("jsonl.migrado"));
+        done += 1;
+    }
+    Ok(done)
+}
+
+impl Hub {
+    /// Abre (o crea) la base en la carpeta de datos y pasa lo que hubiera de antes.
+    pub fn open(data: &Path) -> Hub {
+        let _ = std::fs::create_dir_all(data);
+        let mut conn = Connection::open(data.join(DB_FILE)).unwrap_or_else(|e| panic!("no se pudo abrir {}: {e}", data.join(DB_FILE).display()));
+        let _ = conn.pragma_update(None, "journal_mode", "WAL");
+        let _ = conn.pragma_update(None, "synchronous", "NORMAL");
+        let _ = conn.busy_timeout(Duration::from_secs(5));
+        conn.execute_batch(SCHEMA).expect("no se pudo preparar la base de datos");
+        match migrate(&mut conn, data) {
+            Ok(0) => {}
+            Ok(n) => println!("sincronización: {n} cuentas pasadas a SQLite"),
+            Err(e) => eprintln!("no se pudo pasar la sincronización a SQLite: {e}"),
+        }
+        Hub { db: std::sync::Mutex::new(conn), turns: Mutex::default(), notify: Mutex::default() }
+    }
+
+    fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.db.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// El turno de una cuenta: los cambios de una misma cuenta van de a uno.
+    async fn turn(&self, account: &str) -> OwnedMutexGuard<()> {
+        let m = self.turns.lock().await.entry(account.to_string()).or_default().clone();
+        m.lock_owned().await
+    }
+
+    async fn sender(&self, account: &str) -> watch::Sender<u64> {
+        let mut map = self.notify.lock().await;
+        map.entry(account.to_string()).or_insert_with(|| watch::channel(0).0).clone()
+    }
+
+    fn seq(&self, account: &str) -> u64 {
+        self.db().query_row("SELECT seq FROM cuentas_sync WHERE cuenta = ?1", [account], |r| r.get::<_, i64>(0)).optional().ok().flatten().unwrap_or(0) as u64
+    }
+
+    fn used(&self, account: &str) -> u64 {
+        self.db().query_row("SELECT usado FROM cuentas_sync WHERE cuenta = ?1", [account], |r| r.get::<_, i64>(0)).optional().ok().flatten().unwrap_or(0) as u64
+    }
+
+    fn has_content(&self, account: &str, hash: &str) -> bool {
+        self.db().query_row("SELECT 1 FROM contenidos WHERE cuenta = ?1 AND hash = ?2", [account, hash], |_| Ok(())).optional().ok().flatten().is_some()
+    }
+
+    fn current(&self, account: &str, ruta: &str) -> Option<Entry> {
+        self.db()
+            .query_row("SELECT ruta, seq, hash, tam, borrado FROM archivos WHERE cuenta = ?1 AND ruta = ?2", [account, ruta], entry_of)
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    /// Lo que cambió desde `desde` (con 0, todo lo que existe), en orden.
+    fn since(&self, account: &str, desde: u64) -> Vec<Entry> {
+        let db = self.db();
+        let sql = if desde == 0 {
+            "SELECT ruta, seq, hash, tam, borrado FROM archivos WHERE cuenta = ?1 AND borrado = 0 ORDER BY ruta"
+        } else {
+            "SELECT ruta, seq, hash, tam, borrado FROM archivos WHERE cuenta = ?1 AND seq > ?2 ORDER BY seq"
+        };
+        let Ok(mut st) = db.prepare_cached(sql) else { return Vec::new() };
+        let rows = if desde == 0 { st.query_map(params![account], entry_of) } else { st.query_map(params![account, desde as i64], entry_of) };
+        rows.map(|r| r.flatten().collect()).unwrap_or_default()
+    }
+
+    /// Anota un cambio y avisa a los equipos que esperan. Devuelve su número.
+    async fn record(&self, account: &str, e: Entry) -> rusqlite::Result<u64> {
+        let seq = {
+            let mut db = self.db();
+            let tx = db.transaction()?;
+            let seq = record_in(&tx, account, &Entry { seq: 0, ..e }, now_secs())?;
+            tx.commit()?;
+            seq
+        };
+        let _ = self.sender(account).await.send(seq);
+        Ok(seq)
+    }
+
+    /// Una copia consistente de la base (aunque se esté usando), para el respaldo.
+    pub fn backup(&self, dest: &Path) -> rusqlite::Result<()> {
+        if let Some(dir) = dest.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let tmp = dest.with_extension("tmp");
+        let _ = std::fs::remove_file(&tmp);
+        self.db().execute("VACUUM INTO ?1", [tmp.to_string_lossy()])?;
+        std::fs::rename(&tmp, dest).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+    }
+
+    /// Cuántas cuentas sincronizan, cuántos archivos y cuánto espacio.
+    pub fn totals(&self) -> (u64, u64, u64) {
+        totals_of(&self.db())
     }
 }
 
-/// Índices abiertos y avisos, por cuenta.
-#[derive(Default)]
-pub struct Hub {
-    indexes: Mutex<HashMap<String, Arc<Mutex<Index>>>>,
-    notify: Mutex<HashMap<String, watch::Sender<u64>>>,
+fn totals_of(db: &Connection) -> (u64, u64, u64) {
+    let n = |sql: &str| db.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(0) as u64;
+    (n("SELECT count(*) FROM cuentas_sync"), n("SELECT count(*) FROM archivos WHERE borrado = 0"), n("SELECT coalesce(sum(usado), 0) FROM cuentas_sync"))
+}
+
+/// Lo mismo, solo leyendo la base (para `nodex-ia lista`, con el servidor andando).
+pub fn totals_at(data: &Path) -> Option<(u64, u64, u64)> {
+    let path = data.join(DB_FILE);
+    path.exists().then_some(())?;
+    let db = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+    Some(totals_of(&db))
 }
 
 fn dir(data: &Path, account: &str) -> PathBuf {
@@ -144,49 +328,6 @@ pub fn valid_path(ruta: &str) -> bool {
         && ruta.split('/').all(|p| !p.is_empty() && p != "." && p != "..")
 }
 
-/// Lee el diario de una cuenta.
-fn load(data: &Path, account: &str) -> Index {
-    let mut ix = Index::default();
-    let text = std::fs::read_to_string(dir(data, account).join("diario.jsonl")).unwrap_or_default();
-    for line in text.lines() {
-        let Ok(e) = serde_json::from_str::<Entry>(line) else { continue };
-        ix.seq = ix.seq.max(e.seq);
-        if !e.borrado {
-            ix.blobs.insert(e.hash.clone(), e.tam);
-        }
-        ix.files.insert(e.ruta.clone(), e);
-    }
-    ix
-}
-
-impl Hub {
-    async fn index(&self, data: &Path, account: &str) -> Arc<Mutex<Index>> {
-        let mut map = self.indexes.lock().await;
-        map.entry(account.to_string()).or_insert_with(|| Arc::new(Mutex::new(load(data, account)))).clone()
-    }
-
-    async fn sender(&self, account: &str) -> watch::Sender<u64> {
-        let mut map = self.notify.lock().await;
-        map.entry(account.to_string()).or_insert_with(|| watch::channel(0).0).clone()
-    }
-}
-
-/// Anota un cambio en el diario y en el índice, y avisa a los equipos que esperan.
-async fn record(state: &AppState, account: &str, ix: &mut Index, mut e: Entry) -> std::io::Result<u64> {
-    ix.seq += 1;
-    e.seq = ix.seq;
-    let d = dir(&state.settings.data, account);
-    std::fs::create_dir_all(&d)?;
-    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(d.join("diario.jsonl"))?;
-    writeln!(f, "{}", serde_json::to_string(&e).unwrap_or_default())?;
-    if !e.borrado {
-        ix.blobs.insert(e.hash.clone(), e.tam);
-    }
-    ix.files.insert(e.ruta.clone(), e);
-    let _ = state.sync.sender(account).await.send(ix.seq);
-    Ok(ix.seq)
-}
-
 #[derive(Deserialize)]
 pub struct Since {
     #[serde(default)]
@@ -207,10 +348,11 @@ pub async fn changes(State(state): State<Arc<AppState>>, headers: HeaderMap, Que
         Ok(a) => a,
         Err(r) => return r,
     };
-    let ix = state.sync.index(&state.settings.data, &acc.id).await;
-    let ix = ix.lock().await;
-    let cambios: Vec<Entry> = ix.files.values().filter(|e| e.seq > q.desde && !(q.desde == 0 && e.borrado)).cloned().collect();
-    Json(Changes { seq: ix.seq, cambios, usado: ix.used(), limite: state.settings.sync_limit }).into_response()
+    // El número primero: si algo cambia mientras se lee, la vuelta siguiente lo trae.
+    let seq = state.sync.seq(&acc.id);
+    let cambios = state.sync.since(&acc.id, q.desde);
+    let seq = cambios.iter().map(|e| e.seq).max().unwrap_or(0).max(seq);
+    Json(Changes { seq, cambios, usado: state.sync.used(&acc.id), limite: state.settings.sync_limit }).into_response()
 }
 
 /// Espera hasta que haya algo más nuevo que `desde` (o 25 s).
@@ -219,11 +361,11 @@ pub async fn wait(State(state): State<Arc<AppState>>, headers: HeaderMap, Query(
         Ok(a) => a,
         Err(r) => return r,
     };
-    let current = state.sync.index(&state.settings.data, &acc.id).await.lock().await.seq;
+    let mut rx = state.sync.sender(&acc.id).await.subscribe();
+    let current = state.sync.seq(&acc.id);
     if current > q.desde {
         return Json(serde_json::json!({ "seq": current })).into_response();
     }
-    let mut rx = state.sync.sender(&acc.id).await.subscribe();
     let _ = tokio::time::timeout(WAIT, async {
         while rx.changed().await.is_ok() {
             if *rx.borrow() > q.desde {
@@ -232,8 +374,7 @@ pub async fn wait(State(state): State<Arc<AppState>>, headers: HeaderMap, Query(
         }
     })
     .await;
-    let seq = state.sync.index(&state.settings.data, &acc.id).await.lock().await.seq;
-    Json(serde_json::json!({ "seq": seq })).into_response()
+    Json(serde_json::json!({ "seq": state.sync.seq(&acc.id) })).into_response()
 }
 
 /// El contenido de una versión, por su huella.
@@ -264,6 +405,29 @@ fn conflict(e: Option<&Entry>, seq: u64) -> Response {
     (StatusCode::CONFLICT, Json(cur)).into_response()
 }
 
+/// Guarda un contenido nuevo de una cuenta (con su turno tomado). Ok(None) = es el mismo que ya
+/// estaba; Err = la respuesta de error.
+async fn store(state: &AppState, account: &str, ruta: &str, body: &[u8]) -> Result<Option<(u64, String)>, Response> {
+    let hash = sha256(body);
+    let cur = state.sync.current(account, ruta);
+    if cur.as_ref().is_some_and(|e| !e.borrado && e.hash == hash) {
+        return Ok(None);
+    }
+    let fresh = !state.sync.has_content(account, &hash);
+    if fresh && state.sync.used(account) + body.len() as u64 > state.settings.sync_limit {
+        return Err(error(StatusCode::INSUFFICIENT_STORAGE, "Se llenó el espacio de tu cuenta para sincronizar."));
+    }
+    let file = blob_path(&state.settings.data, account, &hash);
+    if !has_blob(&file) && write_blob(&file, body).is_err() {
+        return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "No se pudo guardar el archivo; inténtalo de nuevo."));
+    }
+    let e = Entry { ruta: ruta.to_string(), seq: 0, hash: hash.clone(), tam: body.len() as u64, borrado: false };
+    match state.sync.record(account, e).await {
+        Ok(seq) => Ok(Some((seq, hash))),
+        Err(_) => Err(error(StatusCode::INTERNAL_SERVER_ERROR, "No se pudo guardar el cambio; inténtalo de nuevo.")),
+    }
+}
+
 /// Subir un archivo (el cuerpo es su contenido) partiendo de la versión `base` (0 = nuevo).
 pub async fn put(State(state): State<Arc<AppState>>, headers: HeaderMap, Query(t): Query<Target>, body: Bytes) -> Response {
     let acc = match crate::accounts::account_of(&state, &headers).await {
@@ -276,31 +440,17 @@ pub async fn put(State(state): State<Arc<AppState>>, headers: HeaderMap, Query(t
     if body.len() > MAX_FILE {
         return error(StatusCode::PAYLOAD_TOO_LARGE, "El archivo es demasiado grande para sincronizarlo (máximo 50 MB).");
     }
-    let hash = sha256(&body);
-    let data = state.settings.data.clone();
-    let ix = state.sync.index(&data, &acc.id).await;
-    let mut ix = ix.lock().await;
-    let cur = ix.files.get(&t.ruta);
-    let cur_seq = cur.map_or(0, |e| e.seq);
+    let _turn = state.sync.turn(&acc.id).await;
+    let cur = state.sync.current(&acc.id, &t.ruta);
+    let cur_seq = cur.as_ref().map_or(0, |e| e.seq);
     if cur_seq != t.base {
-        return conflict(cur, cur_seq);
+        return conflict(cur.as_ref(), cur_seq);
     }
-    // Lo mismo que ya está: no es un cambio.
-    if cur.is_some_and(|e| !e.borrado && e.hash == hash) {
-        return Json(serde_json::json!({ "seq": cur_seq, "hash": hash })).into_response();
-    }
-    let new_blob = !ix.blobs.contains_key(&hash);
-    if new_blob && ix.used() + body.len() as u64 > state.settings.sync_limit {
-        return error(StatusCode::INSUFFICIENT_STORAGE, "Se llenó el espacio de tu cuenta para sincronizar.");
-    }
-    let file = blob_path(&data, &acc.id, &hash);
-    if !has_blob(&file) && write_blob(&file, &body).is_err() {
-        return error(StatusCode::INTERNAL_SERVER_ERROR, "No se pudo guardar el archivo; inténtalo de nuevo.");
-    }
-    let e = Entry { ruta: t.ruta.clone(), seq: 0, hash: hash.clone(), tam: body.len() as u64, borrado: false };
-    match record(&state, &acc.id, &mut ix, e).await {
-        Ok(seq) => Json(serde_json::json!({ "seq": seq, "hash": hash })).into_response(),
-        Err(_) => error(StatusCode::INTERNAL_SERVER_ERROR, "No se pudo guardar el cambio; inténtalo de nuevo."),
+    match store(&state, &acc.id, &t.ruta, &body).await {
+        Ok(Some((seq, hash))) => Json(serde_json::json!({ "seq": seq, "hash": hash })).into_response(),
+        // Lo mismo que ya está: no es un cambio.
+        Ok(None) => Json(serde_json::json!({ "seq": cur_seq, "hash": sha256(&body) })).into_response(),
+        Err(r) => r,
     }
 }
 
@@ -313,18 +463,17 @@ pub async fn delete(State(state): State<Arc<AppState>>, headers: HeaderMap, Quer
     if !valid_path(&t.ruta) {
         return error(StatusCode::BAD_REQUEST, "Ruta inválida.");
     }
-    let ix = state.sync.index(&state.settings.data, &acc.id).await;
-    let mut ix = ix.lock().await;
-    let cur = ix.files.get(&t.ruta);
-    let cur_seq = cur.map_or(0, |e| e.seq);
-    if cur.is_none_or(|e| e.borrado) {
+    let _turn = state.sync.turn(&acc.id).await;
+    let cur = state.sync.current(&acc.id, &t.ruta);
+    let cur_seq = cur.as_ref().map_or(0, |e| e.seq);
+    if cur.as_ref().is_none_or(|e| e.borrado) {
         return Json(serde_json::json!({ "seq": cur_seq })).into_response();
     }
     if cur_seq != t.base {
-        return conflict(cur, cur_seq);
+        return conflict(cur.as_ref(), cur_seq);
     }
     let e = Entry { ruta: t.ruta.clone(), seq: 0, hash: String::new(), tam: 0, borrado: true };
-    match record(&state, &acc.id, &mut ix, e).await {
+    match state.sync.record(&acc.id, e).await {
         Ok(seq) => Json(serde_json::json!({ "seq": seq })).into_response(),
         Err(_) => error(StatusCode::INTERNAL_SERVER_ERROR, "No se pudo guardar el cambio; inténtalo de nuevo."),
     }
@@ -336,9 +485,7 @@ pub async fn delete(State(state): State<Arc<AppState>>, headers: HeaderMap, Quer
 
 /// Los archivos vigentes de una cuenta.
 pub(crate) async fn files(state: &AppState, account: &str) -> Vec<Entry> {
-    let ix = state.sync.index(&state.settings.data, account).await;
-    let ix = ix.lock().await;
-    ix.files.values().filter(|e| !e.borrado).cloned().collect()
+    state.sync.since(account, 0)
 }
 
 /// El texto de una versión, por su huella.
@@ -349,47 +496,34 @@ pub(crate) fn blob_text(state: &AppState, account: &str, hash: &str) -> Option<S
 
 /// El texto vigente de un archivo y su versión.
 pub(crate) async fn read_text(state: &AppState, account: &str, ruta: &str) -> Option<(String, u64)> {
-    let e = {
-        let ix = state.sync.index(&state.settings.data, account).await;
-        let ix = ix.lock().await;
-        ix.files.get(ruta).filter(|e| !e.borrado).cloned()?
-    };
+    let e = state.sync.current(account, ruta).filter(|e| !e.borrado)?;
     Some((blob_text(state, account, &e.hash)?, e.seq))
 }
 
 /// Cambia un archivo de texto: `f` recibe el texto vigente (None si no existe) y devuelve el
-/// nuevo (None = no cambiarlo). Todo con el índice tomado, para que dos cambios seguidos no se
-/// pisen. Devuelve la versión nueva (None si no cambió).
+/// nuevo (None = no cambiarlo). Todo con el turno de la cuenta tomado, para que dos cambios
+/// seguidos no se pisen. Devuelve la versión nueva (None si no cambió).
 pub(crate) async fn modify(state: &AppState, account: &str, ruta: &str, f: impl FnOnce(Option<&str>) -> Option<String>) -> Result<Option<u64>, String> {
     if !valid_path(ruta) {
         return Err("Ruta inválida.".into());
     }
-    let data = state.settings.data.clone();
-    let ix = state.sync.index(&data, account).await;
-    let mut ix = ix.lock().await;
-    let cur = ix.files.get(ruta).filter(|e| !e.borrado).cloned();
+    let _turn = state.sync.turn(account).await;
+    let cur = state.sync.current(account, ruta).filter(|e| !e.borrado);
     let old = match &cur {
-        Some(e) => Some(read_blob(&blob_path(&data, account, &e.hash)).map(|b| String::from_utf8_lossy(&b).into_owned()).map_err(|e| e.to_string())?),
+        Some(e) => Some(read_blob(&blob_path(&state.settings.data, account, &e.hash)).map(|b| String::from_utf8_lossy(&b).into_owned()).map_err(|e| e.to_string())?),
         None => None,
     };
     let Some(new) = f(old.as_deref()) else { return Ok(None) };
     if old.as_deref() == Some(new.as_str()) {
         return Ok(None);
     }
-    let body = new.into_bytes();
-    if body.len() > MAX_FILE {
+    if new.len() > MAX_FILE {
         return Err("El archivo es demasiado grande.".into());
     }
-    let hash = sha256(&body);
-    if !ix.blobs.contains_key(&hash) && ix.used() + body.len() as u64 > state.settings.sync_limit {
-        return Err("Se llenó el espacio de tu cuenta para sincronizar.".into());
+    match store(state, account, ruta, new.as_bytes()).await {
+        Ok(r) => Ok(r.map(|(seq, _)| seq)),
+        Err(_) => Err("No se pudo guardar el cambio.".into()),
     }
-    let file = blob_path(&data, account, &hash);
-    if !has_blob(&file) {
-        write_blob(&file, &body).map_err(|e| e.to_string())?;
-    }
-    let e = Entry { ruta: ruta.to_string(), seq: 0, hash, tam: body.len() as u64, borrado: false };
-    record(state, account, &mut ix, e).await.map(Some).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -429,6 +563,48 @@ mod tests {
         assert!(compress_old(&data) > 0);
         assert!(!h.exists() && has_blob(&h));
         assert_eq!(read_blob(&h).unwrap(), old);
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// Lo que había en diario.jsonl (antes de SQLite) pasa a la base una sola vez, con sus números,
+    /// y la sincronización sigue desde ahí.
+    #[tokio::test]
+    async fn moves_the_old_journal_to_sqlite() {
+        let data = std::env::temp_dir().join(format!("nodex-ia-sqlite-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&data);
+        let d = dir(&data, "c1");
+        std::fs::create_dir_all(&d).unwrap();
+        let lines = [
+            Entry { ruta: "Obra/Muro.md".into(), seq: 1, hash: "a".repeat(64), tam: 10, borrado: false },
+            Entry { ruta: "tareas.txt".into(), seq: 2, hash: "b".repeat(64), tam: 20, borrado: false },
+            Entry { ruta: "Obra/Muro.md".into(), seq: 3, hash: "c".repeat(64), tam: 30, borrado: false },
+            Entry { ruta: "tareas.txt".into(), seq: 4, hash: String::new(), tam: 0, borrado: true },
+        ];
+        let text: String = lines.iter().map(|e| serde_json::to_string(e).unwrap() + "
+").collect();
+        std::fs::write(d.join("diario.jsonl"), text).unwrap();
+        let hub = Hub::open(&data);
+        assert!(!d.join("diario.jsonl").exists() && d.join("diario.jsonl.migrado").exists());
+        assert_eq!(hub.seq("c1"), 4);
+        assert_eq!(hub.used("c1"), 60, "todo lo guardado cuenta");
+        let all = hub.since("c1", 0);
+        assert_eq!(all.len(), 1, "tareas.txt se borró");
+        assert_eq!((all[0].ruta.as_str(), all[0].seq, all[0].tam), ("Obra/Muro.md", 3, 30));
+        assert_eq!(hub.since("c1", 3).iter().map(|e| (e.ruta.as_str(), e.borrado)).collect::<Vec<_>>(), vec![("tareas.txt", true)]);
+        // Lo nuevo sigue la numeración.
+        let seq = hub.record("c1", Entry { ruta: "Obra/Losa.md".into(), seq: 0, hash: "d".repeat(64), tam: 5, borrado: false }).await.unwrap();
+        assert_eq!(seq, 5);
+        assert_eq!(hub.used("c1"), 65);
+        // Volver a abrir no repite nada; la copia de respaldo se puede abrir.
+        drop(hub);
+        let hub = Hub::open(&data);
+        assert_eq!((hub.seq("c1"), hub.since("c1", 0).len()), (5, 2));
+        hub.backup(&data.join("respaldo").join(DB_FILE)).unwrap();
+        let copy = Connection::open(data.join("respaldo").join(DB_FILE)).unwrap();
+        let n: i64 = copy.query_row("SELECT count(*) FROM cambios WHERE cuenta = 'c1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 5);
+        assert_eq!(hub.totals(), (1, 2, 65));
+        drop(hub);
         let _ = std::fs::remove_dir_all(&data);
     }
 

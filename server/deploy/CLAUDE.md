@@ -125,7 +125,9 @@ nia desactivar 3fa9c1             # deja sin IA a una persona (primeras letras d
 - **Actualizar ahora:** `sudo systemctl start nodex-ia-actualizar` y `journalctl -u nodex-ia-actualizar -n 20`.
 - **Ver qué pasa:** `journalctl -u nodex-ia -f` · `systemctl status nodex-ia cloudflared`.
 - **Respaldo ahora:** `sudo systemctl start nodex-ia-respaldo`. Los datos viven en `/var/lib/nodex-ia`
-  (`cuentas.json`, `usuarios.json`, `config/`, `uso/`). Para restaurar: detener el servicio,
-  descomprimir el respaldo en `/var/lib/`, `chown -R nodex-ia:nodex-ia /var/lib/nodex-ia` y arrancar.
+  (`cuentas.json`, `usuarios.json`, `config/`, `uso/`, `notas.db` y `sync/`). Para restaurar: detener
+  el servicio, descomprimir el respaldo en `/var/lib/`, reemplazar `notas.db` por la copia
+  consistente `respaldo/notas.db` (y borrar `notas.db-wal` y `notas.db-shm`),
+  `chown -R nodex-ia:nodex-ia /var/lib/nodex-ia` y arrancar.
 - **Cambiar el modelo o los límites:** editar `/etc/nodex-ia.env` (la persona, si hay claves de por
   medio) y `sudo systemctl restart nodex-ia`.

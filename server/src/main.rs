@@ -45,7 +45,21 @@ async fn main() {
                     println!("archivos de notas comprimidos: {} KB menos", saved / 1024);
                 }
             });
-            axum::serve(listener, router(state(settings)))
+            let st = state(settings);
+            // Una copia consistente de la base de la sincronización, para el respaldo diario.
+            let backup = st.clone();
+            tokio::spawn(async move {
+                loop {
+                    let b = backup.clone();
+                    let dest = b.settings.data.join("respaldo").join(nodex_ia::sync::DB_FILE);
+                    let r = tokio::task::spawn_blocking(move || b.sync.backup(&dest)).await;
+                    if let Ok(Err(e)) = r {
+                        eprintln!("no se pudo copiar la base para el respaldo: {e}");
+                    }
+                    tokio::time::sleep(nodex_ia::sync::BACKUP_EVERY).await;
+                }
+            });
+            axum::serve(listener, router(st))
                 .with_graceful_shutdown(async {
                     let _ = tokio::signal::ctrl_c().await;
                 })

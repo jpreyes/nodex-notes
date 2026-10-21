@@ -102,9 +102,13 @@ nodex-ia rechazar ana@correo.cl # no la aprueba
 
 Los datos están en `NOTAS_IA_DATA`: `usuarios.json` (códigos), `cuentas.json` (cuentas y
 sesiones), `config/` (la configuración cifrada de cada cuenta), `uso/AAAA-MM.json` (uso de cada
-mes) y `sync/<cuenta>/` (las notas sincronizadas: `diario.jsonl`, una línea por cambio, y `blobs/`,
-el contenido de cada versión por su huella; nada se borra, es el historial). Conviene respaldar
-esa carpeta.
+mes), `notas.db` (SQLite: el índice de las notas sincronizadas, cada versión vigente y el historial
+de cambios de cada cuenta) y `sync/<cuenta>/blobs/` (el contenido de cada versión por su huella,
+comprimido; nada se borra, es el historial). Cada 6 horas el servidor deja una copia consistente
+de la base en `respaldo/notas.db`, que es la que hay que usar al restaurar. Conviene respaldar
+toda la carpeta (lo hace `nodex-ia-respaldo`). Las cuentas que venían de antes de SQLite
+(`sync/<cuenta>/diario.jsonl`) pasan solas a la base al arrancar; el diario queda como
+`diario.jsonl.migrado`.
 
 ## Sincronización de las notas
 

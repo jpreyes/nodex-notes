@@ -425,8 +425,9 @@ pub fn router(state: Arc<AppState>) -> Router {
 }
 
 pub fn state(settings: Settings) -> Arc<AppState> {
+    let data = settings.data.clone();
     let store = Store::load(&settings.data);
-    Arc::new(AppState { settings, store: Mutex::new(store), pending: Mutex::new(accounts::Pending::default()), http: reqwest::Client::new(), sync: sync::Hub::default() })
+    Arc::new(AppState { settings, store: Mutex::new(store), pending: Mutex::new(accounts::Pending::default()), http: reqwest::Client::new(), sync: sync::Hub::open(&data) })
 }
 
 /// El uso del mes de cada persona, con su costo estimado (para `nodex-ia lista`).
@@ -457,6 +458,9 @@ pub fn report(settings: &Settings) -> String {
         out += &format!("{:<32} {:<22} {:>10} tokens  {:>5} pedidos  ~{cost:.2} USD\n", a.correo, plan, usage.total(), usage.pedidos);
     }
     out += &format!("Costo estimado del mes: ~{total:.2} USD\n");
+    if let Some((accounts, files, used)) = sync::totals_at(&settings.data) {
+        out += &format!("Sincronización: {accounts} cuentas · {files} archivos · {:.1} MB guardados\n", used as f64 / 1048576.0);
+    }
     out
 }
 
