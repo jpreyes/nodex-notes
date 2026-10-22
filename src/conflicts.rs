@@ -5,6 +5,7 @@
 //! las notas se juntan con `merge::union`.
 
 use crate::agenda;
+use std::collections::HashMap;
 
 /// Si el nombre es el de una copia en conflicto, el nombre del archivo original.
 /// "Obra (copia en conflicto de JP 2026-09-30).md" -> "Obra.md".
@@ -77,9 +78,107 @@ pub fn merge_tasks(main: &str, copy: &str) -> String {
     text
 }
 
+/// Junta dos versiones de tareas.txt que partieron de `base` (al sincronizar): tarea por tarea
+/// (por su `id:`, o su texto y su nota), lo que cambió un solo lado gana; si cambiaron los dos,
+/// gana la hecha (o la de aquí); lo que se borró en un lado sin cambiar en el otro, se va; lo
+/// nuevo de los dos queda. Así no vuelven tareas borradas ni quedan dos versiones de una.
+pub fn merge_tasks3(base: &str, mine: &str, theirs: &str) -> String {
+    fn key(l: &str) -> String {
+        match agenda::parse_task(l) {
+            Some(t) => match t.id {
+                Some(id) => format!("id:{id}"),
+                None => format!("t:{}|{}", t.text.to_lowercase(), t.note.unwrap_or_default()),
+            },
+            None => format!("l:{l}"),
+        }
+    }
+    fn map(text: &str) -> (Vec<String>, HashMap<String, String>) {
+        let mut order = Vec::new();
+        let mut m = HashMap::new();
+        for l in text.lines().filter(|l| !l.trim().is_empty()) {
+            let k = key(l);
+            if m.insert(k.clone(), l.to_string()).is_none() {
+                order.push(k);
+            }
+        }
+        (order, m)
+    }
+    let done = |l: &str| agenda::parse_task(l).is_some_and(|t| t.done);
+    let (_, b) = map(base);
+    let (mine_order, o) = map(mine);
+    let (theirs_order, t) = map(theirs);
+    let mut out = Vec::new();
+    for k in mine_order.iter().chain(theirs_order.iter().filter(|k| !o.contains_key(*k))) {
+        let line = match (b.get(k), o.get(k), t.get(k)) {
+            (_, Some(x), Some(y)) if x == y => Some(x),
+            (Some(b), Some(x), Some(y)) if x == b => Some(y),
+            (Some(b), Some(x), Some(y)) if y == b => Some(x),
+            (_, Some(x), Some(y)) => Some(if done(y) && !done(x) { y } else { x }),
+            // Borrada en un lado: se va, salvo que el otro la haya cambiado.
+            (Some(b), Some(x), None) => (x != b).then_some(x),
+            (Some(b), None, Some(y)) => (y != b).then_some(y),
+            (None, Some(x), None) => Some(x),
+            (None, None, Some(y)) => Some(y),
+            (_, None, None) => None,
+        };
+        out.extend(line.cloned());
+    }
+    let mut text = out.join("\n");
+    if !text.is_empty() {
+        text.push('\n');
+    }
+    text
+}
+
+/// Lo mismo para una lista de líneas sueltas (agenda.txt, aprendido.txt): quedan las que siguen
+/// en los dos lados y las nuevas de cada uno; las que un lado borró, se van.
+pub fn merge_lines3(base: &str, mine: &str, theirs: &str) -> String {
+    let set = |s: &str| s.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect::<Vec<_>>();
+    let (b, o, t) = (set(base), set(mine), set(theirs));
+    let mut out: Vec<String> = Vec::new();
+    for l in o.iter().chain(t.iter()) {
+        if out.contains(l) {
+            continue;
+        }
+        let (in_b, in_o, in_t) = (b.contains(l), o.contains(l), t.contains(l));
+        if (in_o && in_t) || !in_b {
+            out.push(l.clone());
+        }
+    }
+    let mut text = out.join("\n");
+    if !text.is_empty() {
+        text.push('\n');
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Las tareas se juntan con la versión de la que partieron: lo borrado no vuelve, lo hecho
+    /// queda hecho, lo cambiado en un lado gana y no quedan dos versiones de una misma tarea.
+    #[test]
+    fn merges_task_lists_with_their_base() {
+        let base = "2026-10-01 Enviar planos +Obra id:pl001\n2026-10-01 Llamar a Pedro +General id:pe002\n2026-10-01 Comprar pan +General\n2026-10-01 Pagar luz +General id:lu004\n";
+        // Aquí: se hizo «Enviar planos» y se borró «Comprar pan».
+        let mine = "x 2026-10-02 2026-10-01 Enviar planos +Obra id:pl001\n2026-10-01 Llamar a Pedro +General id:pe002\n2026-10-01 Pagar luz +General id:lu004\n";
+        // Allá: «Llamar a Pedro» tiene fecha, se borró «Pagar luz» y hay una nueva.
+        let theirs = "2026-10-01 Enviar planos +Obra id:pl001\n2026-10-01 Llamar a Pedro +General due:2026-10-05 id:pe002\n2026-10-01 Comprar pan +General\n2026-10-02 Nueva del celular +General id:nu005\n";
+        assert_eq!(
+            merge_tasks3(base, mine, theirs),
+            "x 2026-10-02 2026-10-01 Enviar planos +Obra id:pl001\n2026-10-01 Llamar a Pedro +General due:2026-10-05 id:pe002\n2026-10-02 Nueva del celular +General id:nu005\n"
+        );
+        // Cambiada en los dos: gana la hecha.
+        let a = "2026-10-01 Llamar a Pedro +General due:2026-10-06 id:pe002\n";
+        let b = "x 2026-10-02 2026-10-01 Llamar a Pedro +General id:pe002\n";
+        assert_eq!(merge_tasks3("2026-10-01 Llamar a Pedro +General id:pe002\n", a, b), b);
+        // Sin base (los dos la crearon): quedan las de los dos, sin repetir.
+        assert_eq!(merge_tasks3("", "2026-10-01 A +G id:a1\n", "2026-10-01 A +G id:a1\n2026-10-01 B +G id:b2\n"), "2026-10-01 A +G id:a1\n2026-10-01 B +G id:b2\n");
+        // Agenda y otras listas.
+        let base = "2026-10-03 Visita +Obra\n2026-10-04 Clase +U\n";
+        assert_eq!(merge_lines3(base, "2026-10-03 Visita +Obra\n2026-10-05 Dentista +G\n", "2026-10-03 Visita +Obra\n2026-10-04 Clase +U\n2026-10-06 Webinar +U\n"), "2026-10-03 Visita +Obra\n2026-10-05 Dentista +G\n2026-10-06 Webinar +U\n");
+    }
 
     #[test]
     fn recognizes_conflicted_copies() {

@@ -9,7 +9,9 @@
 //! servidor acepta solo si nadie lo cambió desde esa versión; si no, en la vuelta siguiente se
 //! baja la vigente y se junta:
 //! - notas y texto (`.md`, `.txt`): línea por línea con la versión base (`merge::merge3`);
-//! - lo demás (datos internos, tareas, imágenes): la otra versión queda como «copia en conflicto»
+//!   las tareas, tarea por tarea (`conflicts::merge_tasks3`), y la agenda y lo aprendido, línea
+//!   por línea como lista (`conflicts::merge_lines3`): lo borrado en un lado no vuelve;
+//! - lo demás (datos internos, imágenes): la otra versión queda como «copia en conflicto»
 //!   al lado, y la app la junta sola (o quedan las dos, si es una imagen).
 //!
 //! Lo que recuerda este equipo va en `sincronizacion-<carpeta>.json` junto a la configuración.
@@ -171,10 +173,11 @@ fn copy_name(path: &Path) -> PathBuf {
     p
 }
 
-/// ¿Se junta línea por línea? (las notas y el texto; las listas de la app se juntan desde copias)
+/// ¿Se junta aquí mismo? (las notas y el texto, y las listas de la app: tareas, agenda y lo
+/// aprendido; los datos internos se juntan desde una copia)
 fn mergeable(rel: &str) -> bool {
     let lower = rel.to_lowercase();
-    (lower.ends_with(".md") || lower.ends_with(".txt")) && !rel.starts_with(".nodex/") && !matches!(rel, "tareas.txt" | "agenda.txt" | "aprendido.txt")
+    (lower.ends_with(".md") || lower.ends_with(".txt")) && !rel.starts_with(".nodex/")
 }
 
 /// La conexión con el servidor.
@@ -234,8 +237,8 @@ impl Remote {
         })
     }
 
-    /// Sube un archivo. `Ok(Some(seq))` si quedó; `Ok(None)` si había una versión más nueva.
-    fn put(&self, rel: &str, base: u64, bytes: Vec<u8>) -> Result<Option<u64>, String> {
+    /// Sube un archivo. `Ok(Ok(seq))` si quedó; `Ok(Err(vigente))` si había otra versión.
+    fn put(&self, rel: &str, base: u64, bytes: Vec<u8>) -> Result<Result<u64, Entry>, String> {
         self.rt.block_on(async {
             let r = self
                 .http
@@ -247,14 +250,14 @@ impl Remote {
                 .await
                 .map_err(Self::fail)?;
             match r.status().as_u16() {
-                200 => Ok(r.json::<serde_json::Value>().await.ok().and_then(|v| v["seq"].as_u64())),
-                409 => Ok(None),
+                200 => Ok(r.json::<serde_json::Value>().await.ok().and_then(|v| v["seq"].as_u64()).ok_or_else(Entry::default)),
+                409 => Ok(Err(r.json::<Entry>().await.unwrap_or_default())),
                 _ => Err(Self::message(r).await),
             }
         })
     }
 
-    fn delete(&self, rel: &str, base: u64) -> Result<Option<u64>, String> {
+    fn delete(&self, rel: &str, base: u64) -> Result<Result<u64, Entry>, String> {
         self.rt.block_on(async {
             let r = self
                 .http
@@ -265,8 +268,8 @@ impl Remote {
                 .await
                 .map_err(Self::fail)?;
             match r.status().as_u16() {
-                200 => Ok(r.json::<serde_json::Value>().await.ok().and_then(|v| v["seq"].as_u64())),
-                409 => Ok(None),
+                200 => Ok(r.json::<serde_json::Value>().await.ok().and_then(|v| v["seq"].as_u64()).ok_or_else(Entry::default)),
+                409 => Ok(Err(r.json::<Entry>().await.unwrap_or_default())),
                 _ => Err(Self::message(r).await),
             }
         })
@@ -402,12 +405,15 @@ impl Engine {
             if mergeable(&c.ruta) {
                 let theirs = String::from_utf8_lossy(&remote).into_owned();
                 let ours = String::from_utf8_lossy(&mine).into_owned();
-                let merged = match base.as_ref().filter(|b| !b.hash.is_empty()) {
-                    Some(b) => {
-                        let old = String::from_utf8_lossy(&self.remote.blob(&b.hash)?).into_owned();
-                        crate::merge::merge3(&old, &ours, &theirs).text
-                    }
-                    None => crate::merge::union(&ours, &theirs),
+                let old = match base.as_ref().filter(|b| !b.hash.is_empty()) {
+                    Some(b) => Some(String::from_utf8_lossy(&self.remote.blob(&b.hash)?).into_owned()),
+                    None => None,
+                };
+                let merged = match (c.ruta.as_str(), &old) {
+                    ("tareas.txt", _) => crate::conflicts::merge_tasks3(old.as_deref().unwrap_or(""), &ours, &theirs),
+                    ("agenda.txt" | "aprendido.txt", _) => crate::conflicts::merge_lines3(old.as_deref().unwrap_or(""), &ours, &theirs),
+                    (_, Some(old)) => crate::merge::merge3(old, &ours, &theirs).text,
+                    (_, None) => crate::merge::union(&ours, &theirs),
                 };
                 write_atomic(&path, merged.as_bytes()).map_err(|e| tf!("no se pudo escribir {ruta}: {e}", ruta = c.ruta, e = e))?;
             } else {
@@ -443,25 +449,44 @@ impl Engine {
             }
         }
         self.status.pending = todo.len();
+        // Versiones del servidor que no se alcanzaron a bajar: se vuelven a pedir.
+        let mut missed: Option<u64> = None;
         for (rel, meta) in todo {
             let base = self.state.archivos.get(&rel).map_or(0, |b| b.seq);
             match meta {
                 Some(_) => {
                     let Ok(bytes) = fs::read(local(&self.root, &rel)) else { continue };
                     let hash = sha256(&bytes);
-                    if let Some(seq) = self.remote.put(&rel, base, bytes)? {
-                        self.remember(&rel, seq, &hash);
-                        report.uploaded += 1;
+                    let mut done = self.remote.put(&rel, base, bytes.clone())?;
+                    // Allá estaba borrado y aquí se volvió a escribir: se sube de nuevo, sobre el borrado.
+                    if let Err(cur) = &done {
+                        if cur.borrado && cur.seq > 0 {
+                            done = self.remote.put(&rel, cur.seq, bytes)?;
+                        }
+                    }
+                    match done {
+                        Ok(seq) => {
+                            self.remember(&rel, seq, &hash);
+                            report.uploaded += 1;
+                        }
+                        Err(cur) if cur.seq > 0 => missed = Some(missed.map_or(cur.seq, |m| m.min(cur.seq))),
+                        Err(_) => {}
                     }
                 }
-                None => {
-                    if let Some(seq) = self.remote.delete(&rel, base)? {
+                None => match self.remote.delete(&rel, base)? {
+                    Ok(seq) => {
                         self.state.archivos.insert(rel.clone(), Base { seq, ..Base::default() });
                         report.deleted += 1;
                     }
-                }
+                    Err(cur) if cur.seq > 0 => missed = Some(missed.map_or(cur.seq, |m| m.min(cur.seq))),
+                    Err(_) => {}
+                },
             }
             self.status.pending = self.status.pending.saturating_sub(1);
+        }
+        // La próxima vuelta las baja y las junta con lo de aquí.
+        if let Some(m) = missed {
+            self.state.seq = self.state.seq.min(m.saturating_sub(1));
         }
         Ok(())
     }
@@ -680,6 +705,60 @@ mod tests {
         let _ = fs::remove_dir_all(&data);
     }
 
+    /// Lo que pasó con la nota del 14 de octubre: se borró (la IA la vació) y después se volvió a
+    /// escribir aquí; tiene que llegar a los otros equipos. Y una versión del servidor que este
+    /// equipo no alcanzó a bajar se baja y se junta, en vez de quedar cada equipo con la suya.
+    #[test]
+    fn deleted_then_written_again_and_missed_versions() {
+        let (_rt, base, token, data) = server("borrada");
+        let mut a = device("ba", &base, &token);
+        let mut b = device("bb", &base, &token);
+        write(&a, "Diario/2026-10-14.md", "Revisar el presupuesto\n");
+        a.cycle().unwrap();
+        b.cycle().unwrap();
+        // Se borra en A (a la papelera) y B lo sabe.
+        fs::remove_file(local(&a.root, "Diario/2026-10-14.md")).unwrap();
+        assert_eq!(a.cycle().unwrap().deleted, 1);
+        b.cycle().unwrap();
+        assert!(read(&b, "Diario/2026-10-14.md").is_none());
+        // Llega un correo y A la vuelve a escribir: sube y B la recibe.
+        write(&a, "Diario/2026-10-14.md", "Correo de Marco Pavie: reparto del 20%\n");
+        assert_eq!(a.cycle().unwrap().uploaded, 1);
+        b.cycle().unwrap();
+        assert_eq!(read(&b, "Diario/2026-10-14.md").as_deref(), Some("Correo de Marco Pavie: reparto del 20%\n"));
+
+        // A no alcanzó a bajar una versión de B (como si se hubiera saltado) y escribe la suya.
+        write(&b, "General/Ideas.md", "Comprar un taladro\n");
+        b.cycle().unwrap();
+        a.state.seq += 1000;
+        write(&a, "General/Ideas.md", "Pedir brocas\n");
+        a.cycle().unwrap(); // el servidor la rechaza: A vuelve a pedir lo que le faltó
+        a.cycle().unwrap(); // la baja, la junta y sube lo juntado
+        b.cycle().unwrap();
+        let joined = read(&a, "General/Ideas.md").unwrap();
+        assert!(joined.contains("Comprar un taladro") && joined.contains("Pedir brocas"), "{joined}");
+        assert_eq!(read(&b, "General/Ideas.md").as_deref(), Some(joined.as_str()), "los dos quedan con la misma");
+
+        // Las tareas se juntan tarea por tarea: lo borrado en un lado no vuelve.
+        write(&a, "tareas.txt", "2026-10-01 Enviar planos +Obra id:pl001\n2026-10-01 Comprar pan +General id:pa002\n");
+        a.cycle().unwrap();
+        b.cycle().unwrap();
+        write(&a, "tareas.txt", "x 2026-10-02 2026-10-01 Enviar planos +Obra id:pl001\n2026-10-01 Comprar pan +General id:pa002\n");
+        write(&b, "tareas.txt", "2026-10-01 Enviar planos +Obra id:pl001\n2026-10-02 Nueva +General id:nu003\n");
+        a.cycle().unwrap();
+        b.cycle().unwrap();
+        a.cycle().unwrap();
+        let want = "x 2026-10-02 2026-10-01 Enviar planos +Obra id:pl001\n2026-10-02 Nueva +General id:nu003\n";
+        assert_eq!(read(&b, "tareas.txt").as_deref(), Some(want));
+        assert_eq!(read(&a, "tareas.txt").as_deref(), Some(want));
+        assert!(fs::read_dir(&b.root).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().contains("conflicto")), "sin copias en conflicto");
+
+        for e in [&a, &b] {
+            let _ = fs::remove_dir_all(&e.root);
+        }
+        let _ = fs::remove_dir_all(&data);
+    }
+
     #[test]
     fn what_is_synced() {
         assert!(syncable("Obra Talca/Muro.md") && syncable(".nodex/dudas.json") && syncable(".papelera/x.md") && syncable("Adjuntos/foto.jpg"));
@@ -687,6 +766,6 @@ mod tests {
         assert!(!syncable("Obra/Muro (copia en conflicto de Notas).md"), "las copias se juntan aquí");
         assert_eq!(copy_name(Path::new("C:/x/Muro.md")).file_name().unwrap().to_string_lossy(), "Muro (copia en conflicto de Notas).md");
         assert_eq!(crate::conflicts::original_of("dudas (copia en conflicto de Notas).json").as_deref(), Some("dudas.json"));
-        assert!(mergeable("Obra/Muro.md") && mergeable("Bloc.md") && !mergeable("tareas.txt") && !mergeable(".nodex/x.json") && !mergeable("Adjuntos/a.png"));
+        assert!(mergeable("Obra/Muro.md") && mergeable("Bloc.md") && mergeable("tareas.txt") && !mergeable(".nodex/x.json") && !mergeable("Adjuntos/a.png"));
     }
 }

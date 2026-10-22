@@ -443,7 +443,9 @@ pub async fn put(State(state): State<Arc<AppState>>, headers: HeaderMap, Query(t
     let _turn = state.sync.turn(&acc.id).await;
     let cur = state.sync.current(&acc.id, &t.ruta);
     let cur_seq = cur.as_ref().map_or(0, |e| e.seq);
-    if cur_seq != t.base {
+    // Un archivo borrado se puede volver a crear sin conocer el borrado (base 0).
+    let recreate = t.base == 0 && cur.as_ref().is_some_and(|e| e.borrado);
+    if cur_seq != t.base && !recreate {
         return conflict(cur.as_ref(), cur_seq);
     }
     match store(&state, &acc.id, &t.ruta, &body).await {
