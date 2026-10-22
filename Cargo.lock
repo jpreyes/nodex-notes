@@ -3292,7 +3292,7 @@ dependencies = [
 
 [[package]]
 name = "nodex-ia"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "argon2",
  "axum",
@@ -3310,7 +3310,7 @@ dependencies = [
 
 [[package]]
 name = "nodex-notes"
-version = "0.52.1"
+version = "0.52.2"
 dependencies = [
  "arboard",
  "axum",

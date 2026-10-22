@@ -188,13 +188,16 @@ pub async fn today(State(state): State<Arc<AppState>>, headers: HeaderMap, Query
         .filter(|e| d.marks.get(&event_mark_key(e)).is_none_or(|m| m != "tarea" && m != "quitado"))
         .collect();
     events.sort_by(|a, b| (&a.date, &a.time).cmp(&(&b.date, &b.time)));
-    let proposals: Vec<Value> = d
-        .proposals
-        .iter()
-        .filter_map(|(k, l)| Some((k, fmt::parse_event(l)?)))
-        .filter(|(_, e)| e.date >= today)
-        .map(|(k, e)| json!({ "clave": k, "evento": event_json(&e, false) }))
-        .collect();
+    // El mismo evento escrito de otra forma, una vez; por fecha y hora.
+    let mut pending: Vec<(&String, Event)> = d.proposals.iter().filter_map(|(k, l)| Some((k, fmt::parse_event(l)?))).filter(|(_, e)| e.date >= today).collect();
+    pending.sort_by(|a, b| (&a.1.date, &a.1.time, &a.1.title).cmp(&(&b.1.date, &b.1.time, &b.1.title)));
+    let mut shown: Vec<(&String, Event)> = Vec::new();
+    for (k, e) in pending {
+        if !shown.iter().any(|(_, x)| fmt::same_event(x, &e)) {
+            shown.push((k, e));
+        }
+    }
+    let proposals: Vec<Value> = shown.iter().map(|(k, e)| json!({ "clave": k, "evento": event_json(e, false) })).collect();
     let due_habits: Vec<Value> = d.habits.iter().filter(|h| h.due_on(&today) || matches!(h.freq, habitos::Freq::Weekly(_))).map(|h| habit_json(h, &today)).collect();
     let (done, total) = habitos::today_count(&d.habits, &today);
     let note = text_of(&state, &acc, &format!("{DIARY}/{today}.md")).await;
@@ -459,13 +462,22 @@ pub async fn decide(State(state): State<Arc<AppState>>, headers: HeaderMap, Json
     let Some((key, line)) = d.proposals.iter().find(|(k, _)| *k == r.clave).cloned() else {
         return error(StatusCode::NOT_FOUND, "Eso ya se decidió (quizás en otro equipo).");
     };
-    let mark = format!("{}\t{key}\t{line}", if r.agendar { "si" } else { "no" });
-    if let Err(e) = sync::modify(&state, &acc, PROPOSALS, |old| Some(append(old, &[mark]))).await {
+    // Las otras formas del mismo evento se descartan (si no, quedaría dos veces).
+    let event = fmt::parse_event(&line);
+    let mut marks = vec![format!("{}\t{key}\t{line}", if r.agendar { "si" } else { "no" })];
+    for (k, l) in d.proposals.iter().filter(|(k, _)| *k != key) {
+        if let (Some(a), Some(b)) = (&event, fmt::parse_event(l)) {
+            if fmt::same_event(a, &b) {
+                marks.push(format!("no\t{k}\t{l}"));
+            }
+        }
+    }
+    if let Err(e) = sync::modify(&state, &acc, PROPOSALS, |old| Some(append(old, &marks))).await {
         return failed(e);
     }
     if r.agendar {
         let res = sync::modify(&state, &acc, fmt::AGENDA_FILE, |old| {
-            let has = old.unwrap_or("").lines().filter_map(fmt::parse_event).any(|e| proposal_key(&e) == key);
+            let has = old.unwrap_or("").lines().filter_map(fmt::parse_event).any(|e| proposal_key(&e) == key || event.as_ref().is_some_and(|x| fmt::same_event(x, &e)));
             (!has).then(|| append(old, std::slice::from_ref(&line)))
         })
         .await;

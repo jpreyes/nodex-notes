@@ -35,6 +35,8 @@ pub(super) struct Proposal {
     pub key: String,
     pub line: String,
     pub event: agenda::Event,
+    /// Las claves del mismo evento escrito de otra forma (se decide por todas juntas).
+    pub also: Vec<String>,
 }
 
 impl NotesApp {
@@ -74,10 +76,28 @@ impl NotesApp {
                 keep.push(line);
                 continue;
             };
-            match states.get(&key).map(|s| s.0.as_str()) {
-                Some("si") => keep.push(line),
-                Some("no") => {}
+            // El mismo evento escrito de otra forma (la IA lo vuelve a sacar con otras palabras):
+            // vale lo que se decidió con él.
+            let state = states.get(&key).map(|s| (s.0.clone(), line.clone())).or_else(|| {
+                let e = agenda::parse_event(&line)?;
+                // Si alguna forma se agendó, vale esa.
+                states
+                    .values()
+                    .filter(|(_, l)| agenda::parse_event(l).is_some_and(|x| nodex_core::formato::same_event(&x, &e)))
+                    .max_by_key(|(st, l)| (st == "si", l.clone()))
+                    .map(|(st, l)| (st.clone(), l.clone()))
+            });
+            match state.as_ref().map(|(s, l)| (s.as_str(), l)) {
+                // Lo agendado se queda (con como se escribió al agendarlo).
+                Some(("si", l)) => {
+                    if !keep.contains(l) {
+                        keep.push(l.clone());
+                    }
+                }
+                Some(("no", _)) => {}
                 Some(_) => {}
+                // Ya está en la agenda con otras palabras: no se propone otra vez.
+                None if mail(i) && agenda::parse_event(&line).is_some_and(|e| self.agenda.events().iter().any(|x| nodex_core::formato::same_event(x, &e))) => {}
                 None if mail(i) => {
                     self.mark_proposal("pendiente", &key, &line);
                     proposed += 1;
@@ -91,25 +111,49 @@ impl NotesApp {
         keep
     }
 
-    /// Las propuestas pendientes, de hoy en adelante, por fecha.
+    /// Las propuestas pendientes, de hoy en adelante, por fecha (siempre en el mismo orden). El
+    /// mismo evento escrito de otra forma se muestra una vez.
     pub(super) fn proposals(&self) -> Vec<Proposal> {
         let today = today();
-        let mut v: Vec<Proposal> = self
+        let mut all: Vec<Proposal> = self
             .proposal_states()
             .into_iter()
             .filter(|(_, (s, _))| s == "pendiente")
             .filter_map(|(key, (_, line))| {
                 let event = agenda::parse_event(&line)?;
-                (event.date >= today).then_some(Proposal { key, line, event })
+                (event.date >= today).then_some(Proposal { key, line, event, also: Vec::new() })
             })
             .collect();
-        v.sort_by(|a, b| (&a.event.date, &a.event.time).cmp(&(&b.event.date, &b.event.time)));
+        all.sort_by(|a, b| (&a.event.date, &a.event.time, &a.event.title, &a.key).cmp(&(&b.event.date, &b.event.time, &b.event.title, &b.key)));
+        let mut v: Vec<Proposal> = Vec::new();
+        for p in all {
+            match v.iter_mut().find(|q| nodex_core::formato::same_event(&q.event, &p.event)) {
+                Some(q) => q.also.push(p.key),
+                None => v.push(p),
+            }
+        }
         v
+    }
+
+    /// Las claves del mismo evento que `key` (incluida ella), entre lo pendiente.
+    fn proposal_group(&self, key: &str) -> Vec<String> {
+        match self.proposals().into_iter().find(|p| p.key == key || p.also.iter().any(|k| k == key)) {
+            Some(p) => std::iter::once(p.key).chain(p.also).collect(),
+            None => vec![key.to_string()],
+        }
     }
 
     /// «Agendar»: pasa a la agenda (y a Google Calendar, si está conectado).
     pub(super) fn schedule(&mut self, key: &str) {
-        let Some((_, line)) = self.proposal_states().remove(key) else { return };
+        let group = self.proposal_group(key);
+        let mut states = self.proposal_states();
+        let Some((_, line)) = states.remove(key) else { return };
+        // Las otras formas del mismo evento no entran (quedaría dos veces).
+        for k in group.iter().filter(|k| *k != key) {
+            if let Some((_, l)) = states.get(k) {
+                self.mark_proposal("no", k, l);
+            }
+        }
         if let Err(e) = self.agenda.add_lines(&[], std::slice::from_ref(&line)) {
             self.msg(tf!("No se pudo escribir la agenda: {e}", e = e));
             return;
@@ -123,8 +167,12 @@ impl NotesApp {
 
     /// «Descartar» (no vuelve a proponerse).
     pub(super) fn dismiss(&mut self, key: &str) {
-        let Some((_, line)) = self.proposal_states().remove(key) else { return };
-        self.mark_proposal("no", key, &line);
+        let states = self.proposal_states();
+        for k in self.proposal_group(key) {
+            if let Some((_, l)) = states.get(&k) {
+                self.mark_proposal("no", &k, l);
+            }
+        }
     }
 
     /// «Quitar de la agenda» un evento de las notas (y que no vuelva aunque se reorganice la nota).
@@ -281,6 +329,53 @@ mod tests {
         assert!(app.agenda.events().iter().any(|e| e.title == "Preparar la minuta"));
         assert!(app.proposals().iter().any(|p| p.event.title == "Sesión ordinaria del Consejo Académico"));
         assert_eq!(app.migrate_mail_events(), 0, "una sola vez");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// El mismo evento sacado tres veces con otras palabras se ve una vez, siempre en el mismo
+    /// orden; agendarlo agenda uno y descarta los otros; y no se vuelve a proponer.
+    #[test]
+    fn the_same_event_is_proposed_once() {
+        let dir = std::env::temp_dir().join(format!("nodex-por-agendar-uno-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        unsafe { std::env::set_var("NODEX_CONFIG_DIR", std::env::temp_dir().join(format!("nodex-config-{}", std::process::id()))) };
+        fs::create_dir_all(dir.join("General")).unwrap();
+        let cfg = Config { carpeta_notas: dir.clone(), proveedor: "ollama".into(), modelo: "x".into(), ia_automatica: false, ..Config::default() };
+        let mut app = NotesApp::new(cfg, None, egui::Context::default());
+        let day = (Local::now() + chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+        let ev = |t: &str| agenda::format_event(&day, Some("10:00"), t, "General", "Diario/x");
+        let titles = [
+            "Jornada Construcción Sustentable y Cambio Climático Región de Los Ríos 2026 (Inacap Valdivia)",
+            "Jornada de Construcción Sustentable y Cambio Climático Región de Los Ríos 2026",
+            "Jornada de Construcción Sustentable y Cambio Climático de Los Ríos 2026",
+        ];
+        // Llegaron en tres vueltas de la IA.
+        for t in titles {
+            app.mark_proposal("pendiente", &key_of(&ev(t)).unwrap(), &ev(t));
+        }
+        let otro = agenda::format_event(&day, Some("10:00"), "Reunión con Pedro", "General", "Diario/x");
+        app.mark_proposal("pendiente", &key_of(&otro).unwrap(), &otro);
+        let list = app.proposals();
+        assert_eq!(list.len(), 2, "la jornada una vez, y la reunión");
+        let order: Vec<String> = list.iter().map(|p| p.event.title.clone()).collect();
+        for _ in 0..20 {
+            assert_eq!(app.proposals().iter().map(|p| p.event.title.clone()).collect::<Vec<_>>(), order, "siempre el mismo orden");
+        }
+        let jornada = list.iter().find(|p| p.event.title.starts_with("Jornada")).unwrap();
+        assert_eq!(jornada.also.len(), 2);
+        // Una cuarta forma no se vuelve a proponer.
+        let cuarta = ev("Jornada Construcción Sustentable y Cambio Climático Los Ríos 2026");
+        assert!(app.gate_events(vec![cuarta.clone()], |_| true).is_empty());
+        assert_eq!(app.proposals().len(), 2);
+        // Agendarla: entra una sola vez y no queda nada de la jornada por agendar.
+        app.schedule(&jornada.key.clone());
+        let jornadas = app.agenda.events().iter().filter(|e| e.title.starts_with("Jornada")).count();
+        assert_eq!(jornadas, 1);
+        assert_eq!(app.proposals().len(), 1);
+        // Si la IA la vuelve a sacar con otras palabras, se queda la agendada (no otra).
+        let kept = app.gate_events(vec![cuarta], |_| true);
+        assert_eq!(kept.len(), 1);
+        assert!(kept[0].contains(&jornada.event.title));
         let _ = fs::remove_dir_all(&dir);
     }
 }

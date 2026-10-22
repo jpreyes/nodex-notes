@@ -325,3 +325,37 @@ pub fn new_id(seed: u64) -> String {
         })
         .collect()
 }
+
+/// ¿Es el mismo evento escrito de otra forma? Mismo día y hora, y casi las mismas palabras
+/// («Jornada de Construcción Sustentable… 2026» y «Jornada Construcción Sustentable… (Inacap)»):
+/// pasa cuando la IA saca lo mismo de un correo en dos vueltas.
+pub fn same_event(a: &Event, b: &Event) -> bool {
+    if a.date != b.date || a.time != b.time {
+        return false;
+    }
+    let words = |s: &str| -> std::collections::BTreeSet<String> { fold(s).split(|c: char| !c.is_alphanumeric()).filter(|w| w.chars().count() >= 4).map(str::to_string).collect() };
+    let (x, y) = (words(&a.title), words(&b.title));
+    if x.is_empty() || y.is_empty() {
+        return fold(a.title.trim()) == fold(b.title.trim());
+    }
+    let shared = x.intersection(&y).count();
+    shared * 10 >= x.len().min(y.len()) * 7
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_same_event_written_differently() {
+        let ev = |date: &str, time: Option<&str>, title: &str| Event { date: date.into(), time: time.map(str::to_string), title: title.into(), project: String::new(), note: None, mail: None };
+        let a = ev("2026-10-23", Some("10:00"), "Jornada Construcción Sustentable y Cambio Climático Región de Los Ríos 2026 (Inacap Valdivia)");
+        let b = ev("2026-10-23", Some("10:00"), "Jornada de Construcción Sustentable y Cambio Climático Región de Los Ríos 2026");
+        let c = ev("2026-10-23", Some("10:00"), "Jornada de Construcción Sustentable y Cambio Climático de Los Ríos 2026");
+        assert!(same_event(&a, &b) && same_event(&a, &c) && same_event(&b, &c));
+        assert!(!same_event(&a, &ev("2026-10-23", Some("10:00"), "Reunión con Pedro por los planos")));
+        assert!(!same_event(&a, &ev("2026-10-24", Some("10:00"), &a.title)), "otro día");
+        assert!(!same_event(&a, &ev("2026-10-23", Some("11:00"), &a.title)), "otra hora");
+        assert!(same_event(&ev("2026-10-23", None, "Ley Karin"), &ev("2026-10-23", None, "ley karin")));
+    }
+}
